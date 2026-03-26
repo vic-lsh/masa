@@ -1,11 +1,14 @@
-#[cfg(feature = "trace-queue")]
-use masa_core::QueueLatencies;
+// SLO-based early return handler.
+//
+// `SloAbortHandler` detects requests that have exceeded their end-to-end SLO
+// deadline and triggers early returns to avoid wasting compute on responses
+// that will miss their SLO regardless. This is a separate concern from
+// admission control (which prevents new requests from entering the system).
+
 use masa_core::{time_now, Context, SLO_ABORT};
-#[cfg(feature = "trace-queue")]
-use std::sync::atomic::AtomicU64;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
-use tonic_core::{Code, CowGrpcMethod, Response, Status};
+use tonic_core::{Code, CowGrpcMethod, Status};
 
 #[derive(Debug)]
 pub(crate) struct SloAbortHandler {
@@ -101,97 +104,6 @@ impl SloAbortHandler {
         }
 
         Status::new(Code::DeadlineExceeded, msg)
-    }
-}
-
-#[cfg(feature = "trace-queue")]
-#[derive(Debug)]
-pub(crate) struct QueueLatencyTracker {
-    initial_q_lat: AtomicU64,
-    resume_q_lat: AtomicU64,
-    is_first_poll: AtomicBool,
-}
-
-#[cfg(feature = "trace-queue")]
-impl Default for QueueLatencyTracker {
-    fn default() -> Self {
-        Self {
-            initial_q_lat: AtomicU64::new(0),
-            resume_q_lat: AtomicU64::new(0),
-            is_first_poll: AtomicBool::new(true),
-        }
-    }
-}
-
-#[cfg(feature = "trace-queue")]
-impl QueueLatencyTracker {
-    pub(crate) fn new() -> Self {
-        Self::default()
-    }
-
-    pub(crate) fn track_poll(&self) {
-        let queue_latency = tokio::task::obtain_task_queue_latency().as_micros() as u64;
-        if queue_latency > 0 {
-            if self.is_first_poll.swap(false, Ordering::Relaxed) {
-                self.initial_q_lat
-                    .fetch_add(queue_latency, Ordering::AcqRel);
-            } else {
-                self.resume_q_lat.fetch_add(queue_latency, Ordering::AcqRel);
-            }
-        }
-    }
-
-    pub(crate) fn track_child_response<T>(&self, response: &Result<Response<T>, Status>) {
-        if let Ok(resp) = response {
-            use crate::context_ext::MasaResponseExt;
-            if let Some(ctx) = resp.get_masa_context() {
-                if let Some(ql) = ctx.queue_latencies {
-                    self.initial_q_lat.fetch_add(ql.initial, Ordering::AcqRel);
-                    self.resume_q_lat.fetch_add(ql.resume, Ordering::AcqRel);
-                }
-            }
-        }
-    }
-
-    pub(crate) fn inject_context_metadata<T>(
-        &self,
-        ctx: &Context,
-        result: &mut Result<Response<T>, Status>,
-    ) {
-        use crate::context_ext::{MasaResponseExt, MasaStatusExt};
-
-        let mut ctx = ctx.clone();
-
-        let initial = self.initial_q_lat.load(Ordering::Acquire);
-        let resume = self.resume_q_lat.load(Ordering::Acquire);
-        ctx.queue_latencies = Some(QueueLatencies { initial, resume });
-
-        match result {
-            Ok(resp) => resp.set_masa_context(&ctx),
-            Err(status) => status.set_masa_context(&ctx),
-        };
-    }
-}
-
-#[cfg(not(feature = "trace-queue"))]
-#[derive(Debug, Default)]
-pub(crate) struct QueueLatencyTracker;
-
-#[cfg(not(feature = "trace-queue"))]
-impl QueueLatencyTracker {
-    pub(crate) fn new() -> Self {
-        Self
-    }
-
-    pub(crate) fn track_poll(&self) {}
-
-    pub(crate) fn track_child_response<T>(&self, _response: &Result<Response<T>, Status>) {}
-
-    pub(crate) fn inject_context_metadata<T>(
-        &self,
-        _ctx: &Context,
-        _result: &mut Result<Response<T>, Status>,
-    ) {
     }
 }
 

@@ -2,11 +2,14 @@ use std::sync::Arc;
 use std::task::Poll;
 use tonic_core::{CowGrpcMethod, GrpcMethod, Request, Status};
 
-use crate::ac::AcHandler;
 use crate::base::BaseHookState;
-use crate::context_ext::MasaRequestExt;
-use crate::predictive_overlay::{PredictiveOverlay, PredictiveOverlayChild, PredictiveOverlayServer};
+use crate::context_ext::{read_context, MasaRequestExt};
+use crate::overlay::{
+    ActiveOverlay, ActiveOverlayChild, ActiveOverlayServer, ChildRpcContext, Overlay, OverlayChild,
+    OverlayServer,
+};
 use masa_core::ContextBuilder;
+use tonic_core::masa_ext::resolve_method_name_from_http;
 use tonic_core::masa_ext::resolve_method_name_from_request;
 use tonic_core::masa_ext::{ClientHooks, Hooks, ParentHooks, ServerHooks};
 use tonic_core::Response;
@@ -14,8 +17,8 @@ use tonic_core::Response;
 #[derive(Debug)]
 /// Standard Masa hooks implementation shared by all scheduling policies
 /// (sched_fifo, sched_slo, sched_tailclipper, sched_pred). The actual scheduling
-/// differences are handled by the tokio runtime and, when `est` is enabled, the
-/// `PredictiveOverlay` (deadline tightening, reprioritization, predictive AC).
+/// differences are handled by the tokio runtime and, when enabled, the active
+/// overlay (predictive or rajomon).
 #[allow(dead_code)]
 pub struct StandardHooks;
 
@@ -27,13 +30,13 @@ impl Hooks for StandardHooks {
 
 #[derive(Debug)]
 pub struct ServerContext {
-    predictive: PredictiveOverlayServer,
+    overlay: ActiveOverlayServer,
 }
 
 impl ServerHooks for ServerContext {
     fn new(_service_name: &'static str) -> Self {
         Self {
-            predictive: PredictiveOverlayServer::new(),
+            overlay: ActiveOverlayServer::new(),
         }
     }
 }
@@ -41,26 +44,27 @@ impl ServerHooks for ServerContext {
 #[derive(Debug)]
 pub struct ParentContext {
     base: BaseHookState,
-    predictive: PredictiveOverlay,
+    overlay: ActiveOverlay,
 }
 
 impl ParentHooks<ChildContext, ServerContext> for ParentContext {
     fn begin<B>(
         method: GrpcMethod,
         req: &http::Request<B>,
-        _server_ctx: Arc<ServerContext>,
+        server_ctx: Arc<ServerContext>,
     ) -> Self {
-        let base = BaseHookState::new(method, req);
+        let mut ctx = read_context(req);
+        let resolved_method = resolve_method_name_from_http(method, req);
 
-        Self {
-            predictive: PredictiveOverlay::new(&base.resolved_method, &_server_ctx.predictive),
-            base,
-        }
+        let overlay = ActiveOverlay::new(&resolved_method, &server_ctx.overlay, &mut ctx);
+        let base = BaseHookState::new(ctx, resolved_method);
+
+        Self { base, overlay }
     }
 
     fn before_poll<Ret>(&self) -> Result<(), Result<Response<Ret>, Status>> {
         self.base.check_guards()?;
-        self.predictive.before_poll(&self.base.ctx);
+        self.overlay.before_poll(&self.base.ctx)?;
         self.base.track_poll();
         Ok(())
     }
@@ -74,19 +78,14 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         self.base.check_guards_status()?;
 
         let child_method_name = resolve_method_name_from_request(child_method, request);
-        self.base
-            .ac
-            .check_outbound(&child_method_name, &self.base.ctx)?;
-
         child_ctx.set_method_name(child_method_name.clone());
 
-        let builder = ContextBuilder::from(&self.base.ctx)
-            .tokens(self.base.ac.remaining_tokens());
+        let builder = ContextBuilder::from(&self.base.ctx);
 
-        let (_deadline, _prio_hint, builder) = self.predictive.before_child_rpc(
+        let ChildRpcContext { builder, .. } = self.overlay.before_child_rpc(
             &self.base.ctx,
             &child_method_name,
-            &mut child_ctx.predictive,
+            &mut child_ctx.overlay,
             request,
             builder,
             || self.base.slo_abort.issue_error(),
@@ -106,11 +105,16 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
     ) -> Result<(), Status> {
         self.base.q_lat_tracker.track_child_response(response);
 
-        self.predictive
-            .after_child_rpc(&self.base.ctx, response, &child_ctx.predictive)?;
+        let child_method = child_ctx.child_method_name.as_ref();
 
-        if let Some(child) = child_ctx.child_method_name {
-            self.base.update_after_child(&child, response);
+        if let Some(child_method) = child_method {
+            self.overlay.after_child_rpc(
+                &self.base.ctx,
+                child_method,
+                response,
+                &child_ctx.overlay,
+            )?;
+            self.base.update_after_child(child_method);
         }
 
         Ok(())
@@ -120,12 +124,12 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         &self,
         poll: &Poll<Result<Response<Ret>, Status>>,
     ) -> Result<(), Result<Response<Ret>, Status>> {
-        self.predictive.after_poll(poll);
+        self.overlay.after_poll(poll);
         self.base.check_pending_guards(poll)
     }
 
     fn finalize_before_serialization<Ret>(&self, result: &mut Result<Response<Ret>, Status>) {
-        self.predictive.finalize(&self.base.ctx, result);
+        self.overlay.finalize(&self.base.ctx, result);
         self.base.finalize(result);
     }
 }
@@ -133,14 +137,14 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
 #[derive(Debug, Clone)]
 pub struct ChildContext {
     pub child_method_name: Option<CowGrpcMethod>,
-    predictive: PredictiveOverlayChild,
+    overlay: ActiveOverlayChild,
 }
 
 impl ClientHooks for ChildContext {
     fn new<T>(_method: GrpcMethod, _request: &Request<T>) -> Self {
         Self {
             child_method_name: None,
-            predictive: PredictiveOverlayChild::new(),
+            overlay: ActiveOverlayChild::new(),
         }
     }
 }
@@ -159,8 +163,8 @@ mod tests {
     mod est_tests {
         use super::super::{ChildContext, ParentContext, ServerContext};
         use crate::context_ext::MASA_CONTEXT_HEADER;
-        use crate::est::estimator::ParentToChildId;
-        use crate::est::state::EstServerState;
+        use crate::overlay::predictive::est::estimator::ParentToChildId;
+        use crate::overlay::predictive::est::state::EstServerState;
         use masa_core::{ContextBuilder, LatencyRms};
         use std::sync::Arc;
         use tonic_core::masa_ext::resolve_method_name_from_http;
@@ -212,9 +216,7 @@ mod tests {
         #[test]
         fn test_resolve_method_name_from_http_with_overrides() {
             use http::HeaderValue;
-            use tonic_core::masa_ext::{
-                METHOD_NAME_OVERRIDE_HEADER, SERVICE_NAME_OVERRIDE_HEADER,
-            };
+            use tonic_core::masa_ext::{METHOD_NAME_OVERRIDE_HEADER, SERVICE_NAME_OVERRIDE_HEADER};
 
             let method = GrpcMethod::new("TestService", "TestMethod");
             let mut req = http::Request::new(());
@@ -314,8 +316,8 @@ mod tests {
                 .unwrap();
 
             // Verify child context has ID and Server
-            assert!(child_ctx.predictive.est.parent_to_child_id.is_some());
-            assert!(child_ctx.predictive.est.server.is_some());
+            assert!(child_ctx.overlay.est.parent_to_child_id.is_some());
+            assert!(child_ctx.overlay.est.server.is_some());
 
             // Verify registry has IDs
             let registry = MethodRegistry::global();
@@ -323,11 +325,23 @@ mod tests {
             let child_id = registry.get_or_register_method("IntegrationService", "ChildMethod");
 
             assert_eq!(
-                child_ctx.predictive.est.parent_to_child_id.clone().unwrap().parent_id,
+                child_ctx
+                    .overlay
+                    .est
+                    .parent_to_child_id
+                    .clone()
+                    .unwrap()
+                    .parent_id,
                 parent_id
             );
             assert_eq!(
-                child_ctx.predictive.est.parent_to_child_id.clone().unwrap().child_id,
+                child_ctx
+                    .overlay
+                    .est
+                    .parent_to_child_id
+                    .clone()
+                    .unwrap()
+                    .child_id,
                 child_id
             );
 
@@ -373,7 +387,10 @@ mod tests {
 
             // With est_remaining_floor = 0, the floor check is: time_now > e2e_deadline - 0 = e2e_deadline.
             // Since e2e_deadline is 100ms in the future, this should NOT shed.
-            let shed = parent_ctx.predictive.est.admission_check(&parent_ctx.base.ctx, 0);
+            let shed = parent_ctx
+                .overlay
+                .est
+                .admission_check(&parent_ctx.base.ctx, 0);
             assert!(!shed, "should admit when plenty of time remains");
         }
     }
