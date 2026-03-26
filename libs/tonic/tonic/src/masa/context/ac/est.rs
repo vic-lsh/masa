@@ -1,3 +1,16 @@
+// EST-based admission control.
+//
+// Provides `AdmissionController` (compute-budget token bucket) and
+// `BottleneckTracker` (per-API utilization tracking with staleness decay).
+// These are consumed directly by `EstServerState`/`EstRequestState` for
+// the actual admission decisions. The `EstAcHandler` is a thin no-op
+// implementation of `AcHandler` for `BaseHookState` — EST admission
+// decisions happen at the estimation layer, not the base hook layer.
+
+use crate::CowGrpcMethod;
+
+use super::AcHandler;
+
 use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::Instant;
@@ -126,6 +139,21 @@ impl AdmissionController {
         } else {
             false
         }
+    }
+}
+
+/// No-op AC handler for the EST admission control strategy.
+///
+/// EST admission decisions happen inside `EstRequestState::admission_check()`
+/// (called from `prepare_before_child_rpc`), not at the `BaseHookState` level.
+/// This handler satisfies the `AcHandler` trait with defaults so that
+/// `BaseHookState` compiles cleanly when `ac_est` is enabled.
+#[derive(Debug)]
+pub(crate) struct EstAcHandler;
+
+impl AcHandler for EstAcHandler {
+    fn new(_method: CowGrpcMethod) -> Self {
+        Self
     }
 }
 

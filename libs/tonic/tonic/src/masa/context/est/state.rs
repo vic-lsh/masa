@@ -16,10 +16,10 @@ use std::time::Instant;
 use crate::{Code, CowGrpcMethod, Response, Status};
 use masa_core::{time_now, Context, LatencyEstimator, ResponseMeta, SLO_ABORT};
 
-#[cfg(feature = "ac_est")]
-use super::ac::AdmissionController;
 use super::estimator::ParentToChildId;
 use super::latency_map::{spawn_method_stats_printer, spawn_stats_printer, LatencyMap};
+#[cfg(feature = "ac_est")]
+use crate::masa::context::ac::est::AdmissionController;
 use crate::masa::context::{MasaResponseExt, MasaStatusExt};
 use crate::masa::MethodRegistry;
 
