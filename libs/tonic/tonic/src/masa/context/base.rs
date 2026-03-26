@@ -54,13 +54,7 @@ impl BaseHookState {
     /// Check AC drop and SLO abort guards, returning a flat `Status` error.
     /// Used in `before_child_rpc`.
     pub(super) fn check_guards_status(&self) -> Result<(), Status> {
-        if let Some(status) = self.ac.drop_status() {
-            return Err(status);
-        }
-        if self.slo_abort.check(&self.ctx) {
-            return Err(self.slo_abort.issue_error());
-        }
-        Ok(())
+        self.check_guards::<()>().map_err(|e| e.unwrap_err())
     }
 
     /// Track queue delay and poll latency. Called after guard checks in `before_poll`.
