@@ -15,7 +15,6 @@ from .util import (
     parse_args,
     PlotData,
     prepare_output_dir,
-    read_data,
 )
 
 matplotlib.use("Agg")  # Use non-interactive backend for thread safety
