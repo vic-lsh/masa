@@ -9,6 +9,7 @@ mod base;
 mod common;
 #[cfg(feature = "est")]
 pub(crate) mod est;
+#[cfg(feature = "est")]
 mod est_abort;
 mod noop;
 mod standard;
