@@ -5,6 +5,7 @@ use std::task::Poll;
 use super::super::{ClientHooks, MasaHooks, ParentHooks, ServerHooks};
 use super::ac::AcHandler;
 use super::base::BaseHookState;
+#[cfg(feature = "est")]
 use super::est_abort::PredictiveAbort;
 use super::{resolve_method_name_from_request, MasaRequestExt};
 use crate::Response;
@@ -22,7 +23,8 @@ use crate::masa::MethodRegistry;
 #[derive(Debug)]
 /// Standard Masa hooks implementation shared by all scheduling policies
 /// (FIFO, priority, tailclipper, est_abort). The actual scheduling differences
-/// are handled by the tokio runtime and the `PredictiveAbort` overlay.
+/// are handled by the tokio runtime and, when `est` is enabled, the
+/// `PredictiveAbort` overlay (`est_abort` tightens deadlines and reprioritizes).
 #[allow(dead_code)]
 #[allow(unreachable_pub)]
 pub struct StandardHooks;
@@ -57,6 +59,7 @@ impl ServerHooks for ServerContext {
 #[allow(unreachable_pub)]
 pub struct ParentContext {
     base: BaseHookState,
+    #[cfg(feature = "est")]
     pred_abort: PredictiveAbort,
     #[cfg(feature = "est")]
     est: EstRequestState<DefaultLatencyEstimator>,
@@ -80,6 +83,7 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
 
         Self {
             base,
+            #[cfg(feature = "est")]
             pred_abort: PredictiveAbort,
             #[cfg(feature = "est")]
             est: EstRequestState::new(resolved_method_id, _server_ctx.est.clone()),
@@ -90,6 +94,7 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
 
     fn before_poll<Ret>(&self) -> Result<(), Result<Response<Ret>, Status>> {
         self.base.check_guards()?;
+        #[cfg(feature = "est")]
         self.pred_abort.reprioritize(&self.base.ctx);
         self.base.track_poll();
         #[cfg(feature = "est")]
@@ -113,28 +118,30 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         child_ctx.set_method_name(child_method_name.clone());
 
         #[cfg(feature = "est")]
-        let est_remaining = {
-            let result = self
-                .est
-                .prepare_before_child_rpc(&self.base.ctx, &child_method_name, &mut child_ctx.est);
+        let (deadline, prio_hint) = {
+            let est_remaining = {
+                let result = self.est.prepare_before_child_rpc(
+                    &self.base.ctx,
+                    &child_method_name,
+                    &mut child_ctx.est,
+                );
 
-            if self.ac_est.admission_check(
-                &self.est.server,
-                self.est.resolved_method_id,
-                &self.base.ctx,
-                result.key,
-            ) {
-                return Err(self.base.slo_abort.issue_error());
-            }
+                if self.ac_est.admission_check(
+                    &self.est.server,
+                    self.est.resolved_method_id,
+                    &self.base.ctx,
+                    result.key,
+                ) {
+                    return Err(self.base.slo_abort.issue_error());
+                }
 
-            result.est_remaining
+                result.est_remaining
+            };
+            self.pred_abort
+                .child_deadline_and_prio(&self.base.ctx, est_remaining)
         };
         #[cfg(not(feature = "est"))]
-        let est_remaining = 0u64;
-
-        let (deadline, prio_hint) = self
-            .pred_abort
-            .child_deadline_and_prio(&self.base.ctx, est_remaining);
+        let (deadline, prio_hint) = (self.base.ctx.deadline(), self.base.ctx.prio_hint());
 
         #[allow(unused_mut)]
         let mut builder = ContextBuilder::from(&self.base.ctx)
@@ -174,6 +181,7 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
             self.base.update_after_child(&child, response);
         }
 
+        #[cfg(feature = "est")]
         self.pred_abort.check_child_response(response)?;
 
         Ok(())
@@ -232,10 +240,10 @@ mod tests {
 
     #[cfg(feature = "est")]
     mod est_tests {
-        use super::super::{ChildContext, ParentContext, ServerContext};
         use super::super::super::est::estimator::ParentToChildId;
         use super::super::super::est::state::EstServerState;
         use super::super::super::{resolve_method_name_from_http, MASA_CONTEXT_HEADER};
+        use super::super::{ChildContext, ParentContext, ServerContext};
         use crate::masa::context::{ClientHooks, ParentHooks, ServerHooks};
         use crate::{GrpcMethod, Request, Response};
         use masa_core::{ContextBuilder, LatencyRms};
