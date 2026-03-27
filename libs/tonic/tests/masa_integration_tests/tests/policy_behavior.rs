@@ -47,7 +47,7 @@ async fn queue_latency_metadata_is_attached() {
     let server = tokio::spawn(async move {
         Server::builder()
             .add_service(
-                ChildServiceServer::<_, masa_policy::StandardHooks>::with_custom_context(QueueSvc),
+                ChildServiceServer::<_, masa_policy::PolicyHooks>::with_custom_context(QueueSvc),
             )
             .serve_with_masa(addr)
             .await
@@ -113,7 +113,7 @@ async fn expired_context_triggers_early_return() {
     let server = tokio::spawn(async move {
         Server::builder()
             .add_service(
-                ChildServiceServer::<_, masa_policy::StandardHooks>::with_custom_context(svc),
+                ChildServiceServer::<_, masa_policy::PolicyHooks>::with_custom_context(svc),
             )
             .serve_with_masa(addr)
             .await
@@ -172,7 +172,7 @@ async fn sufficient_tokens_executes_and_piggybacks_price() {
     let server = tokio::spawn(async move {
         Server::builder()
             .add_service(
-                ChildServiceServer::<_, masa_policy::StandardHooks>::with_custom_context(svc),
+                ChildServiceServer::<_, masa_policy::PolicyHooks>::with_custom_context(svc),
             )
             .serve_with_masa(addr)
             .await
@@ -249,7 +249,7 @@ async fn insufficient_tokens_triggers_early_return() {
     let server = tokio::spawn(async move {
         Server::builder()
             .add_service(
-                ChildServiceServer::<_, masa_policy::StandardHooks>::with_custom_context(svc),
+                ChildServiceServer::<_, masa_policy::PolicyHooks>::with_custom_context(svc),
             )
             .serve_with_masa(addr)
             .await

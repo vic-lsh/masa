@@ -56,7 +56,7 @@ async fn high_priority_request_preempts_under_masa() {
     let server = tokio::spawn(async move {
         Server::builder()
             .add_service(
-                ChildServiceServer::<_, masa_policy::StandardHooks>::with_custom_context(svc),
+                ChildServiceServer::<_, masa_policy::PolicyHooks>::with_custom_context(svc),
             )
             .serve_with_masa(addr)
             .await
