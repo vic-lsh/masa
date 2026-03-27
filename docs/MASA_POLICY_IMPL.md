@@ -155,7 +155,7 @@ For a complete request lifecycle:
 ### Policy Implementation
 All scheduling policies are unified into `PolicyHooks` (`libs/masa-policy/src/hooks.rs`), which dispatches to composable overlays:
 *   **`SloAbortOverlay`** (`overlay/slo_abort.rs`): Checks deadline in `before_poll`/`after_poll`; aborts past-deadline requests. Enabled by `slo_abort` feature.
-*   **`PredictiveOverlay`** (`overlay/predictive/`): Computes local deadlines via latency estimates, tightens child deadlines, and performs predictive admission control. Enabled by `est` feature. Only works for applications with a known call graph (currently `hotel`).
+*   **`PredictiveOverlay`** (`overlay/predictive/`): Computes local deadlines via latency estimates, tightens child deadlines, and performs predictive admission control. Enabled by `est` feature.
 *   **`RajomonOverlay`** (`overlay/rajomon.rs`): Token-bucket admission control with server-side price signals. Enabled by `ac_rajomon` feature.
 *   **`QueueLatOverlay`** (`overlay/queue_lat.rs`): Tracks queue latency across the call graph via `x-queue-latency` headers.
 *   **`NoopOverlay`** (`overlay/noop.rs`): Zero-cost no-op, used when no admission control overlay is active.
