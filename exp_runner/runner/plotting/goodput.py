@@ -6,12 +6,9 @@ import matplotlib
 import numpy as np
 import pandas as pd
 
+from exp_runner.runner.policy import Policy
+
 from .util import (
-    _has_abort,
-    _is_fifo,
-    _is_local,
-    _is_prio,
-    _is_tailclipper,
     filter_excluded_errors,
     get_plot_worker_count,
     get_policy_color,
@@ -52,40 +49,19 @@ def get_request_type_hatch(request_type: str):
 
 
 def sort_policies_by_type(policies):
-    """Sort policies to group fifo first, then prio/prio_global, then local/prio_local.
+    """Sort policies: fifo → e2e_slo → slack → oldest → other.
 
-    Supports newest flag names (sched_slo, sched_pred, sched_tailclipper),
-    previous flag names (sched_fifo, sched_prio, pred_sched, tailclipper),
-    and oldest flag names (fifo, prio_global, prio_local) for backward compatibility.
+    Within each group, policies without drop come before those with drop.
     """
-    fifo_policies = []
-    prio_global_policies = []
-    prio_local_policies = []
-    other_policies = []
+    _PRIO_ORDER = {"fifo": 0, "e2e_slo": 1, "slack": 2, "oldest": 3}
 
-    for policy in policies:
-        policy_lower = policy.lower()
-        if _is_fifo(policy_lower):
-            fifo_policies.append(policy)
-        elif _is_local(policy_lower):
-            prio_local_policies.append(policy)
-        elif _is_tailclipper(policy_lower):
-            other_policies.append(policy)
-        elif _is_prio(policy_lower):
-            prio_global_policies.append(policy)
-        else:
-            other_policies.append(policy)
+    def _sort_key(raw: str):
+        p = Policy.parse(raw)
+        group = _PRIO_ORDER.get(p.prio, 99) if p.prio else 99
+        has_drop = p.drop is not None
+        return (group, has_drop, raw)
 
-    def _abort_sort_key(p):
-        return (_has_abort(p.lower()), p)
-
-    # Sort within each group (base policy before abort variant)
-    fifo_policies.sort(key=_abort_sort_key)
-    prio_global_policies.sort(key=_abort_sort_key)
-    prio_local_policies.sort(key=_abort_sort_key)
-    other_policies.sort()
-
-    return fifo_policies + prio_global_policies + prio_local_policies + other_policies
+    return sorted(policies, key=_sort_key)
 
 
 def compute_goodput(df):

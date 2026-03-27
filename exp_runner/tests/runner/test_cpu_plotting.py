@@ -107,44 +107,25 @@ class TestGetPolicyColors:
 
     def test_standard_policies(self):
         """Test color assignment for standard policies (new names)."""
-        policies = ["sched_fifo", "sched_slo", "sched_slo,sched_pred"]
+        policies = ["sched_fifo", "sched_slo", "sched_pred,est_mean_var"]
         colors = _get_policy_colors(policies)
 
         assert colors["sched_fifo"] == "grey"
         assert colors["sched_slo"] == "steelblue"
-        # sched_pred implies abort, so lightpink (abort variant of local ddl)
-        assert colors["sched_slo,sched_pred"] == "lightpink"
-
-    def test_standard_policies_old_names(self):
-        """Test color assignment for standard policies (old names, backward compat)."""
-        policies = ["fifo", "prio_global", "prio_local"]
-        colors = _get_policy_colors(policies)
-
-        assert colors["fifo"] == "grey"
-        assert colors["prio_global"] == "steelblue"
-        assert colors["prio_local"] == "hotpink"
+        assert colors["sched_pred,est_mean_var"] == "coral"
 
     def test_abort_policies(self):
         """Test color assignment for abort policies (new names)."""
         policies = [
             "sched_fifo,abort_slo",
             "sched_slo,abort_slo",
-            "sched_slo,sched_pred",
+            "sched_pred,abort_slo,est_mean_var",
         ]
         colors = _get_policy_colors(policies)
 
         assert colors["sched_fifo,abort_slo"] == "darkgrey"
         assert colors["sched_slo,abort_slo"] == "cornflowerblue"
-        assert colors["sched_slo,sched_pred"] == "lightpink"
-
-    def test_early_policies_old_names(self):
-        """Test color assignment for early abort policies (old names, backward compat)."""
-        policies = ["fifo,early", "prio_global,early", "prio_local,early"]
-        colors = _get_policy_colors(policies)
-
-        assert colors["fifo,early"] == "darkgrey"
-        assert colors["prio_global,early"] == "cornflowerblue"
-        assert colors["prio_local,early"] == "lightpink"
+        assert colors["sched_pred,abort_slo,est_mean_var"] == "coral"
 
     def test_mixed_policies(self):
         """Test color assignment for mixed standard and abort policies."""
