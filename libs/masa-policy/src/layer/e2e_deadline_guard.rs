@@ -1,6 +1,6 @@
-// SLO abort overlay — rejects requests that have exceeded their end-to-end
-// SLO deadline, avoiding wasteful compute on responses that will miss their
-// SLO regardless.
+// E2E deadline guard layer — rejects requests that have exceeded their
+// end-to-end SLO deadline, avoiding wasteful compute on responses that will
+// miss their SLO regardless.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
@@ -9,7 +9,7 @@ use std::task::Poll;
 use masa_core::{time_now, Context, SLO_ABORT};
 use tonic_core::{Code, CowGrpcMethod, Response, Status};
 
-use super::{ChildRpcContext, Overlay, OverlayChild, OverlayServer};
+use super::{ChildRpcContext, Layer, LayerChild, LayerServer};
 
 // ── Core Handler ──────────────────────────────────────────────────────
 
@@ -113,9 +113,9 @@ impl SloAbortHandler {
 // ── Server ──────────────────────────────────────────────────────────────
 
 #[derive(Debug)]
-pub(crate) struct SloAbortOverlayServer;
+pub(crate) struct E2eDeadlineGuardServer;
 
-impl OverlayServer for SloAbortOverlayServer {
+impl LayerServer for E2eDeadlineGuardServer {
     fn new() -> Self {
         Self
     }
@@ -124,15 +124,15 @@ impl OverlayServer for SloAbortOverlayServer {
 // ── Per-Request ─────────────────────────────────────────────────────────
 
 #[derive(Debug)]
-pub(crate) struct SloAbortOverlay {
+pub(crate) struct E2eDeadlineGuardLayer {
     handler: SloAbortHandler,
 }
 
-impl Overlay for SloAbortOverlay {
-    type Server = SloAbortOverlayServer;
-    type Child = SloAbortOverlayChild;
+impl Layer for E2eDeadlineGuardLayer {
+    type Server = E2eDeadlineGuardServer;
+    type Child = E2eDeadlineGuardChild;
 
-    fn new(method: &CowGrpcMethod, _server: &SloAbortOverlayServer, _ctx: &mut Context) -> Self {
+    fn new(method: &CowGrpcMethod, _server: &E2eDeadlineGuardServer, _ctx: &mut Context) -> Self {
         Self {
             handler: SloAbortHandler::new(method.clone()),
         }
@@ -151,7 +151,7 @@ impl Overlay for SloAbortOverlay {
         &self,
         ctx: &Context,
         _child_method: &CowGrpcMethod,
-        _child_ctx: &mut SloAbortOverlayChild,
+        _child_ctx: &mut E2eDeadlineGuardChild,
         _request: &mut tonic_core::Request<T>,
         _child_rpc: &mut ChildRpcContext,
     ) -> Result<(), Status> {
@@ -167,7 +167,7 @@ impl Overlay for SloAbortOverlay {
         _ctx: &Context,
         child_method: &CowGrpcMethod,
         _response: &mut Result<Response<T>, Status>,
-        _child_ctx: &SloAbortOverlayChild,
+        _child_ctx: &E2eDeadlineGuardChild,
     ) -> Result<(), Status> {
         self.handler.set_last_child(child_method.clone());
         Ok(())
@@ -191,9 +191,9 @@ impl Overlay for SloAbortOverlay {
 // ── Per-Child-RPC ───────────────────────────────────────────────────────
 
 #[derive(Debug, Clone)]
-pub(crate) struct SloAbortOverlayChild;
+pub(crate) struct E2eDeadlineGuardChild;
 
-impl OverlayChild for SloAbortOverlayChild {
+impl LayerChild for E2eDeadlineGuardChild {
     fn new() -> Self {
         Self
     }

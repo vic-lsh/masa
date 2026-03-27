@@ -11,7 +11,7 @@ full = [
 default = ["full"]
 sched_tailclipper = ["masa/sched_tailclipper"]
 ac_rajomon = ["masa/ac_rajomon"]
-trace-queue = ["masa/trace-queue", "tonic/trace-queue"]
+trace_queue_latency = ["masa/trace_queue_latency", "tonic/trace_queue_latency"]
 
 [dependencies]
 masa = { path = "../../libs/masa" }
