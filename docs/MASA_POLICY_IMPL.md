@@ -49,7 +49,7 @@ The `DefaultHooks` type alias (in `libs/tonic/tonic/src/masa_ext/mod.rs`) is res
 `PolicyHooks` uses composable overlays selected at compile time:
 - **SLO abort**: `SloAbortOverlay` (enabled by `slo_abort` feature)
 - **Admission control** (mutually exclusive): `PredictiveOverlay` (`est`), `RajomonOverlay` (`ac_rajomon`), or `NoopOverlay`
-- **Queue latency**: `QueueLatOverlay` (always active under a scheduling policy)
+- **Queue latency**: `QueueLatencyOverlay` (always active under a scheduling policy)
 
 Each scheduling flag also selects the corresponding tokio queue implementation (see Section 5).
 
@@ -157,7 +157,7 @@ All scheduling policies are unified into `PolicyHooks` (`libs/masa-policy/src/ho
 *   **`SloAbortOverlay`** (`overlay/slo_abort.rs`): Checks deadline in `before_poll`/`after_poll`; aborts past-deadline requests. Enabled by `slo_abort` feature.
 *   **`PredictiveOverlay`** (`overlay/predictive/`): Computes local deadlines via latency estimates, tightens child deadlines, and performs predictive admission control. Enabled by `est` feature.
 *   **`RajomonOverlay`** (`overlay/rajomon.rs`): Token-bucket admission control with server-side price signals. Enabled by `ac_rajomon` feature.
-*   **`QueueLatOverlay`** (`overlay/queue_lat.rs`): Tracks queue latency across the call graph via `x-queue-latency` headers.
+*   **`QueueLatencyOverlay`** (`overlay/queue_latency.rs`): Tracks queue latency across the call graph via `x-queue-latency` headers.
 *   **`NoopOverlay`** (`overlay/noop.rs`): Zero-cost no-op, used when no admission control overlay is active.
 *   **`NoopHooks`** (`tonic-core/src/masa_ext/noop.rs`): Selected when no scheduling feature is active.
 ### Client Code Generation
@@ -331,7 +331,7 @@ SLO abort is composable with any scheduling policy via the `slo_abort` feature f
 
 ### Queue Latency Tracking
 
-The `QueueLatOverlay` (`libs/masa-policy/src/overlay/queue_lat.rs`) accumulates queue latency — the time a task spent in the ready queue before being polled. It calls `tokio::task::obtain_task_queue_latency()` during `before_poll` to read the current task's queue wait time from its `TraceTimer` in the task header. This value is accumulated across all polls and child RPC responses (via the `x-queue-latency` response header), then injected into the outgoing response in `finalize`.
+The `QueueLatencyOverlay` (`libs/masa-policy/src/overlay/queue_latency.rs`) accumulates queue latency — the time a task spent in the ready queue before being polled. It calls `tokio::task::obtain_task_queue_latency()` during `before_poll` to read the current task's queue wait time from its `TraceTimer` in the task header. This value is accumulated across all polls and child RPC responses (via the `x-queue-latency` response header), then injected into the outgoing response in `finalize`.
 
 Queue latency tracking is active under all scheduling policies via `PolicyHooks`.
 
@@ -342,7 +342,7 @@ Queue latency tracking is active under all scheduling policies via `PolicyHooks`
 | `SloAbortOverlay` | Deadline check → abort | Deadline check on `Pending` | — | — |
 | `PredictiveOverlay` | — | — | Tighten deadline, admission check | Update estimates |
 | `RajomonOverlay` | — | — | Token deduction | — |
-| `QueueLatOverlay` | Accumulate queue latency | — | — | Inject `x-queue-latency` header |
+| `QueueLatencyOverlay` | Accumulate queue latency | — | — | Inject `x-queue-latency` header |
 | `NoopOverlay` | No-op | No-op | No-op | No-op |
 | `NoopHooks` | No-op | No-op | No-op | No-op |
 
@@ -365,7 +365,7 @@ Services connect to downstream replicas using `LoadBalancedChannel` (`libs/tonic
 
 ### `x-queue-latency` Response Header
 
-The `QueueLatOverlay` propagates accumulated queue wait times in the `x-queue-latency` response header. It aggregates:
+The `QueueLatencyOverlay` propagates accumulated queue wait times in the `x-queue-latency` response header. It aggregates:
 *   The current task's queue latency (from `tokio::task::obtain_task_queue_latency()`).
 *   Queue latency reported by child RPCs (parsed from their `x-queue-latency` response headers).
 

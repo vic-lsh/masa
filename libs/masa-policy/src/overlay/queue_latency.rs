@@ -13,9 +13,9 @@ use super::OverlayServer;
 // ── Server ──────────────────────────────────────────────────────────────
 
 #[derive(Debug)]
-pub(crate) struct QueueLatOverlayServer;
+pub(crate) struct QueueLatencyOverlayServer;
 
-impl OverlayServer for QueueLatOverlayServer {
+impl OverlayServer for QueueLatencyOverlayServer {
     fn new() -> Self {
         Self
     }
@@ -31,23 +31,23 @@ mod inner {
     use tonic_core::{CowGrpcMethod, Response, Status};
 
     use super::super::{Overlay, OverlayChild};
-    use super::QueueLatOverlayServer;
+    use super::QueueLatencyOverlayServer;
     use crate::context_ext::MasaResponseExt;
 
     #[derive(Debug)]
-    pub(crate) struct QueueLatOverlay {
+    pub(crate) struct QueueLatencyOverlay {
         initial_q_lat: AtomicU64,
         resume_q_lat: AtomicU64,
         is_first_poll: AtomicBool,
     }
 
-    impl Overlay for QueueLatOverlay {
-        type Server = QueueLatOverlayServer;
-        type Child = QueueLatOverlayChild;
+    impl Overlay for QueueLatencyOverlay {
+        type Server = QueueLatencyOverlayServer;
+        type Child = QueueLatencyOverlayChild;
 
         fn new(
             _method: &CowGrpcMethod,
-            _server: &QueueLatOverlayServer,
+            _server: &QueueLatencyOverlayServer,
             _ctx: &mut Context,
         ) -> Self {
             Self {
@@ -77,7 +77,7 @@ mod inner {
             _ctx: &Context,
             _child_method: &CowGrpcMethod,
             response: &mut Result<Response<T>, Status>,
-            _child_ctx: &QueueLatOverlayChild,
+            _child_ctx: &QueueLatencyOverlayChild,
         ) -> Result<(), Status> {
             if let Ok(resp) = response {
                 if let Some(ctx) = resp.get_masa_context() {
@@ -99,9 +99,9 @@ mod inner {
     }
 
     #[derive(Debug, Clone)]
-    pub(crate) struct QueueLatOverlayChild;
+    pub(crate) struct QueueLatencyOverlayChild;
 
-    impl OverlayChild for QueueLatOverlayChild {
+    impl OverlayChild for QueueLatencyOverlayChild {
         fn new() -> Self {
             Self
         }
@@ -116,18 +116,18 @@ mod inner {
     use tonic_core::CowGrpcMethod;
 
     use super::super::{Overlay, OverlayChild};
-    use super::QueueLatOverlayServer;
+    use super::QueueLatencyOverlayServer;
 
     #[derive(Debug)]
-    pub(crate) struct QueueLatOverlay;
+    pub(crate) struct QueueLatencyOverlay;
 
-    impl Overlay for QueueLatOverlay {
-        type Server = QueueLatOverlayServer;
-        type Child = QueueLatOverlayChild;
+    impl Overlay for QueueLatencyOverlay {
+        type Server = QueueLatencyOverlayServer;
+        type Child = QueueLatencyOverlayChild;
 
         fn new(
             _method: &CowGrpcMethod,
-            _server: &QueueLatOverlayServer,
+            _server: &QueueLatencyOverlayServer,
             _ctx: &mut Context,
         ) -> Self {
             Self
@@ -135,13 +135,13 @@ mod inner {
     }
 
     #[derive(Debug, Clone)]
-    pub(crate) struct QueueLatOverlayChild;
+    pub(crate) struct QueueLatencyOverlayChild;
 
-    impl OverlayChild for QueueLatOverlayChild {
+    impl OverlayChild for QueueLatencyOverlayChild {
         fn new() -> Self {
             Self
         }
     }
 }
 
-pub(crate) use inner::QueueLatOverlay;
+pub(crate) use inner::QueueLatencyOverlay;
