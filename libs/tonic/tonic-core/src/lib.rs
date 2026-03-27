@@ -7,7 +7,6 @@
 #![warn(missing_debug_implementations, missing_docs, rust_2018_idioms)]
 // Many items are pub for tonic to access but not re-exported at the crate root.
 #![allow(unreachable_pub, dead_code)]
-#![feature(trait_alias)]
 
 pub mod body;
 pub mod metadata;
