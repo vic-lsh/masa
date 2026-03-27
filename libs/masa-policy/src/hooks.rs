@@ -22,6 +22,31 @@ use tonic_core::masa_ext::resolve_method_name_from_request;
 use tonic_core::masa_ext::{ClientHooks, Hooks, ParentHooks, ServerHooks};
 use tonic_core::{CowGrpcMethod, GrpcMethod, Request, Response, Status};
 
+/// Invoke `$body` for each overlay in field order (slo_abort → policy → queue_lat).
+/// The first `Err` short-circuits via `?` if the body uses it.
+///
+/// Forms:
+///   for_each_overlay!(self, |o| body)                      — parent overlay only
+///   for_each_overlay!(self, mut child, |o, c| body)        — with mutable child field
+///   for_each_overlay!(self, child, |o, c| body)            — with immutable child field
+macro_rules! for_each_overlay {
+    ($self:ident, |$o:ident| $body:expr) => {{
+        { let $o = &$self.slo_abort; $body }
+        { let $o = &$self.policy; $body }
+        { let $o = &$self.queue_lat; $body }
+    }};
+    ($self:ident, mut $child:ident, |$o:ident, $c:ident| $body:expr) => {{
+        { let $o = &$self.slo_abort; let $c = &mut $child.slo_abort; $body }
+        { let $o = &$self.policy; let $c = &mut $child.policy; $body }
+        { let $o = &$self.queue_lat; let $c = &mut $child.queue_lat; $body }
+    }};
+    ($self:ident, $child:ident, |$o:ident, $c:ident| $body:expr) => {{
+        { let $o = &$self.slo_abort; let $c = &$child.slo_abort; $body }
+        { let $o = &$self.policy; let $c = &$child.policy; $body }
+        { let $o = &$self.queue_lat; let $c = &$child.queue_lat; $body }
+    }};
+}
+
 #[derive(Debug)]
 #[allow(dead_code)]
 pub struct PolicyHooks;
@@ -89,9 +114,7 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
     }
 
     fn before_poll<Ret>(&self) -> Result<(), Result<Response<Ret>, Status>> {
-        self.slo_abort.before_poll(&self.ctx)?;
-        self.policy.before_poll(&self.ctx)?;
-        self.queue_lat.before_poll(&self.ctx)?;
+        for_each_overlay!(self, |o| o.before_poll(&self.ctx)?);
         Ok(())
     }
 
@@ -106,27 +129,9 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
 
         let mut child_rpc = ChildRpcContext::from_parent(&self.ctx);
 
-        self.slo_abort.before_child_rpc(
-            &self.ctx,
-            &child_method_name,
-            &mut child_ctx.slo_abort,
-            request,
-            &mut child_rpc,
-        )?;
-        self.policy.before_child_rpc(
-            &self.ctx,
-            &child_method_name,
-            &mut child_ctx.policy,
-            request,
-            &mut child_rpc,
-        )?;
-        self.queue_lat.before_child_rpc(
-            &self.ctx,
-            &child_method_name,
-            &mut child_ctx.queue_lat,
-            request,
-            &mut child_rpc,
-        )?;
+        for_each_overlay!(self, mut child_ctx, |o, c|
+            o.before_child_rpc(&self.ctx, &child_method_name, c, request, &mut child_rpc)?
+        );
 
         let child_recv_ctx = ContextBuilder::from(&self.ctx)
             .deadline(child_rpc.deadline)
@@ -146,20 +151,9 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         child_ctx: ChildContext,
     ) -> Result<(), Status> {
         if let Some(child_method) = child_ctx.child_method_name.as_ref() {
-            self.slo_abort.after_child_rpc(
-                &self.ctx,
-                child_method,
-                response,
-                &child_ctx.slo_abort,
-            )?;
-            self.policy
-                .after_child_rpc(&self.ctx, child_method, response, &child_ctx.policy)?;
-            self.queue_lat.after_child_rpc(
-                &self.ctx,
-                child_method,
-                response,
-                &child_ctx.queue_lat,
-            )?;
+            for_each_overlay!(self, child_ctx, |o, c|
+                o.after_child_rpc(&self.ctx, child_method, response, c)?
+            );
         }
         Ok(())
     }
@@ -168,17 +162,13 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         &self,
         poll: &Poll<Result<Response<Ret>, Status>>,
     ) -> Result<(), Result<Response<Ret>, Status>> {
-        self.slo_abort.after_poll(&self.ctx, poll)?;
-        self.policy.after_poll(&self.ctx, poll)?;
-        self.queue_lat.after_poll(&self.ctx, poll)?;
+        for_each_overlay!(self, |o| o.after_poll(&self.ctx, poll)?);
         Ok(())
     }
 
     fn finalize_before_serialization<Ret>(&self, result: &mut Result<Response<Ret>, Status>) {
         let mut ctx = self.ctx.clone();
-        self.slo_abort.finalize(&mut ctx, result);
-        self.policy.finalize(&mut ctx, result);
-        self.queue_lat.finalize(&mut ctx, result);
+        for_each_overlay!(self, |o| o.finalize(&mut ctx, result));
         // Single serialization point — all overlays wrote to `ctx`.
         match result {
             Ok(resp) => resp.set_masa_context(&ctx),
