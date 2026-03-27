@@ -102,10 +102,20 @@ Core Masa types and utilities:
 - `Prioritize`: Priority calculation trait
 - `LatencyEstimator`: Latency distribution tracking
 
-### libs/tonic/tonic/src/masa/
-Masa integration into Tonic gRPC:
-- `context/mod.rs`: `Hooks` trait with `before_child_rpc`, `before_poll`, `after_poll` hooks; feature flags select the `DefaultHooks` implementation
-- `context/`: Policy implementations — `standard.rs` (shared hooks for all policies), `pred_sched.rs` (predictive scheduling overlay), `base.rs`, `common.rs`; admission control in `ac/`
+### libs/tonic/tonic-core/src/masa_ext/
+Core hook trait definitions (`Hooks`, `ServerHooks`, `ParentHooks`, `ClientHooks`) and `NoopHooks`, plus shared types (`Request`, `Response`, `Status`, metadata). Has no dependency on `masa-policy` or `masa-core`.
+
+### libs/masa-policy/
+Policy implementations extracted from tonic:
+- `hooks.rs`: `PolicyHooks` — unified hook implementation with `for_each_overlay!` macro dispatch
+- `overlay/`: Composable overlay system — `slo_abort.rs`, `queue_lat.rs`, `predictive/` (estimation + admission), `rajomon.rs`
+- `context_ext.rs`: Context serialization helpers for tonic requests/responses
+
+### libs/tonic/tonic/src/masa_ext/
+Tonic-specific glue:
+- `mod.rs`: `DefaultHooks` type alias selected by feature flags; re-exports from `tonic-core` and `masa-policy`
+- `runtime/mod.rs`: Bridge from tonic `ParentContext` to tokio `PollHook`
+- `thread_local.rs`: Thread-local storage for parent/server context propagation
 - `transport/masa_channel/`: Masa-aware channel transport
 
 ### Patched Libraries
