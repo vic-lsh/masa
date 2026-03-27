@@ -4,11 +4,10 @@
 // price signals and client-side token bucket rate limiting. Aligned with
 // the original Go implementation (3rd_party/rajomon/).
 
-use std::task::Poll;
 use std::time::Duration;
 
 use dashmap::DashMap;
-use masa_core::{Context, ContextBuilder};
+use masa_core::Context;
 use once_cell::sync::Lazy;
 use std::sync::atomic::{AtomicU64, Ordering};
 use tonic_core::{CowGrpcMethod, Response, Status};
@@ -304,13 +303,12 @@ impl Overlay for RajomonOverlay {
     #[inline]
     fn before_child_rpc<T>(
         &self,
-        ctx: &Context,
+        _ctx: &Context,
         child_method: &CowGrpcMethod,
         _child_ctx: &mut RajomonOverlayChild,
         _request: &mut tonic_core::Request<T>,
-        builder: ContextBuilder,
-        _slo_abort_error: impl FnOnce() -> Status,
-    ) -> Result<ChildRpcContext, Status> {
+        child_rpc: &mut ChildRpcContext,
+    ) -> Result<(), Status> {
         // Check outbound budget
         let price = RAJOMON_STATE.child_price(child_method);
         let current = self.remaining_tokens.load(Ordering::Relaxed);
@@ -318,16 +316,9 @@ impl Overlay for RajomonOverlay {
             return Err(self.issue_error(Some(child_method)));
         }
 
-        let builder = builder
-            .deadline(ctx.deadline())
-            .prio_hint(ctx.prio_hint())
-            .tokens(self.remaining_tokens.load(Ordering::Relaxed));
+        child_rpc.tokens = self.remaining_tokens.load(Ordering::Relaxed);
 
-        Ok(ChildRpcContext {
-            deadline: ctx.deadline(),
-            prio_hint: ctx.prio_hint(),
-            builder,
-        })
+        Ok(())
     }
 
     #[inline]
@@ -370,10 +361,7 @@ impl Overlay for RajomonOverlay {
     }
 
     #[inline]
-    fn after_poll<Ret>(&self, _poll: &Poll<Result<Response<Ret>, Status>>) {}
-
-    #[inline]
-    fn finalize<Ret>(&self, _ctx: &Context, result: &mut Result<Response<Ret>, Status>) {
+    fn finalize<Ret>(&self, _ctx: &mut Context, result: &mut Result<Response<Ret>, Status>) {
         // Deterministic price propagation
         if !self.should_propagate_price() {
             return;
