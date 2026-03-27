@@ -12,7 +12,6 @@ pub(crate) mod overlay;
 /// Method registry for mapping service/method strings to IDs.
 pub mod registry;
 
-
 pub use context_ext::{
     get_masa_context_from_metadata, read_context, set_masa_context_in_metadata, MasaRequestExt,
     MasaResponseExt, MasaStatusExt, MASA_CONTEXT_HEADER,

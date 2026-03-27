@@ -9,7 +9,6 @@ use std::{
 
 use app_utils::load_gen::TraceRecord;
 use masa::{time_now, ContextBuilder as MasaContextBuilder};
-use masa_policy::MasaRequestExt;
 use rand_distr::{Distribution, Exp};
 use serde::Deserialize;
 use serde_json;
@@ -19,6 +18,7 @@ use tokio::sync::{mpsc, Mutex, Semaphore};
 use tokio::task::JoinSet;
 use tokio::time::{Instant, MissedTickBehavior};
 use tokio::{fs, time};
+use tonic::masa_ext::MasaRequestExt;
 use tonic::transport::masa_channel::LoadBalancedChannel;
 use tonic::Request;
 use tracing_subscriber::layer::SubscriberExt;
@@ -302,7 +302,7 @@ async fn run_root_load(
                         #[cfg(feature = "ac_rajomon")]
                         {
                             use rand::Rng;
-                            use masa_policy::MAX_TOKEN;
+                            use masa::MAX_TOKEN;
                             // Bid is a uniform random value in [0, MAX_TOKEN]. The server
                             // admits requests whose bid >= its current price, giving a
                             // (MAX_TOKEN - price) / MAX_TOKEN admission fraction. Drawing
