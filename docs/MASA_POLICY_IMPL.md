@@ -41,16 +41,17 @@ The root `Cargo.toml` `[patch.crates-io]` section replaces 8 upstream crates (`t
 
 ### `DefaultHooks` Selection
 
-The `DefaultHooks` type alias (in `libs/tonic/tonic/src/masa/context/mod.rs`) is resolved by feature flag **precedence**. When multiple flags are enabled, the first match wins:
+The `DefaultHooks` type alias (in `libs/tonic/tonic/src/masa_ext/mod.rs`) is resolved by feature flag:
 
-1. `sched_slo` + `sched_pred` → `LocalDeadlinePolicy`
-2. `sched_slo` + `sched_tailclipper` → `PrioOldest`
-3. `sched_slo` → `QueueGlobal`
-4. `sched_fifo` + `slo_abort` → `Fifo`
-5. `sched_fifo` (without `slo_abort`) → `NoopHooks`
-6. Default (no features) → `NoopHooks`
+- Any scheduling feature (`sched_fifo`, `sched_slo`, `sched_tailclipper`) → `masa_policy::PolicyHooks`
+- No scheduling features → `NoopHooks`
 
-Each flag also selects the corresponding tokio queue implementation (see Section 5).
+`PolicyHooks` uses composable overlays selected at compile time:
+- **SLO abort**: `SloAbortOverlay` (enabled by `slo_abort` feature)
+- **Admission control** (mutually exclusive): `PredictiveOverlay` (`est`), `RajomonOverlay` (`ac_rajomon`), or `NoopOverlay`
+- **Queue latency**: `QueueLatOverlay` (always active under a scheduling policy)
+
+Each scheduling flag also selects the corresponding tokio queue implementation (see Section 5).
 
 ### Compile-Time Constants
 
@@ -121,7 +122,7 @@ When a service (acting as a client) sends an RPC to a downstream service, the po
 
 ### Three-Level Hook Architecture
 
-`Hooks` (defined in `libs/tonic/tonic/src/masa/context/mod.rs`) is the central trait that associates three context types:
+`Hooks` (defined in `libs/tonic/tonic-core/src/masa_ext/mod.rs`) is the central trait that associates three context types:
 
 ```
 pub trait Hooks: Send + Sync + 'static {
@@ -151,14 +152,14 @@ For a complete request lifecycle:
 9.  `finalize_before_serialization()` — after handler completes, before serializing response.
 10. `finalize_after_serialization()` — after response is serialized (e.g., inject `x-queue-latency` header).
 
-### Policy Implementations
-Different modules implement `Hooks` based on the active feature flag:
-*   **`QueueGlobal`** (for `sched_slo`): In `before_child_rpc`, it calculates the deadline and priority for the child request and injects a `ctx` header. Tracks queue latency via `QueueLatencyTracker`.
-*   **`PrioOldest`** (for `sched_slo,sched_tailclipper`): Like `QueueGlobal`, but the priority hint is the request creation time (older requests = higher priority), implementing the TailClipper approach.
-*   **`LocalDeadlinePolicy`** (for `sched_slo,sched_pred`): Computes local deadlines by subtracting estimated remaining processing time from the parent deadline. Maintains per-method-pair `LatencyRms` estimators. Only works for applications with a known call graph (currently `hotel`).
-*   **Fifo**: Passes through deadline/priority. Handles `slo_abort` return checks if the `slo_abort` feature is also enabled.
-*   **Global**: Simplified global deadline policy without queue latency tracking (no early return support).
-*   **Noop**: No-op hooks. Selected when `sched_fifo` is enabled without `slo_abort`, or when no policy feature is active.
+### Policy Implementation
+All scheduling policies are unified into `PolicyHooks` (`libs/masa-policy/src/hooks.rs`), which dispatches to composable overlays:
+*   **`SloAbortOverlay`** (`overlay/slo_abort.rs`): Checks deadline in `before_poll`/`after_poll`; aborts past-deadline requests. Enabled by `slo_abort` feature.
+*   **`PredictiveOverlay`** (`overlay/predictive/`): Computes local deadlines via latency estimates, tightens child deadlines, and performs predictive admission control. Enabled by `est` feature. Only works for applications with a known call graph (currently `hotel`).
+*   **`RajomonOverlay`** (`overlay/rajomon.rs`): Token-bucket admission control with server-side price signals. Enabled by `ac_rajomon` feature.
+*   **`QueueLatOverlay`** (`overlay/queue_lat.rs`): Tracks queue latency across the call graph via `x-queue-latency` headers.
+*   **`NoopOverlay`** (`overlay/noop.rs`): Zero-cost no-op, used when no admission control overlay is active.
+*   **`NoopHooks`** (`tonic-core/src/masa_ext/noop.rs`): Selected when no scheduling feature is active.
 ### Client Code Generation
 
 `tonic-build` (`libs/tonic/tonic-build/src/client.rs`) generates client stub methods that integrate with the hook architecture. Each generated unary method:
@@ -175,7 +176,7 @@ The `Context` is serialized using **bincode** (compact binary format) and **base
 
 ### Method Name Override
 
-The `x-masa-method-name` header (`libs/tonic/tonic/src/masa/context/mod.rs`) allows overriding the gRPC method name for latency tracking. This is used by applications where a generic endpoint (e.g., `invoke`) handles multiple logical methods (e.g., the synthetic and mssim applications).
+The `x-masa-method-name` header (`libs/tonic/tonic-core/src/masa_ext/mod.rs`) allows overriding the gRPC method name for latency tracking. This is used by applications where a generic endpoint (e.g., `invoke`) handles multiple logical methods (e.g., the synthetic and mssim applications).
 
 ## 4. Transport Layer (`libs/hyper`)
 
@@ -248,7 +249,7 @@ Poll hooks operate at two layers — tonic and tokio — with different responsi
 
 ### Tonic Layer: `ParentHooks` and `AbortableFuture`
 
-The `ParentHooks` trait (`libs/tonic/tonic/src/masa/context/mod.rs`) defines `before_poll` and `after_poll` methods on the per-request `ParentContext`:
+The `ParentHooks` trait (`libs/tonic/tonic-core/src/masa_ext/mod.rs`) defines `before_poll` and `after_poll` methods on the per-request `ParentContext`:
 
 *   **`before_poll<Ret>(&self) -> Result<(), Result<Response<Ret>, Status>>`**: Called before the handler future is polled. Returning `Err(response)` short-circuits the poll and immediately resolves the future with that response.
 *   **`after_poll<Ret>(&self, poll: &Poll<...>) -> Result<(), Result<Response<Ret>, Status>>`**: Called after the handler future is polled. Receives the poll result (`Pending` or `Ready`). Can also short-circuit by returning an error response.
@@ -309,7 +310,7 @@ spawn_inner(future, None, priority)
 
 ### Hook Wiring: Tonic to Tokio
 
-The bridge is `make_child_task_poll_hook` (`libs/tonic/tonic/src/masa/context/runtime/mod.rs`). It converts the tonic-level `ParentContext` (behind an `Arc`) into a tokio `PollHook`:
+The bridge is `make_child_task_poll_hook` (`libs/tonic/tonic/src/masa_ext/runtime/mod.rs`). It converts the tonic-level `ParentContext` (behind an `Arc`) into a tokio `PollHook`:
 
 *   `before_poll`: Sets the parent context in thread-local storage (`set_parent_ctx`), so child RPCs can discover it.
 *   `after_poll`: Clears the thread-local (`reset_parent_ctx`), preventing context leaking to unrelated tasks.
@@ -321,34 +322,29 @@ This means the tonic `before_poll`/`after_poll` closures (installed on the top-l
 
 Early Return uses poll hooks to abort requests that have already missed their deadline, avoiding wasteful computation. It is gated by the compile-time `slo_abort` feature flag (`libs/masa-core/src/flag.rs`: `pub const SLO_ABORT: bool = cfg!(feature = "slo_abort")`).
 
-The `EarlyReturnHandler` (`libs/tonic/tonic/src/masa/context/common.rs`) tracks whether a request should be aborted:
+The `SloAbortOverlay` (`libs/masa-policy/src/overlay/slo_abort.rs`) tracks whether a request should be aborted:
 
-*   `check(&self, ctx: &Context) -> bool`: Returns `false` immediately if `SLO_ABORT` is disabled. Otherwise, compares the current time against `ctx.deadline()`. Once the deadline passes, sets an atomic flag so subsequent checks short-circuit.
-*   `issue_error(&self) -> Status`: Returns a `DeadlineExceeded` status with the service and method name.
+*   `before_poll`: Compares the current time against `ctx.e2e_deadline()`. If expired, returns a `DeadlineExceeded` error to abort the request immediately.
+*   `after_poll`: Only checks when the poll returned `Pending` (the handler is blocked on I/O or a child RPC). If the deadline has passed while waiting, aborts rather than waiting for the next wake-up. When the poll is `Ready`, the request is already done so no check is needed.
 
-Policies that support Early Return call `check` in both `before_poll` and `after_poll(Pending)`:
-
-*   **`before_poll`**: Checks deadline before doing any work in this poll cycle. If expired, returns an error response immediately.
-*   **`after_poll`**: Only checks when the poll returned `Pending` (the handler is blocked on I/O or a child RPC). If the deadline has passed while waiting, aborts rather than waiting for the next wake-up. When the poll is `Ready`, the request is already done so no check is needed.
-
-Policies with Early Return: `Fifo`, `QueueGlobal`, `PrioOldest`, and `Local`.
+SLO abort is composable with any scheduling policy via the `slo_abort` feature flag.
 
 ### Queue Latency Tracking
 
-Some policies use `before_poll` to accumulate queue latency — the time a task spent in the ready queue before being polled. The `QueueLatencyTracker` (`libs/tonic/tonic/src/masa/context/common.rs`) calls `tokio::task::obtain_task_queue_latency()` during `before_poll` to read the current task's queue wait time from its `TraceTimer` in the task header. This value is accumulated across all polls and child RPC responses (via the `x-queue-latency` response header), then injected into the outgoing response in `finalize_after_serialization`.
+The `QueueLatOverlay` (`libs/masa-policy/src/overlay/queue_lat.rs`) accumulates queue latency — the time a task spent in the ready queue before being polled. It calls `tokio::task::obtain_task_queue_latency()` during `before_poll` to read the current task's queue wait time from its `TraceTimer` in the task header. This value is accumulated across all polls and child RPC responses (via the `x-queue-latency` response header), then injected into the outgoing response in `finalize`.
 
-Policies with queue latency tracking: `QueueGlobal` and `PrioOldest`.
+Queue latency tracking is active under all scheduling policies via `PolicyHooks`.
 
-### Per-Policy Summary
+### Per-Overlay Summary
 
-| Policy | `before_poll` | `after_poll` |
-|---|---|---|
-| `Fifo` | Early return check | Early return check (on `Pending`) |
-| `QueueGlobal` | Early return check, queue latency tracking | Early return check (on `Pending`) |
-| `PrioOldest` | Early return check, queue latency tracking | Early return check (on `Pending`) |
-| `Local` | Early return check | Early return check (on `Pending`) |
-| `Global` | Default (no-op) | Default (no-op) |
-| `Noop` | No-op | No-op |
+| Overlay | `before_poll` | `after_poll` | `before_child_rpc` | `finalize` |
+|---|---|---|---|---|
+| `SloAbortOverlay` | Deadline check → abort | Deadline check on `Pending` | — | — |
+| `PredictiveOverlay` | — | — | Tighten deadline, admission check | Update estimates |
+| `RajomonOverlay` | — | — | Token deduction | — |
+| `QueueLatOverlay` | Accumulate queue latency | — | — | Inject `x-queue-latency` header |
+| `NoopOverlay` | No-op | No-op | No-op | No-op |
+| `NoopHooks` | No-op | No-op | No-op | No-op |
 
 ## 7. Application Integration
 
@@ -369,11 +365,11 @@ Services connect to downstream replicas using `LoadBalancedChannel` (`libs/tonic
 
 ### `x-queue-latency` Response Header
 
-Policies that track queue latency (`QueueGlobal` and `PrioOldest`) propagate accumulated queue wait times in the `x-queue-latency` response header. The `QueueLatencyTracker` aggregates:
+The `QueueLatOverlay` propagates accumulated queue wait times in the `x-queue-latency` response header. It aggregates:
 *   The current task's queue latency (from `tokio::task::obtain_task_queue_latency()`).
 *   Queue latency reported by child RPCs (parsed from their `x-queue-latency` response headers).
 
-The total is injected into the outgoing response in `finalize_after_serialization()`, creating a recursive aggregation of queue latency across the call graph.
+The total is injected into the outgoing response in `finalize()`, creating a recursive aggregation of queue latency across the call graph.
 
 ## Summary of Data Flow
 
