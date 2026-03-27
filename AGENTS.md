@@ -68,7 +68,7 @@ Key policy flags:
 - `sched_fifo`: FIFO ordering (baseline)
 - `sched_slo`: Priority by end-to-end SLO deadline (implies tokio priority queue)
 - `sched_tailclipper`: TailClipper paper's oldest-request-first policy with round-robin fairness
-- `sched_pred`: Adds deadline tightening and dynamic reprioritization using latency estimates. Implies `sched_slo` and `est`. **Only works for `hotel`** as it requires a call graph description.
+- `sched_pred`: Adds deadline tightening and dynamic reprioritization using latency estimates. Implies `sched_slo` and `est`.
 
 **Estimation infrastructure:**
 - `est`: Enables shared latency estimation infrastructure (estimator type selection, latency maps, estimation state). Implied by `sched_pred` and `ac_est`. Does not require `slo_abort` on its own.
