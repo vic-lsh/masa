@@ -4,6 +4,7 @@
 // price signals and client-side token bucket rate limiting. Aligned with
 // the original Go implementation (3rd_party/rajomon/).
 
+use std::task::Poll;
 use std::time::Duration;
 
 use dashmap::DashMap;
@@ -309,6 +310,11 @@ impl Overlay for RajomonOverlay {
         _request: &mut tonic_core::Request<T>,
         child_rpc: &mut ChildRpcContext,
     ) -> Result<(), Status> {
+        // Check if request was marked for drop before initiating child RPC
+        if self.should_drop {
+            return Err(self.issue_error(None));
+        }
+
         // Check outbound budget
         let price = RAJOMON_STATE.child_price(child_method);
         let current = self.remaining_tokens.load(Ordering::Relaxed);
@@ -318,6 +324,20 @@ impl Overlay for RajomonOverlay {
 
         child_rpc.tokens = self.remaining_tokens.load(Ordering::Relaxed);
 
+        Ok(())
+    }
+
+    #[inline]
+    fn after_poll<Ret>(
+        &self,
+        _ctx: &Context,
+        poll: &Poll<Result<Response<Ret>, Status>>,
+    ) -> Result<(), Result<Response<Ret>, Status>> {
+        if let Poll::Pending = poll {
+            if self.should_drop {
+                return Err(Err(self.issue_error(None)));
+            }
+        }
         Ok(())
     }
 
