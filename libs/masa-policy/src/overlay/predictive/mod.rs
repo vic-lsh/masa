@@ -6,7 +6,7 @@
 // admission control. All state is wrapped here so that `standard.rs` can
 // call methods unconditionally without `#[cfg]` annotations at every call site.
 
-pub(crate) mod ac;
+pub(crate) mod admission;
 pub(crate) mod est;
 
 use std::sync::Arc;
@@ -17,7 +17,7 @@ use tonic_core::{Code, CowGrpcMethod, Response, Status};
 
 use super::{ChildRpcContext, Overlay, OverlayChild, OverlayServer};
 use crate::MethodRegistry;
-use ac::PredictiveAc;
+use admission::PredictiveAdmission;
 use est::estimator::DefaultLatencyEstimator;
 use est::state::{is_early_return_response, EstChildState, EstRequestState, EstServerState};
 
@@ -27,14 +27,14 @@ use est::state::{is_early_return_response, EstChildState, EstRequestState, EstSe
 #[derive(Debug)]
 pub(crate) struct PredictiveOverlayServer {
     est: Arc<EstServerState<DefaultLatencyEstimator>>,
-    pred_ac: Arc<PredictiveAc>,
+    pred_admission: Arc<PredictiveAdmission>,
 }
 
 impl OverlayServer for PredictiveOverlayServer {
     fn new() -> Self {
         Self {
             est: Arc::new(EstServerState::new()),
-            pred_ac: Arc::new(PredictiveAc::new()),
+            pred_admission: Arc::new(PredictiveAdmission::new()),
         }
     }
 }
@@ -45,7 +45,7 @@ impl OverlayServer for PredictiveOverlayServer {
 #[derive(Debug)]
 pub(crate) struct PredictiveOverlay {
     pub(crate) est: EstRequestState<DefaultLatencyEstimator>,
-    pred_ac: Arc<PredictiveAc>,
+    pred_admission: Arc<PredictiveAdmission>,
     rpc: CowGrpcMethod,
 }
 
@@ -58,7 +58,7 @@ impl Overlay for PredictiveOverlay {
             MethodRegistry::global().get_or_register_method(method.service(), method.method());
         Self {
             est: EstRequestState::new(resolved_method_id, server.est.clone()),
-            pred_ac: server.pred_ac.clone(),
+            pred_admission: server.pred_admission.clone(),
             rpc: method.clone(),
         }
     }
@@ -96,7 +96,7 @@ impl Overlay for PredictiveOverlay {
                 self.est
                     .prepare_before_child_rpc(ctx, child_method_name, &mut child_ctx.est);
 
-            if self.pred_ac.admission_check(
+            if self.pred_admission.admission_check(
                 &self.est.server,
                 self.est.resolved_method_id,
                 ctx,
@@ -135,7 +135,7 @@ impl Overlay for PredictiveOverlay {
     ) -> Result<(), Status> {
         child_ctx.est.finalize(response);
         if let Some(downstream_util) = self.est.after_child_rpc(response, &child_ctx.est) {
-            self.pred_ac.update_bottleneck(ctx.api(), downstream_util);
+            self.pred_admission.update_bottleneck(ctx.api(), downstream_util);
         }
 
         #[cfg(feature = "sched_pred")]
