@@ -7,7 +7,7 @@
 // Three overlay categories:
 // - **Guard**: `SloAbortOverlay` — rejects past-deadline requests.
 // - **Policy** (mutually exclusive, compile-time selected):
-//   - `predictive` (feature `est`): latency estimation, deadline tightening,
+//   - `predictive` (feature `estimator`): latency estimation, deadline tightening,
 //     predictive admission control.
 //   - `rajomon` (feature `ac_rajomon`): token-based admission control with
 //     server-side price signals.
@@ -23,13 +23,13 @@ use tonic_core::{CowGrpcMethod, Response, Status};
 
 // ── Submodules ──────────────────────────────────────────────────────────
 
-#[cfg(feature = "est")]
+#[cfg(feature = "estimator")]
 pub(crate) mod predictive;
 
 #[cfg(feature = "ac_rajomon")]
 pub mod rajomon;
 
-#[cfg(not(any(feature = "est", feature = "ac_rajomon")))]
+#[cfg(not(any(feature = "estimator", feature = "ac_rajomon")))]
 mod noop;
 
 mod queue_lat;
@@ -59,7 +59,7 @@ impl ChildRpcContext {
     pub fn from_parent(ctx: &Context) -> Self {
         // hop_count is only incremented when estimation-based admission control
         // is active — it uses hop_count to distinguish ingress from internal hops.
-        let hop_count = if cfg!(feature = "est") {
+        let hop_count = if cfg!(feature = "estimator") {
             ctx.hop_count().saturating_add(1)
         } else {
             ctx.hop_count()
@@ -151,16 +151,16 @@ pub(crate) use slo_abort::SloAbortOverlay;
 
 // ── Compile-time policy overlay selection ────────────────────────────────
 
-#[cfg(all(feature = "est", feature = "ac_rajomon"))]
+#[cfg(all(feature = "estimator", feature = "ac_rajomon"))]
 compile_error!(
-    "Features `est` and `ac_rajomon` are mutually exclusive. Use one overlay at a time."
+    "Features `estimator` and `ac_rajomon` are mutually exclusive. Use one overlay at a time."
 );
 
 #[cfg(feature = "ac_rajomon")]
 pub(crate) use rajomon::RajomonOverlay as AdmissionControlOverlay;
 
-#[cfg(all(feature = "est", not(feature = "ac_rajomon")))]
+#[cfg(all(feature = "estimator", not(feature = "ac_rajomon")))]
 pub(crate) use predictive::PredictiveOverlay as AdmissionControlOverlay;
 
-#[cfg(not(any(feature = "est", feature = "ac_rajomon")))]
+#[cfg(not(any(feature = "estimator", feature = "ac_rajomon")))]
 pub(crate) use noop::NoopOverlay as AdmissionControlOverlay;

@@ -12,10 +12,10 @@ Policy is configured along three composable dimensions:
 - `sched_fifo`: First-In-First-Out ordering (baseline).
 - `sched_slo`: Priority by end-to-end SLO deadline (implies tokio priority queue).
 - `sched_tailclipper`: Priority by request arrival time (oldest first), implementing the TailClipper paper (implies tokio priority queue).
-- `sched_pred`: Priority by per-RPC predicted deadline with deadline tightening and dynamic reprioritization (implies `sched_slo` and `est`).
+- `sched_pred`: Priority by per-RPC predicted deadline with deadline tightening and dynamic reprioritization (implies `sched_slo` and `estimator`).
 
 **Admission control** (mutually exclusive — pick at most one):
-- `ac_est`: Progressive cost-aware admission control using compute-time estimates and downstream utilization signals (requires `est`).
+- `ac_pred`: Progressive cost-aware admission control using compute-time estimates and downstream utilization signals (requires `estimator`).
 - `ac_rajomon`: Token-bucket rate limiting admission control.
 
 **SLO abort** (composable with any of the above):
@@ -393,22 +393,22 @@ The total is injected into the outgoing response in `finalize()`, creating a rec
 | `prio_local` | `sched_slo,sched_pred` | |
 | `early` | `slo_abort` | Composable with any scheduling policy |
 | `prio_local,early` | `sched_slo,sched_pred,slo_abort` | sched_pred no longer implies slo_abort |
-| `adctl` | `ac_est` | |
+| `adctl` | `ac_pred` | |
 | `rajomon` | `ac_rajomon` | |
-| `fifo,early,adctl` | `sched_fifo,slo_abort,ac_est` | |
+| `fifo,early,adctl` | `sched_fifo,slo_abort,ac_pred` | |
 | `prio_global,early` | `sched_slo,slo_abort` | |
-| `prio_global,early,adctl` | `sched_slo,slo_abort,ac_est` | |
+| `prio_global,early,adctl` | `sched_slo,slo_abort,ac_pred` | |
 | `prio_oldest,early` | `sched_slo,sched_tailclipper,slo_abort` | |
-| `prio_oldest,early,adctl` | *(dropped — sched_tailclipper cannot be combined with ac_est)* | TailClipper paper policy used as-is |
-| `prio_local,early,adctl` | `sched_slo,sched_pred,slo_abort,ac_est` | |
+| `prio_oldest,early,adctl` | *(dropped — sched_tailclipper cannot be combined with ac_pred)* | TailClipper paper policy used as-is |
+| `prio_local,early,adctl` | `sched_slo,sched_pred,slo_abort,ac_pred` | |
 | `prio_local,rajomon,early` | `sched_slo,sched_pred,slo_abort,ac_rajomon` | |
 
 ### Design intent
 
 **Scheduling disciplines** (`sched_fifo`, `sched_slo`): Mutually exclusive base queue implementations. `sched_slo` implies the tokio priority queue (binary heap); `sched_fifo` uses FIFO.
 
-**Scheduling modifiers** (`sched_tailclipper`, `sched_pred`): Overlays on `sched_slo`. `sched_tailclipper` implements the TailClipper paper's policy exactly (round-robin fairness for top-N priority tasks) — it cannot be combined with `sched_pred` or `ac_est` to preserve the paper's design. `sched_pred` adds deadline tightening and dynamic reprioritization using latency estimates. `sched_pred` implies `sched_slo` and `est`.
+**Scheduling modifiers** (`sched_tailclipper`, `sched_pred`): Overlays on `sched_slo`. `sched_tailclipper` implements the TailClipper paper's policy exactly (round-robin fairness for top-N priority tasks) — it cannot be combined with `sched_pred` or `ac_pred` to preserve the paper's design. `sched_pred` adds deadline tightening and dynamic reprioritization using downstream work estimates. `sched_pred` implies `sched_slo` and `estimator`.
 
 **Abort strategies** (`slo_abort`): Aborts requests that have already exceeded their e2e SLO. Composable with any scheduling policy. `sched_pred` additionally performs proactive abort for requests predicted to miss their SLO based on estimated remaining work.
 
-**Admission control** (`ac_est`, `ac_rajomon`): Mutually exclusive admission strategies. `ac_est` uses compute-time feasibility and efficiency-based checks. `ac_rajomon` uses token-bucket rate limiting.
+**Admission control** (`ac_pred`, `ac_rajomon`): Mutually exclusive admission strategies. `ac_pred` uses compute-time feasibility and efficiency-based checks. `ac_rajomon` uses token-bucket rate limiting.
