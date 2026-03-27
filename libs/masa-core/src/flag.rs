@@ -43,3 +43,14 @@ compile_error!(
 // control strategies. Only one can be active at a time.
 #[cfg(all(feature = "ac_est", feature = "ac_rajomon"))]
 compile_error!("Enable at most one admission control strategy: ac_est | ac_rajomon");
+
+// Admission control requires a scheduling policy to be active, otherwise
+// DefaultHooks resolves to NoopHooks and the overlay is never invoked.
+#[cfg(all(
+    any(feature = "ac_est", feature = "ac_rajomon"),
+    not(any(feature = "sched_fifo", feature = "sched_slo", feature = "sched_tailclipper"))
+))]
+compile_error!(
+    "Admission control (ac_est | ac_rajomon) requires a scheduling policy \
+     (sched_fifo | sched_slo | sched_tailclipper)"
+);
