@@ -16,7 +16,7 @@ use masa_integration_tests::pb::{
     Input1, Input2, Output1, Output2,
 };
 use tonic::{
-    masa::{ClientHooks, Hooks, ParentHooks, ServerHooks},
+    masa_ext::{ClientHooks, Hooks, ParentHooks, ServerHooks},
     transport::Server,
     GrpcMethod, Request, Response, Status,
 };
