@@ -11,7 +11,7 @@ mod hooks;
 pub(crate) mod overlay;
 /// Method registry for mapping service/method strings to IDs.
 pub mod registry;
-mod slo_abort;
+pub(crate) mod slo_abort;
 
 pub use context_ext::{
     get_masa_context_from_metadata, read_context, set_masa_context_in_metadata, MasaRequestExt,

@@ -1,21 +1,24 @@
-// Overlay module — policy-specific hooks layered on top of the base hook state.
+// Overlay module — composable hooks layered on the base request lifecycle.
 //
-// Defines the `Overlay`, `OverlayServer`, and `OverlayChild` traits that all
-// overlay implementations conform to. Implementations are selected at compile
-// time via `#[cfg]` re-exports, so there is no dynamic dispatch cost.
+// Defines the `Overlay`, `OverlayServer`, and `OverlayChild` traits and the
+// `overlay_stack!` macro that composes multiple overlays into the generated
+// `ParentContext`, `ServerContext`, `ChildContext`, and hook impls.
 //
-// Currently two overlays exist:
-// - `predictive` (feature `est`): latency estimation, deadline tightening,
-//   predictive admission control.
-// - `rajomon` (feature `ac_rajomon`): token-based admission control with
-//   server-side price signals.
+// Three overlay categories:
+// - **Guard**: `SloAbortOverlay` — rejects past-deadline requests.
+// - **Policy** (mutually exclusive, compile-time selected):
+//   - `predictive` (feature `est`): latency estimation, deadline tightening,
+//     predictive admission control.
+//   - `rajomon` (feature `ac_rajomon`): token-based admission control with
+//     server-side price signals.
+//   - `noop`: when neither is enabled, compiles away to nothing.
+// - **Observer**: `QueueLatOverlay` — tracks queue latencies.
 //
-// These are mutually exclusive. When neither is enabled, the `noop` overlay
-// compiles every method away to nothing.
+// All dispatch is monomorphic — zero runtime cost.
 
 use std::task::Poll;
 
-use masa_core::{Context, ContextBuilder, PriorityHint};
+use masa_core::{Context, PriorityHint};
 use tonic_core::{CowGrpcMethod, Response, Status};
 
 // ── Submodules ──────────────────────────────────────────────────────────
@@ -29,6 +32,9 @@ pub mod rajomon;
 #[cfg(not(any(feature = "est", feature = "ac_rajomon")))]
 mod noop;
 
+mod queue_lat;
+mod slo_abort;
+
 // ── Traits ──────────────────────────────────────────────────────────────
 
 /// Server-level overlay state, shared across all requests.
@@ -36,17 +42,35 @@ pub(crate) trait OverlayServer: Send + Sync + std::fmt::Debug {
     fn new() -> Self;
 }
 
-/// Result of [`Overlay::before_child_rpc`] — the child's deadline, priority,
-/// and context builder populated by the overlay.
-#[allow(dead_code)]
+/// Mutable state populated by overlays in [`Overlay::before_child_rpc`].
+///
+/// Initialized from the parent context via [`ChildRpcContext::from_parent`].
+/// Each overlay in the stack may mutate fields (e.g., tighten deadline, set
+/// tokens). After all overlays have run, hooks builds the child `Context`
+/// from these fields.
 pub(crate) struct ChildRpcContext {
     pub deadline: u64,
     pub prio_hint: PriorityHint,
-    pub builder: ContextBuilder,
+    pub hop_count: u8,
+    pub tokens: u64,
+}
+
+impl ChildRpcContext {
+    pub fn from_parent(ctx: &Context) -> Self {
+        Self {
+            deadline: ctx.deadline(),
+            prio_hint: ctx.prio_hint(),
+            hop_count: ctx.hop_count().saturating_add(1),
+            tokens: ctx.tokens(),
+        }
+    }
 }
 
 /// Per-request overlay state. Hooks into the request lifecycle at key points
 /// to implement policy-specific logic (estimation, admission control, etc.).
+///
+/// All methods have default no-op implementations so that overlays only need
+/// to override the hooks they care about.
 pub(crate) trait Overlay: Send + Sync + std::fmt::Debug {
     type Server: OverlayServer;
     type Child: OverlayChild;
@@ -58,38 +82,54 @@ pub(crate) trait Overlay: Send + Sync + std::fmt::Debug {
 
     /// Called before each poll of the handler future.
     ///
-    /// Returns `Err` to abort the request (e.g., Rajomon drop, predictive
-    /// reprioritization).
-    fn before_poll<Ret>(&self, ctx: &Context) -> Result<(), Result<Response<Ret>, Status>>;
+    /// Returns `Err` to abort the request.
+    fn before_poll<Ret>(&self, _ctx: &Context) -> Result<(), Result<Response<Ret>, Status>> {
+        Ok(())
+    }
 
     /// Called before each outbound child RPC.
     ///
-    /// The overlay may reject the child RPC (returning `Err`), tighten the
-    /// deadline, adjust priority, or set tokens on the context builder.
+    /// The overlay may reject the child RPC (returning `Err`) or mutate
+    /// `child_rpc` to tighten the deadline, adjust priority, or set tokens.
     fn before_child_rpc<T>(
         &self,
-        ctx: &Context,
-        child_method: &CowGrpcMethod,
-        child_ctx: &mut Self::Child,
-        request: &mut tonic_core::Request<T>,
-        builder: ContextBuilder,
-        slo_abort_error: impl FnOnce() -> Status,
-    ) -> Result<ChildRpcContext, Status>;
+        _ctx: &Context,
+        _child_method: &CowGrpcMethod,
+        _child_ctx: &mut Self::Child,
+        _request: &mut tonic_core::Request<T>,
+        _child_rpc: &mut ChildRpcContext,
+    ) -> Result<(), Status> {
+        Ok(())
+    }
 
     /// Called after a child RPC response is received.
     fn after_child_rpc<T>(
         &self,
-        ctx: &Context,
-        child_method: &CowGrpcMethod,
-        response: &mut Result<Response<T>, Status>,
-        child_ctx: &Self::Child,
-    ) -> Result<(), Status>;
+        _ctx: &Context,
+        _child_method: &CowGrpcMethod,
+        _response: &mut Result<Response<T>, Status>,
+        _child_ctx: &Self::Child,
+    ) -> Result<(), Status> {
+        Ok(())
+    }
 
     /// Called after each poll of the handler future.
-    fn after_poll<Ret>(&self, poll: &Poll<Result<Response<Ret>, Status>>);
+    ///
+    /// Returns `Err` to abort the request (e.g., SLO abort on `Pending`).
+    fn after_poll<Ret>(
+        &self,
+        _ctx: &Context,
+        _poll: &Poll<Result<Response<Ret>, Status>>,
+    ) -> Result<(), Result<Response<Ret>, Status>> {
+        Ok(())
+    }
 
     /// Called before the response is serialized and sent.
-    fn finalize<Ret>(&self, ctx: &Context, result: &mut Result<Response<Ret>, Status>);
+    ///
+    /// Overlays should mutate `ctx` directly (e.g., set `response_meta` or
+    /// `queue_latencies`). The caller serializes the context once after all
+    /// overlays have run.
+    fn finalize<Ret>(&self, _ctx: &mut Context, _result: &mut Result<Response<Ret>, Status>) {}
 }
 
 /// Per-child-RPC overlay state.
@@ -97,7 +137,12 @@ pub(crate) trait OverlayChild: Send + Sync + Clone + std::fmt::Debug {
     fn new() -> Self;
 }
 
-// ── Compile-time selection ──────────────────────────────────────────────
+// ── Re-exports ──────────────────────────────────────────────────────────
+
+pub(crate) use queue_lat::QueueLatOverlay;
+pub(crate) use slo_abort::SloAbortOverlay;
+
+// ── Compile-time policy overlay selection ────────────────────────────────
 
 #[cfg(all(feature = "est", feature = "ac_rajomon"))]
 compile_error!(
@@ -105,19 +150,10 @@ compile_error!(
 );
 
 #[cfg(feature = "ac_rajomon")]
-pub(crate) use rajomon::{
-    RajomonOverlay as ActiveOverlay, RajomonOverlayChild as ActiveOverlayChild,
-    RajomonOverlayServer as ActiveOverlayServer,
-};
+pub(crate) use rajomon::RajomonOverlay as ActivePolicyOverlay;
 
 #[cfg(all(feature = "est", not(feature = "ac_rajomon")))]
-pub(crate) use predictive::{
-    PredictiveOverlay as ActiveOverlay, PredictiveOverlayChild as ActiveOverlayChild,
-    PredictiveOverlayServer as ActiveOverlayServer,
-};
+pub(crate) use predictive::PredictiveOverlay as ActivePolicyOverlay;
 
 #[cfg(not(any(feature = "est", feature = "ac_rajomon")))]
-pub(crate) use noop::{
-    NoopOverlay as ActiveOverlay, NoopOverlayChild as ActiveOverlayChild,
-    NoopOverlayServer as ActiveOverlayServer,
-};
+pub(crate) use noop::NoopOverlay as ActivePolicyOverlay;

@@ -12,8 +12,8 @@ pub(crate) mod est;
 use std::sync::Arc;
 use std::task::Poll;
 
-use masa_core::{Context, ContextBuilder, PriorityHint};
-use tonic_core::{CowGrpcMethod, Response, Status};
+use masa_core::{Context, PriorityHint};
+use tonic_core::{Code, CowGrpcMethod, Response, Status};
 
 use super::{ChildRpcContext, Overlay, OverlayChild, OverlayServer};
 use crate::MethodRegistry;
@@ -46,6 +46,7 @@ impl OverlayServer for PredictiveOverlayServer {
 pub(crate) struct PredictiveOverlay {
     pub(crate) est: EstRequestState<DefaultLatencyEstimator>,
     pred_ac: Arc<PredictiveAc>,
+    rpc: CowGrpcMethod,
 }
 
 impl Overlay for PredictiveOverlay {
@@ -58,6 +59,7 @@ impl Overlay for PredictiveOverlay {
         Self {
             est: EstRequestState::new(resolved_method_id, server.est.clone()),
             pred_ac: server.pred_ac.clone(),
+            rpc: method.clone(),
         }
     }
 
@@ -87,9 +89,8 @@ impl Overlay for PredictiveOverlay {
         child_method_name: &CowGrpcMethod,
         child_ctx: &mut PredictiveOverlayChild,
         _request: &mut tonic_core::Request<T>,
-        builder: ContextBuilder,
-        slo_abort_error: impl FnOnce() -> Status,
-    ) -> Result<ChildRpcContext, Status> {
+        child_rpc: &mut ChildRpcContext,
+    ) -> Result<(), Status> {
         let est_remaining = {
             let result =
                 self.est
@@ -101,24 +102,26 @@ impl Overlay for PredictiveOverlay {
                 ctx,
                 result.key,
             ) {
-                return Err(slo_abort_error());
+                return Err(Status::new(
+                    Code::DeadlineExceeded,
+                    format!(
+                        "/EarlyReturn?src={}::{}?last_rpc={}::{}",
+                        self.rpc.service(),
+                        self.rpc.method(),
+                        child_method_name.service(),
+                        child_method_name.method(),
+                    ),
+                ));
             }
 
             result.est_remaining
         };
 
         let (deadline, prio_hint) = Self::child_deadline_and_prio(ctx, est_remaining);
+        child_rpc.deadline = deadline;
+        child_rpc.prio_hint = prio_hint;
 
-        let builder = builder
-            .deadline(deadline)
-            .prio_hint(prio_hint)
-            .hop_count(ctx.hop_count().saturating_add(1));
-
-        Ok(ChildRpcContext {
-            deadline,
-            prio_hint,
-            builder,
-        })
+        Ok(())
     }
 
     /// Process a child RPC response: track latencies, propagate errors.
@@ -145,17 +148,24 @@ impl Overlay for PredictiveOverlay {
 
     /// Stop compute tracking after a poll.
     #[inline]
-    fn after_poll<Ret>(&self, _poll: &Poll<Result<Response<Ret>, Status>>) {
+    fn after_poll<Ret>(
+        &self,
+        _ctx: &Context,
+        _poll: &Poll<Result<Response<Ret>, Status>>,
+    ) -> Result<(), Result<Response<Ret>, Status>> {
         self.est.stop_compute_tracking();
+        Ok(())
     }
 
     /// Track latencies and inject response metadata at finalization.
+    ///
+    /// Sets `response_meta` on the shared `ctx`; the caller serializes once.
     #[inline]
-    fn finalize<Ret>(&self, ctx: &Context, result: &mut Result<Response<Ret>, Status>) {
+    fn finalize<Ret>(&self, ctx: &mut Context, result: &mut Result<Response<Ret>, Status>) {
         if !is_early_return_response(result) {
             self.est.track_latencies();
         }
-        self.est.inject_response_meta(ctx, result);
+        self.est.inject_response_meta(ctx);
     }
 }
 

@@ -237,8 +237,7 @@ async fn test_parent_ctx_before_after_rpc_hooks() {
     let child_svc_addr = "127.0.0.1:4466";
     let fanout_factor = 10;
     let (_parent, _child) =
-        make_parent_child_svcs::<MockHooks>(parent_svc_addr, child_svc_addr, fanout_factor)
-            .await;
+        make_parent_child_svcs::<MockHooks>(parent_svc_addr, child_svc_addr, fanout_factor).await;
 
     tokio::time::sleep(Duration::from_millis(100)).await;
     let mut parent_cl = ParentServiceClient::connect(format!("http://{}", parent_svc_addr))
@@ -294,8 +293,7 @@ async fn test_child_ctx_before_after_rpc_hooks() {
     let fanout_factor = 10;
 
     let (_parent, _child) =
-        make_parent_child_svcs::<MockHooks>(parent_svc_addr, child_svc_addr, fanout_factor)
-            .await;
+        make_parent_child_svcs::<MockHooks>(parent_svc_addr, child_svc_addr, fanout_factor).await;
 
     tokio::time::sleep(Duration::from_millis(100)).await;
     let mut parent_cl = ParentServiceClient::connect(format!("http://{}", parent_svc_addr))
@@ -355,8 +353,7 @@ async fn test_parent_ctx_before_after_poll_hooks() {
     let child_svc_addr = "127.0.0.1:4488";
     let fanout_factor = 1;
     let (_parent, _child) =
-        make_parent_child_svcs::<MockHooks>(parent_svc_addr, child_svc_addr, fanout_factor)
-            .await;
+        make_parent_child_svcs::<MockHooks>(parent_svc_addr, child_svc_addr, fanout_factor).await;
 
     tokio::time::sleep(Duration::from_millis(100)).await;
     let mut parent_cl = ParentServiceClient::connect(format!("http://{}", parent_svc_addr))
@@ -402,8 +399,7 @@ async fn test_parent_ctx_finalize_hook() {
     let child_svc_addr = "127.0.0.1:4400";
     let fanout_factor = 1;
     let (_parent, _child) =
-        make_parent_child_svcs::<MockHooks>(parent_svc_addr, child_svc_addr, fanout_factor)
-            .await;
+        make_parent_child_svcs::<MockHooks>(parent_svc_addr, child_svc_addr, fanout_factor).await;
 
     tokio::time::sleep(Duration::from_millis(100)).await;
     let mut parent_cl = ParentServiceClient::connect(format!("http://{}", parent_svc_addr))
