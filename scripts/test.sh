@@ -82,10 +82,10 @@ execute_test() {
 # Feature flag combinations to test (aligned with check.sh)
 feature_combos=(
     "sched_fifo"
-    "sched_prio"
-    "sched_prio,tailclipper,slo_abort"
-    "sched_prio,ac_rajomon"
-    "sched_prio,pred_sched,est_mean_var"
+    "sched_slo"
+    "sched_tailclipper,slo_abort"
+    "sched_slo,ac_rajomon"
+    "sched_pred,slo_abort,ac_est,est_mean_var"
 )
 
 # Per-combo test dispatch: runs the hotel sched_policy test for every combo,
@@ -94,23 +94,23 @@ run_feature_tests() {
     local feat="$1"
     execute_test "hotel (sched_policy $feat)" cargo test -p hotel --test sched_policy --features "$feat"
     case "$feat" in
-        sched_prio)
-            execute_test "masa-integration-tests (sched_prio)" \
-                cargo test -p masa-integration-tests --features sched_prio
-            execute_test "masa-integration-tests (sched_prio+trace-queue)" \
-                cargo test -p masa-integration-tests --features sched_prio,trace-queue
+        sched_slo)
+            execute_test "masa-integration-tests (sched_slo)" \
+                cargo test -p masa-integration-tests --features sched_slo
+            execute_test "masa-integration-tests (sched_slo+trace-queue)" \
+                cargo test -p masa-integration-tests --features sched_slo,trace-queue
             ;;
-        sched_prio,tailclipper,slo_abort)
-            execute_test "masa-integration-tests (sched_prio+slo_abort)" \
-                cargo test -p masa-integration-tests --features sched_prio,slo_abort
+        sched_tailclipper,slo_abort)
+            execute_test "masa-integration-tests (sched_slo+slo_abort)" \
+                cargo test -p masa-integration-tests --features sched_slo,slo_abort
             ;;
-        sched_prio,ac_rajomon)
+        sched_slo,ac_rajomon)
             execute_test "masa-integration-tests (ac_rajomon)" \
-                cargo test -p masa-integration-tests --features sched_prio,ac_rajomon
+                cargo test -p masa-integration-tests --features sched_slo,ac_rajomon
             ;;
-        sched_prio,pred_sched,est_mean_var)
+        sched_pred,slo_abort,ac_est,est_mean_var)
             execute_test "tonic (est_mean_var)" \
-                cargo test -p tonic --features masa,sched_prio,pred_sched,est_mean_var
+                cargo test -p tonic --features masa,sched_pred,est_mean_var
             ;;
     esac
 }
