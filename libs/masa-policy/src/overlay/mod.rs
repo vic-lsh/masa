@@ -12,7 +12,7 @@
 //   - `rajomon` (feature `ac_rajomon`): token-based admission control with
 //     server-side price signals.
 //   - `noop`: when neither is enabled, compiles away to nothing.
-// - **Observer**: `QueueLatOverlay` — tracks queue latencies.
+// - **Observer**: `QueueLatencyOverlay` — tracks queue latencies.
 //
 // All dispatch is monomorphic — zero runtime cost.
 
@@ -32,7 +32,7 @@ pub mod rajomon;
 #[cfg(not(any(feature = "estimator", feature = "ac_rajomon")))]
 mod noop;
 
-mod queue_lat;
+mod queue_latency;
 mod slo_abort;
 
 // ── Traits ──────────────────────────────────────────────────────────────
@@ -146,7 +146,7 @@ pub(crate) trait OverlayChild: Send + Sync + Clone + std::fmt::Debug {
 
 // ── Re-exports ──────────────────────────────────────────────────────────
 
-pub(crate) use queue_lat::QueueLatOverlay;
+pub(crate) use queue_latency::QueueLatencyOverlay;
 pub(crate) use slo_abort::SloAbortOverlay;
 
 // ── Compile-time policy overlay selection ────────────────────────────────
