@@ -15,49 +15,21 @@ from exp_runner.runner.plotting.util import (
 plotting_all = importlib.import_module("exp_runner.runner.plotting.all")
 
 
-def test_get_policy_display_name_new_names():
-    """Test display names with newest flag names (abort_slo, sched_slo, sched_pred, sched_tailclipper)."""
-    assert get_policy_display_name("sched_fifo") == "FIFO (no-drop)"
-    assert get_policy_display_name("sched_fifo,abort_slo") == "FIFO"
-    assert get_policy_display_name("sched_slo") == "Masa (global ddl) (no-drop)"
-    assert get_policy_display_name("sched_slo,abort_slo") == "Masa (global ddl)"
-    assert get_policy_display_name("sched_slo,sched_pred") == "Masa (local ddl)"
+def test_get_policy_display_name_delegates_to_policy():
+    """Verify get_policy_display_name delegates to Policy.parse().display_name."""
+    assert get_policy_display_name("sched_fifo") == "prio=fifo, drop=none, ac=none"
     assert (
-        get_policy_display_name("sched_slo,sched_tailclipper")
-        == "Tailclipper (no-drop)"
+        get_policy_display_name("sched_fifo,abort_slo")
+        == "prio=fifo, drop=e2e_slo, ac=none"
     )
     assert (
-        get_policy_display_name("sched_slo,sched_tailclipper,abort_slo")
-        == "Tailclipper"
+        get_policy_display_name("sched_slo") == "prio=e2e_slo, drop=none, ac=none"
     )
-
-
-def test_get_policy_display_name_previous_names():
-    """Test display names with previous flag names (slo_abort, sched_prio, pred_sched, tailclipper)."""
-    assert get_policy_display_name("sched_prio") == "Masa (global ddl) (no-drop)"
-    assert get_policy_display_name("sched_prio,slo_abort") == "Masa (global ddl)"
-    assert get_policy_display_name("sched_slo,sched_pred") == "Masa (local ddl)"
-    assert get_policy_display_name("sched_prio,tailclipper") == "Tailclipper (no-drop)"
-    assert get_policy_display_name("sched_prio,tailclipper,slo_abort") == "Tailclipper"
-
-
-def test_get_policy_display_name_old_names():
-    """Test display names with old flag names (backward compat)."""
-    assert get_policy_display_name("fifo") == "FIFO (no-drop)"
-    assert get_policy_display_name("fifo,early") == "FIFO"
-    assert get_policy_display_name("prio_global") == "Masa (global ddl) (no-drop)"
-    assert get_policy_display_name("prio_global,early") == "Masa (global ddl)"
-    assert get_policy_display_name("prio_local") == "Masa (local ddl) (no-drop)"
-    assert get_policy_display_name("prio_local,early") == "Masa (local ddl)"
-    assert get_policy_display_name("prio_oldest") == "Tailclipper (no-drop)"
-    assert get_policy_display_name("prio_oldest,early") == "Tailclipper"
-
-
-def test_get_policy_display_name_unknown_policies():
-    assert get_policy_display_name("custom") == "custom (no-drop)"
-    assert get_policy_display_name("custom,abort_slo") == "custom"
-    assert get_policy_display_name("custom,slo_abort") == "custom"
-    assert get_policy_display_name("custom,early") == "custom"
+    assert (
+        get_policy_display_name("sched_pred,abort_slo,est_mean_var")
+        == "prio=slack, drop=e2e_slo, ac=none, est=mean_var"
+    )
+    assert get_policy_display_name("custom") == "custom"
 
 
 def test_read_policies_from_config_dir(tmp_path):
