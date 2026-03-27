@@ -16,9 +16,9 @@ use app_utils::{
 };
 use gen::{get_compose_post_request, get_register_user_request};
 use masa::{Context, ContextBuilder};
-use masa_policy::MasaRequestExt;
 use socialnet::frontend;
 use socialnet::frontend::frontend_service_client::FrontendServiceClient;
+use tonic::masa_ext::MasaRequestExt;
 
 struct SocialnetClient;
 

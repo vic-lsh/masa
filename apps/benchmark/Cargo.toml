@@ -8,7 +8,6 @@ trace-queue = ["masa/trace-queue", "tonic/trace-queue"]
 
 [dependencies]
 masa = { path = "../../libs/masa" }
-masa-policy = { path = "../../libs/masa-policy" }
 tonic = { path = "../../libs/tonic/tonic" }
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }

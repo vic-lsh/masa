@@ -17,7 +17,7 @@ use app_utils::{
 };
 use frontend::frontend_client::FrontendClient;
 use masa::{Context, ContextBuilder};
-use masa_policy::MasaRequestExt;
+use tonic::masa_ext::MasaRequestExt;
 
 struct SyntheticClient;
 

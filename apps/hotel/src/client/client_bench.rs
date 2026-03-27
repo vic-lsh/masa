@@ -27,7 +27,7 @@ use app_utils::{
 use frontend::frontend_client::FrontendClient;
 use hotel::profile_layer::extract_latency_traces;
 use masa::Context;
-use masa_policy::MasaRequestExt;
+use tonic::masa_ext::MasaRequestExt;
 use tonic::Response;
 use tonic::Status;
 
