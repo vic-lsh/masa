@@ -59,7 +59,7 @@ uv run -m exp_runner plot <app> <experiment_name>
 Policies are selected at **compile time** via feature flags. Applications must be built with the desired policy:
 ```bash
 cargo build -p hotel --features sched_slo --release
-cargo build -p hotel --features "sched_slo,slo_abort" --release
+cargo build -p hotel --features "sched_slo,abort_slo" --release
 ```
 
 Key policy flags:
@@ -71,16 +71,16 @@ Key policy flags:
 - `sched_pred`: Adds deadline tightening and dynamic reprioritization using downstream work estimates. Implies `sched_slo` and `estimator`.
 
 **Estimation infrastructure:**
-- `estimator`: Enables shared latency estimation infrastructure (estimator type selection, latency maps, estimation state). Implied by `sched_pred` and `ac_pred`. Does not require `slo_abort` on its own.
+- `estimator`: Enables shared latency estimation infrastructure (estimator type selection, latency maps, estimation state). Implied by `sched_pred` and `ac_pred`. Does not require `abort_slo` on its own.
 
 **Composable modifiers:**
-- `slo_abort`: Returns early for requests past their e2e deadline, avoiding wasteful work. Composable with any scheduling policy.
+- `abort_slo`: Returns early for requests past their e2e deadline, avoiding wasteful work. Composable with any scheduling policy.
 
 **Admission control** (mutually exclusive):
 - `ac_pred`: Progressive cost-aware admission control — uses compute-time estimates and downstream utilization signals. Requires `estimator`.
 - `ac_rajomon`: Token-bucket rate limiting admission control.
 
-`scripts/check.sh` checks: default (no features), `sched_fifo`, `sched_fifo,slo_abort`, `sched_slo`, `sched_slo,slo_abort`, `sched_tailclipper,slo_abort`, `sched_slo,ac_rajomon`, `sched_slo,ac_pred,est_mean_var`, `sched_pred,slo_abort,ac_pred,est_mean_var`.
+`scripts/check.sh` checks: default (no features), `sched_fifo`, `sched_fifo,abort_slo`, `sched_slo`, `sched_slo,abort_slo`, `sched_tailclipper,abort_slo`, `sched_slo,ac_rajomon`, `sched_slo,ac_pred,est_mean_var`, `sched_pred,abort_slo,ac_pred,est_mean_var`.
 
 ## Architecture
 

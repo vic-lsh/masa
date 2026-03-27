@@ -16,7 +16,7 @@ sched_tailclipper = ["masa-core/sched_tailclipper", "tokio/sched_prio", "tokio/t
 sched_fifo  = ["masa-core/sched_fifo",  "tokio/sched_fifo",  "tonic/sched_fifo", "masa-policy/sched_fifo"]
 sched_pred = ["masa-core/sched_pred", "tonic/sched_pred", "sched_slo", "masa-policy/sched_pred"]
 
-slo_abort = ["masa-core/slo_abort", "tonic/slo_abort", "masa-policy/slo_abort"]
+abort_slo = ["masa-core/abort_slo", "tonic/abort_slo", "masa-policy/abort_slo"]
 estimator = ["masa-core/estimator", "tonic/estimator", "masa-policy/estimator"]
 
 est_rms = ["tonic/est_rms", "masa-policy/est_rms"]

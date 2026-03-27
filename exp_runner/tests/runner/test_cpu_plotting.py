@@ -127,14 +127,14 @@ class TestGetPolicyColors:
     def test_abort_policies(self):
         """Test color assignment for abort policies (new names)."""
         policies = [
-            "sched_fifo,slo_abort",
-            "sched_slo,slo_abort",
+            "sched_fifo,abort_slo",
+            "sched_slo,abort_slo",
             "sched_slo,sched_pred",
         ]
         colors = _get_policy_colors(policies)
 
-        assert colors["sched_fifo,slo_abort"] == "darkgrey"
-        assert colors["sched_slo,slo_abort"] == "cornflowerblue"
+        assert colors["sched_fifo,abort_slo"] == "darkgrey"
+        assert colors["sched_slo,abort_slo"] == "cornflowerblue"
         assert colors["sched_slo,sched_pred"] == "lightpink"
 
     def test_early_policies_old_names(self):
@@ -148,11 +148,11 @@ class TestGetPolicyColors:
 
     def test_mixed_policies(self):
         """Test color assignment for mixed standard and abort policies."""
-        policies = ["sched_fifo", "sched_fifo,slo_abort", "sched_slo", "custom_policy"]
+        policies = ["sched_fifo", "sched_fifo,abort_slo", "sched_slo", "custom_policy"]
         colors = _get_policy_colors(policies)
 
         assert "sched_fifo" in colors
-        assert "sched_fifo,slo_abort" in colors
+        assert "sched_fifo,abort_slo" in colors
         assert "sched_slo" in colors
         assert "custom_policy" in colors
 

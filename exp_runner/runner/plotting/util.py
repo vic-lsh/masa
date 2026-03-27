@@ -320,12 +320,13 @@ def parse_args() -> Namespace:
 def _has_abort(policy_lower: str) -> bool:
     """Check if policy has an abort/early-return flag (new or old name).
 
-    Note: sched_pred and pred_sched no longer imply slo_abort on their own,
+    Note: sched_pred and pred_sched no longer imply abort_slo on their own,
     but we keep recognizing them here for backward compatibility with old
-    experiment data where pred_sched did imply slo_abort.
+    experiment data where pred_sched did imply abort_slo.
     """
     return (
-        ",slo_abort" in policy_lower
+        ",abort_slo" in policy_lower
+        or ",slo_abort" in policy_lower
         or ",pred_sched" in policy_lower
         or ",sched_pred" in policy_lower
         or ",early" in policy_lower
@@ -464,7 +465,13 @@ def get_policy_display_name(policy: str) -> str:
     else:
         # Unknown policy: strip abort suffixes to get a readable base name
         display = policy
-        for suffix in (",slo_abort", ",sched_pred", ",pred_sched", ",early"):
+        for suffix in (
+            ",abort_slo",
+            ",slo_abort",
+            ",sched_pred",
+            ",pred_sched",
+            ",early",
+        ):
             if display.lower().endswith(suffix):
                 display = display[: -len(suffix)]
                 break
