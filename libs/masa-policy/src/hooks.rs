@@ -6,7 +6,7 @@
 // when enabled, the active overlay (predictive or rajomon).
 //
 // Overlays are called in field order: slo_abort (guard), policy (scheduling),
-// queue_lat (observer). The first `Err` short-circuits.
+// queue_latency (observer). The first `Err` short-circuits.
 
 use std::sync::Arc;
 use std::task::Poll;
@@ -14,7 +14,7 @@ use std::task::Poll;
 use crate::context_ext::{read_context, MasaRequestExt, MasaResponseExt, MasaStatusExt};
 use crate::overlay::{
     AdmissionControlOverlay, ChildRpcContext, Overlay, OverlayChild, OverlayServer,
-    QueueLatOverlay, SloAbortOverlay,
+    QueueLatencyOverlay, SloAbortOverlay,
 };
 use masa_core::{Context, ContextBuilder};
 use tonic_core::masa_ext::resolve_method_name_from_http;
@@ -22,7 +22,7 @@ use tonic_core::masa_ext::resolve_method_name_from_request;
 use tonic_core::masa_ext::{ClientHooks, Hooks, ParentHooks, ServerHooks};
 use tonic_core::{CowGrpcMethod, GrpcMethod, Request, Response, Status};
 
-/// Invoke `$body` for each overlay in field order (slo_abort → policy → queue_lat).
+/// Invoke `$body` for each overlay in field order (slo_abort → policy → queue_latency).
 /// The first `Err` short-circuits via `?` if the body uses it.
 ///
 /// Forms:
@@ -40,7 +40,7 @@ macro_rules! for_each_overlay {
             $body
         }
         {
-            let $o = &$self.queue_lat;
+            let $o = &$self.queue_latency;
             $body
         }
     }};
@@ -56,8 +56,8 @@ macro_rules! for_each_overlay {
             $body
         }
         {
-            let $o = &$self.queue_lat;
-            let $c = &mut $child.queue_lat;
+            let $o = &$self.queue_latency;
+            let $c = &mut $child.queue_latency;
             $body
         }
     }};
@@ -73,8 +73,8 @@ macro_rules! for_each_overlay {
             $body
         }
         {
-            let $o = &$self.queue_lat;
-            let $c = &$child.queue_lat;
+            let $o = &$self.queue_latency;
+            let $c = &$child.queue_latency;
             $body
         }
     }};
@@ -94,7 +94,7 @@ impl Hooks for PolicyHooks {
 pub struct ServerContext {
     slo_abort: <SloAbortOverlay as Overlay>::Server,
     admission: <AdmissionControlOverlay as Overlay>::Server,
-    queue_lat: <QueueLatOverlay as Overlay>::Server,
+    queue_latency: <QueueLatencyOverlay as Overlay>::Server,
 }
 
 impl ServerHooks for ServerContext {
@@ -102,7 +102,7 @@ impl ServerHooks for ServerContext {
         Self {
             slo_abort: <<SloAbortOverlay as Overlay>::Server as OverlayServer>::new(),
             admission: <<AdmissionControlOverlay as Overlay>::Server as OverlayServer>::new(),
-            queue_lat: <<QueueLatOverlay as Overlay>::Server as OverlayServer>::new(),
+            queue_latency: <<QueueLatencyOverlay as Overlay>::Server as OverlayServer>::new(),
         }
     }
 }
@@ -114,7 +114,7 @@ pub struct ParentContext {
     resolved_method: CowGrpcMethod,
     pub(crate) slo_abort: SloAbortOverlay,
     pub(crate) admission: AdmissionControlOverlay,
-    pub(crate) queue_lat: QueueLatOverlay,
+    pub(crate) queue_latency: QueueLatencyOverlay,
 }
 
 impl ParentContext {
@@ -136,14 +136,14 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         let slo_abort = SloAbortOverlay::new(&resolved_method, &server_ctx.slo_abort, &mut ctx);
         let admission =
             AdmissionControlOverlay::new(&resolved_method, &server_ctx.admission, &mut ctx);
-        let queue_lat = QueueLatOverlay::new(&resolved_method, &server_ctx.queue_lat, &mut ctx);
+        let queue_latency = QueueLatencyOverlay::new(&resolved_method, &server_ctx.queue_latency, &mut ctx);
 
         Self {
             ctx,
             resolved_method,
             slo_abort,
             admission,
-            queue_lat,
+            queue_latency,
         }
     }
 
@@ -223,7 +223,7 @@ pub struct ChildContext {
     pub child_method_name: Option<CowGrpcMethod>,
     slo_abort: <SloAbortOverlay as Overlay>::Child,
     pub(crate) admission: <AdmissionControlOverlay as Overlay>::Child,
-    queue_lat: <QueueLatOverlay as Overlay>::Child,
+    queue_latency: <QueueLatencyOverlay as Overlay>::Child,
 }
 
 impl ClientHooks for ChildContext {
@@ -232,7 +232,7 @@ impl ClientHooks for ChildContext {
             child_method_name: None,
             slo_abort: <<SloAbortOverlay as Overlay>::Child as OverlayChild>::new(),
             admission: <<AdmissionControlOverlay as Overlay>::Child as OverlayChild>::new(),
-            queue_lat: <<QueueLatOverlay as Overlay>::Child as OverlayChild>::new(),
+            queue_latency: <<QueueLatencyOverlay as Overlay>::Child as OverlayChild>::new(),
         }
     }
 }
