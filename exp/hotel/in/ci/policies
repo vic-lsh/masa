@@ -1,2 +1,2 @@
-fifo
-prio_global
+sched_fifo
+sched_slo
