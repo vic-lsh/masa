@@ -13,7 +13,7 @@ use std::task::Poll;
 
 use crate::context_ext::{read_context, MasaRequestExt, MasaResponseExt, MasaStatusExt};
 use crate::overlay::{
-    ActivePolicyOverlay, ChildRpcContext, Overlay, OverlayChild, OverlayServer, QueueLatOverlay,
+    AdmissionControlOverlay, ChildRpcContext, Overlay, OverlayChild, OverlayServer, QueueLatOverlay,
     SloAbortOverlay,
 };
 use masa_core::{Context, ContextBuilder};
@@ -32,17 +32,17 @@ use tonic_core::{CowGrpcMethod, GrpcMethod, Request, Response, Status};
 macro_rules! for_each_overlay {
     ($self:ident, |$o:ident| $body:expr) => {{
         { let $o = &$self.slo_abort; $body }
-        { let $o = &$self.policy; $body }
+        { let $o = &$self.admission; $body }
         { let $o = &$self.queue_lat; $body }
     }};
     ($self:ident, mut $child:ident, |$o:ident, $c:ident| $body:expr) => {{
         { let $o = &$self.slo_abort; let $c = &mut $child.slo_abort; $body }
-        { let $o = &$self.policy; let $c = &mut $child.policy; $body }
+        { let $o = &$self.admission; let $c = &mut $child.admission; $body }
         { let $o = &$self.queue_lat; let $c = &mut $child.queue_lat; $body }
     }};
     ($self:ident, $child:ident, |$o:ident, $c:ident| $body:expr) => {{
         { let $o = &$self.slo_abort; let $c = &$child.slo_abort; $body }
-        { let $o = &$self.policy; let $c = &$child.policy; $body }
+        { let $o = &$self.admission; let $c = &$child.admission; $body }
         { let $o = &$self.queue_lat; let $c = &$child.queue_lat; $body }
     }};
 }
@@ -60,7 +60,7 @@ impl Hooks for PolicyHooks {
 #[derive(Debug)]
 pub struct ServerContext {
     slo_abort: <SloAbortOverlay as Overlay>::Server,
-    policy: <ActivePolicyOverlay as Overlay>::Server,
+    admission: <AdmissionControlOverlay as Overlay>::Server,
     queue_lat: <QueueLatOverlay as Overlay>::Server,
 }
 
@@ -68,7 +68,7 @@ impl ServerHooks for ServerContext {
     fn new(_service_name: &'static str) -> Self {
         Self {
             slo_abort: <<SloAbortOverlay as Overlay>::Server as OverlayServer>::new(),
-            policy: <<ActivePolicyOverlay as Overlay>::Server as OverlayServer>::new(),
+            admission: <<AdmissionControlOverlay as Overlay>::Server as OverlayServer>::new(),
             queue_lat: <<QueueLatOverlay as Overlay>::Server as OverlayServer>::new(),
         }
     }
@@ -80,7 +80,7 @@ pub struct ParentContext {
     ctx: Context,
     resolved_method: CowGrpcMethod,
     pub(crate) slo_abort: SloAbortOverlay,
-    pub(crate) policy: ActivePolicyOverlay,
+    pub(crate) admission: AdmissionControlOverlay,
     pub(crate) queue_lat: QueueLatOverlay,
 }
 
@@ -101,14 +101,14 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         let resolved_method = resolve_method_name_from_http(method, req);
 
         let slo_abort = SloAbortOverlay::new(&resolved_method, &server_ctx.slo_abort, &mut ctx);
-        let policy = ActivePolicyOverlay::new(&resolved_method, &server_ctx.policy, &mut ctx);
+        let admission = AdmissionControlOverlay::new(&resolved_method, &server_ctx.admission, &mut ctx);
         let queue_lat = QueueLatOverlay::new(&resolved_method, &server_ctx.queue_lat, &mut ctx);
 
         Self {
             ctx,
             resolved_method,
             slo_abort,
-            policy,
+            admission,
             queue_lat,
         }
     }
@@ -181,7 +181,7 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
 pub struct ChildContext {
     pub child_method_name: Option<CowGrpcMethod>,
     slo_abort: <SloAbortOverlay as Overlay>::Child,
-    pub(crate) policy: <ActivePolicyOverlay as Overlay>::Child,
+    pub(crate) admission: <AdmissionControlOverlay as Overlay>::Child,
     queue_lat: <QueueLatOverlay as Overlay>::Child,
 }
 
@@ -190,7 +190,7 @@ impl ClientHooks for ChildContext {
         Self {
             child_method_name: None,
             slo_abort: <<SloAbortOverlay as Overlay>::Child as OverlayChild>::new(),
-            policy: <<ActivePolicyOverlay as Overlay>::Child as OverlayChild>::new(),
+            admission: <<AdmissionControlOverlay as Overlay>::Child as OverlayChild>::new(),
             queue_lat: <<QueueLatOverlay as Overlay>::Child as OverlayChild>::new(),
         }
     }
@@ -363,8 +363,8 @@ mod tests {
                 .unwrap();
 
             // Verify child context has ID and Server
-            assert!(child_ctx.policy.est.parent_to_child_id.is_some());
-            assert!(child_ctx.policy.est.server.is_some());
+            assert!(child_ctx.admission.est.parent_to_child_id.is_some());
+            assert!(child_ctx.admission.est.server.is_some());
 
             // Verify registry has IDs
             let registry = MethodRegistry::global();
@@ -373,7 +373,7 @@ mod tests {
 
             assert_eq!(
                 child_ctx
-                    .policy
+                    .admission
                     .est
                     .parent_to_child_id
                     .clone()
@@ -383,7 +383,7 @@ mod tests {
             );
             assert_eq!(
                 child_ctx
-                    .policy
+                    .admission
                     .est
                     .parent_to_child_id
                     .clone()
@@ -434,7 +434,7 @@ mod tests {
 
             // With est_remaining_floor = 0, the floor check is: time_now > e2e_deadline - 0 = e2e_deadline.
             // Since e2e_deadline is 100ms in the future, this should NOT shed.
-            let shed = parent_ctx.policy.est.admission_check(parent_ctx.ctx(), 0);
+            let shed = parent_ctx.admission.est.admission_check(parent_ctx.ctx(), 0);
             assert!(!shed, "should admit when plenty of time remains");
         }
     }
