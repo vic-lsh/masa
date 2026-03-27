@@ -200,6 +200,6 @@ Note: When using `--k8s` without `--kind`, you must ensure the container images 
 Each key in the following list corresponds to a feature flag in the codebase.
 
 - `sched_fifo`: requests are served in first-in-first-out order.
-- `sched_prio`: requests are served based on their end-to-end SLO end time, which is their SLO added to the time at which they arrived at the frontend server.
-- `sched_prio,tailclipper`: oldest request first, implementing the TailClipper paper's policy with round-robin fairness.
-- `sched_prio,pred_sched`: requests are served based on their local deadline with deadline tightening using latency estimates; currently this only works for the `hotel` application, as it requires a description of the call graph.
+- `sched_slo`: requests are served based on their end-to-end SLO end time, which is their SLO added to the time at which they arrived at the frontend server.
+- `sched_tailclipper`: oldest request first, implementing the TailClipper paper's policy with round-robin fairness.
+- `sched_pred`: requests are served based on their local deadline with deadline tightening using latency estimates.
