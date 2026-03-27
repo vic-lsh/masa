@@ -16,24 +16,24 @@ plotting_all = importlib.import_module("exp_runner.runner.plotting.all")
 
 
 def test_get_policy_display_name_new_names():
-    """Test display names with newest flag names (sched_slo, sched_pred, sched_tailclipper)."""
+    """Test display names with newest flag names (abort_slo, sched_slo, sched_pred, sched_tailclipper)."""
     assert get_policy_display_name("sched_fifo") == "FIFO (no-drop)"
-    assert get_policy_display_name("sched_fifo,slo_abort") == "FIFO"
+    assert get_policy_display_name("sched_fifo,abort_slo") == "FIFO"
     assert get_policy_display_name("sched_slo") == "Masa (global ddl) (no-drop)"
-    assert get_policy_display_name("sched_slo,slo_abort") == "Masa (global ddl)"
+    assert get_policy_display_name("sched_slo,abort_slo") == "Masa (global ddl)"
     assert get_policy_display_name("sched_slo,sched_pred") == "Masa (local ddl)"
     assert (
         get_policy_display_name("sched_slo,sched_tailclipper")
         == "Tailclipper (no-drop)"
     )
     assert (
-        get_policy_display_name("sched_slo,sched_tailclipper,slo_abort")
+        get_policy_display_name("sched_slo,sched_tailclipper,abort_slo")
         == "Tailclipper"
     )
 
 
 def test_get_policy_display_name_previous_names():
-    """Test display names with previous flag names (sched_prio, pred_sched, tailclipper)."""
+    """Test display names with previous flag names (slo_abort, sched_prio, pred_sched, tailclipper)."""
     assert get_policy_display_name("sched_prio") == "Masa (global ddl) (no-drop)"
     assert get_policy_display_name("sched_prio,slo_abort") == "Masa (global ddl)"
     assert get_policy_display_name("sched_slo,sched_pred") == "Masa (local ddl)"
@@ -55,6 +55,7 @@ def test_get_policy_display_name_old_names():
 
 def test_get_policy_display_name_unknown_policies():
     assert get_policy_display_name("custom") == "custom (no-drop)"
+    assert get_policy_display_name("custom,abort_slo") == "custom"
     assert get_policy_display_name("custom,slo_abort") == "custom"
     assert get_policy_display_name("custom,early") == "custom"
 

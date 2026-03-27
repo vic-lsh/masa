@@ -19,7 +19,7 @@ Policy is configured along three composable dimensions:
 - `ac_rajomon`: Token-bucket rate limiting admission control.
 
 **SLO abort** (composable with any of the above):
-- `slo_abort`: Early-return requests that have already missed their e2e SLO deadline, avoiding wasteful work.
+- `abort_slo`: Early-return requests that have already missed their e2e SLO deadline, avoiding wasteful work.
 
 When a specific feature flag (e.g., `sched_slo`) is enabled, it activates corresponding conditional compilation modules (`#[cfg(feature = "...")]`) across the modified libraries.
 
@@ -47,7 +47,7 @@ The `DefaultHooks` type alias (in `libs/tonic/tonic/src/masa_ext/mod.rs`) is res
 - No scheduling features → `NoopHooks`
 
 `PolicyHooks` uses composable layers selected at compile time:
-- **E2E deadline guard**: `E2eDeadlineGuardLayer` (enabled by `slo_abort` feature)
+- **E2E deadline guard**: `E2eDeadlineGuardLayer` (enabled by `abort_slo` feature)
 - **Admission control** (mutually exclusive): `PredAdmissionLayer` (`estimator`), `RajomonLayer` (`ac_rajomon`), or `NoopLayer`
 - **Queue latency**: `QueueLatencyLayer` (always active under a scheduling policy)
 
@@ -58,7 +58,7 @@ Each scheduling flag also selects the corresponding tokio queue implementation (
 In `libs/masa-core/src/flag.rs`, each feature flag is exposed as a `const bool`:
 ```
 pub const SCHED_SLO: bool = cfg!(feature = "sched_slo");
-pub const SLO_ABORT: bool = cfg!(feature = "slo_abort");
+pub const ABORT_SLO: bool = cfg!(feature = "abort_slo");
 // ... etc.
 ```
 These allow `if SCHED_SLO { ... }` branches to be optimized away by the compiler when the flag is off.
@@ -154,7 +154,7 @@ For a complete request lifecycle:
 
 ### Policy Implementation
 All scheduling policies are unified into `PolicyHooks` (`libs/masa-policy/src/hooks.rs`), which dispatches to composable layers:
-*   **`E2eDeadlineGuardLayer`** (`layer/e2e_deadline_guard.rs`): Checks deadline in `before_poll`/`after_poll`; aborts past-deadline requests. Enabled by `slo_abort` feature.
+*   **`E2eDeadlineGuardLayer`** (`layer/e2e_deadline_guard.rs`): Checks deadline in `before_poll`/`after_poll`; aborts past-deadline requests. Enabled by `abort_slo` feature.
 *   **`PredAdmissionLayer`** (`layer/admission/predictive.rs`): Computes local deadlines via latency estimates, tightens child deadlines, and performs predictive admission control. Enabled by `estimator` feature.
 *   **`RajomonLayer`** (`layer/admission/rajomon.rs`): Token-bucket admission control with server-side price signals. Enabled by `ac_rajomon` feature.
 *   **`QueueLatencyLayer`** (`layer/queue_latency.rs`): Tracks queue latency across the call graph via `x-queue-latency` headers.
@@ -320,14 +320,14 @@ This means the tonic `before_poll`/`after_poll` closures (installed on the top-l
 
 ### Early Return
 
-Early Return uses poll hooks to abort requests that have already missed their deadline, avoiding wasteful computation. It is gated by the compile-time `slo_abort` feature flag (`libs/masa-core/src/flag.rs`: `pub const SLO_ABORT: bool = cfg!(feature = "slo_abort")`).
+Early Return uses poll hooks to abort requests that have already missed their deadline, avoiding wasteful computation. It is gated by the compile-time `abort_slo` feature flag (`libs/masa-core/src/flag.rs`: `pub const ABORT_SLO: bool = cfg!(feature = "abort_slo")`).
 
 The `E2eDeadlineGuardLayer` (`libs/masa-policy/src/layer/e2e_deadline_guard.rs`) tracks whether a request should be aborted:
 
 *   `before_poll`: Compares the current time against `ctx.e2e_deadline()`. If expired, returns a `DeadlineExceeded` error to abort the request immediately.
 *   `after_poll`: Only checks when the poll returned `Pending` (the handler is blocked on I/O or a child RPC). If the deadline has passed while waiting, aborts rather than waiting for the next wake-up. When the poll is `Ready`, the request is already done so no check is needed.
 
-SLO abort is composable with any scheduling policy via the `slo_abort` feature flag.
+SLO abort is composable with any scheduling policy via the `abort_slo` feature flag.
 
 ### Queue Latency Tracking
 
@@ -391,17 +391,17 @@ The total is injected into the outgoing response in `finalize()`, creating a rec
 | `prio_global` | `sched_slo` | |
 | `prio_oldest` | `sched_slo,sched_tailclipper` | |
 | `prio_local` | `sched_slo,sched_pred` | |
-| `early` | `slo_abort` | Composable with any scheduling policy |
-| `prio_local,early` | `sched_slo,sched_pred,slo_abort` | sched_pred no longer implies slo_abort |
+| `early` | `abort_slo` | Composable with any scheduling policy |
+| `prio_local,early` | `sched_slo,sched_pred,abort_slo` | sched_pred no longer implies abort_slo |
 | `adctl` | `ac_pred` | |
 | `rajomon` | `ac_rajomon` | |
-| `fifo,early,adctl` | `sched_fifo,slo_abort,ac_pred` | |
-| `prio_global,early` | `sched_slo,slo_abort` | |
-| `prio_global,early,adctl` | `sched_slo,slo_abort,ac_pred` | |
-| `prio_oldest,early` | `sched_slo,sched_tailclipper,slo_abort` | |
+| `fifo,early,adctl` | `sched_fifo,abort_slo,ac_pred` | |
+| `prio_global,early` | `sched_slo,abort_slo` | |
+| `prio_global,early,adctl` | `sched_slo,abort_slo,ac_pred` | |
+| `prio_oldest,early` | `sched_slo,sched_tailclipper,abort_slo` | |
 | `prio_oldest,early,adctl` | *(dropped — sched_tailclipper cannot be combined with ac_pred)* | TailClipper paper policy used as-is |
-| `prio_local,early,adctl` | `sched_slo,sched_pred,slo_abort,ac_pred` | |
-| `prio_local,rajomon,early` | `sched_slo,sched_pred,slo_abort,ac_rajomon` | |
+| `prio_local,early,adctl` | `sched_slo,sched_pred,abort_slo,ac_pred` | |
+| `prio_local,rajomon,early` | `sched_slo,sched_pred,abort_slo,ac_rajomon` | |
 
 ### Design intent
 
@@ -409,6 +409,6 @@ The total is injected into the outgoing response in `finalize()`, creating a rec
 
 **Scheduling modifiers** (`sched_tailclipper`, `sched_pred`): Layers on `sched_slo`. `sched_tailclipper` implements the TailClipper paper's policy exactly (round-robin fairness for top-N priority tasks) — it cannot be combined with `sched_pred` or `ac_pred` to preserve the paper's design. `sched_pred` adds deadline tightening and dynamic reprioritization using downstream work estimates. `sched_pred` implies `sched_slo` and `estimator`.
 
-**Abort strategies** (`slo_abort`): Aborts requests that have already exceeded their e2e SLO. Composable with any scheduling policy. `sched_pred` additionally performs proactive abort for requests predicted to miss their SLO based on estimated remaining work.
+**Abort strategies** (`abort_slo`): Aborts requests that have already exceeded their e2e SLO. Composable with any scheduling policy. `sched_pred` additionally performs proactive abort for requests predicted to miss their SLO based on estimated remaining work.
 
 **Admission control** (`ac_pred`, `ac_rajomon`): Mutually exclusive admission strategies. `ac_pred` uses compute-time feasibility and efficiency-based checks. `ac_rajomon` uses token-bucket rate limiting.

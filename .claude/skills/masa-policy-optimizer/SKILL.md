@@ -2,7 +2,7 @@
 name: masa-policy-optimizer
 description: >
   Iteratively optimize a Masa scheduling policy (specified as a Cargo feature flag combination,
-  e.g. "pred_sched,est_mean_var,slo_abort") for goodput. Use this skill whenever the user asks to
+  e.g. "pred_sched,est_mean_var,abort_slo") for goodput. Use this skill whenever the user asks to
   improve, optimize, tune, experiment with, or analyze any Masa policy — even if they say
   something casual like "let's keep iterating on this policy" or "can we try a different approach".
   The skill manages the full hypothesis → code edit → experiment → analysis → decision loop,
@@ -15,8 +15,8 @@ description: >
 
 Ask the user for these inputs if not already provided:
 
-- **Target policy**: the feature flag combination being optimized (e.g., `pred_sched,est_mean_var,slo_abort`)
-- **Baseline policies**: the policies to beat — default is `tailclipper,slo_abort`. Ask if there are others to compare.
+- **Target policy**: the feature flag combination being optimized (e.g., `pred_sched,est_mean_var,abort_slo`)
+- **Baseline policies**: the policies to beat — default is `tailclipper,abort_slo`. Ask if there are others to compare.
 - **Number of iterations**: how many hypothesis-experiment cycles to run before stopping for review. Ask if not specified.
 - **Tracking markdown**: Should we start a new file, or resume from an existing one? They may have a prior iteration doc from a previous optimization run (e.g., `PRIO_LOCAL_IMPROVEMENTS.md`). If resuming, read the file fully before doing anything — understand what has already been tried and what iteration number to continue from.
 - **Experiment config**: Ask the user to either:
@@ -32,7 +32,7 @@ At the very top of a new markdown, write a header like:
 # <CODEWORD> — <target policy>
 
 ## Key questions
-- <The central question this track is trying to answer, e.g. "Can pred_sched,est_mean_var,slo_abort beat tailclipper,slo_abort under realistic load variation?">
+- <The central question this track is trying to answer, e.g. "Can pred_sched,est_mean_var,abort_slo beat tailclipper,abort_slo under realistic load variation?">
 - <Any secondary questions, e.g. "Does the EMA estimator create feedback loops under non-monotonic load schedules?">
 
 ## Experiment series: <codeword>_1, <codeword>_2, ... (<app>)
@@ -119,8 +119,8 @@ The experiment design reasoning was already written to the tracking markdown in 
 
 **Experiment efficiency tips:**
 - For quick validation of a hypothesis, you can selectively test a few representative RPS values (e.g., one near saturation and one well below) rather than the full sweep. This is useful when you want fast signal before committing to a full run.
-- Prefer running only policies with `,slo_abort` in the `policies` file. The `slo_abort` flag is an overload control mechanism; policies without it will almost always perform worse than their `,slo_abort` counterparts. Omit non-`slo_abort` variants unless the user explicitly requests them.
-- You can drop `sched_fifo` from the `policies` file once you have established a baseline policy (e.g., `tailclipper,slo_abort`) that consistently beats it. Including `sched_fifo` adds experiment time with little analytical value once its inferiority is confirmed.
+- Prefer running only policies with `,abort_slo` in the `policies` file. The `abort_slo` flag is an overload control mechanism; policies without it will almost always perform worse than their `,abort_slo` counterparts. Omit non-`abort_slo` variants unless the user explicitly requests them.
+- You can drop `sched_fifo` from the `policies` file once you have established a baseline policy (e.g., `tailclipper,abort_slo`) that consistently beats it. Including `sched_fifo` adds experiment time with little analytical value once its inferiority is confirmed.
 
 **Config design principles** (to guide Step 1 design and Step 3 execution):
 - The baseline config is a regression anchor — you always want to be able to compare against it. But it may not be the most informative config for testing a specific hypothesis.

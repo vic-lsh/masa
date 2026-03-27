@@ -9,7 +9,7 @@ cargo_check:
                       "",
                       "sched_fifo",
                       "sched_prio",
-                      "sched_prio,tailclipper,slo_abort",
+                      "sched_prio,tailclipper,abort_slo",
                       "sched_prio,ac_rajomon",
                       "sched_prio,pred_sched,ac_est,est_mean_var",
                   ]

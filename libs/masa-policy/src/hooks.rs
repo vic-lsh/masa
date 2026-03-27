@@ -246,7 +246,7 @@ impl ChildContext {
 
 #[cfg(test)]
 mod tests {
-    crate::generate_slo_abort_test!(ParentContext, ServerContext, ChildContext);
+    crate::generate_abort_slo_test!(ParentContext, ServerContext, ChildContext);
 
     #[cfg(feature = "estimator")]
     mod est_tests {
