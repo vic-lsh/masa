@@ -150,10 +150,10 @@ compile_error!(
 );
 
 #[cfg(feature = "ac_rajomon")]
-pub(crate) use rajomon::RajomonOverlay as ActivePolicyOverlay;
+pub(crate) use rajomon::RajomonOverlay as AdmissionControlOverlay;
 
 #[cfg(all(feature = "est", not(feature = "ac_rajomon")))]
-pub(crate) use predictive::PredictiveOverlay as ActivePolicyOverlay;
+pub(crate) use predictive::PredictiveOverlay as AdmissionControlOverlay;
 
 #[cfg(not(any(feature = "est", feature = "ac_rajomon")))]
-pub(crate) use noop::NoopOverlay as ActivePolicyOverlay;
+pub(crate) use noop::NoopOverlay as AdmissionControlOverlay;
