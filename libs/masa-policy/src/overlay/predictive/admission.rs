@@ -1,10 +1,10 @@
 // Predictive admission control.
 //
-// Provides `PredictiveAc` (zero-cost wrapper selecting between full ac_est
+// Provides `PredictiveAdmission` (zero-cost wrapper selecting between full ac_est
 // and floor-only checks), `AdmissionController` (compute-budget token bucket),
 // and `BottleneckTracker` (per-API utilization tracking with staleness decay).
 //
-// `PredictiveAc` is owned by `PredictiveOverlay` and called from
+// `PredictiveAdmission` is owned by `PredictiveOverlay` and called from
 // `before_child_rpc`. It reads estimation maps from `EstServerState`.
 
 use masa_core::Context;
@@ -147,18 +147,18 @@ impl AdmissionController {
     }
 }
 
-// ── PredictiveAc ────────────────────────────────────────────────────────
+// ── PredictiveAdmission ────────────────────────────────────────────────────────
 
 // ac_est ENABLED
 
 #[cfg(feature = "ac_est")]
 #[derive(Debug)]
-pub(crate) struct PredictiveAc {
+pub(crate) struct PredictiveAdmission {
     controller: AdmissionController,
 }
 
 #[cfg(feature = "ac_est")]
-impl PredictiveAc {
+impl PredictiveAdmission {
     pub(crate) fn new() -> Self {
         Self {
             controller: AdmissionController::new(),
@@ -234,10 +234,10 @@ impl PredictiveAc {
 
 #[cfg(not(feature = "ac_est"))]
 #[derive(Debug)]
-pub(crate) struct PredictiveAc;
+pub(crate) struct PredictiveAdmission;
 
 #[cfg(not(feature = "ac_est"))]
-impl PredictiveAc {
+impl PredictiveAdmission {
     #[inline]
     pub(crate) fn new() -> Self {
         Self
