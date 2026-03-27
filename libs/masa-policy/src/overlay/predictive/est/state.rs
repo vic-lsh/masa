@@ -18,7 +18,7 @@ use tonic_core::{Code, CowGrpcMethod, Response, Status};
 
 use super::estimator::ParentToChildId;
 use super::latency_map::{spawn_method_stats_printer, spawn_stats_printer, LatencyMap};
-use crate::context_ext::{MasaResponseExt, MasaStatusExt};
+use crate::context_ext::MasaResponseExt;
 use crate::MethodRegistry;
 
 /// Server-level estimation state (shared across requests on a service).
@@ -110,32 +110,21 @@ impl<E: LatencyEstimator + Default + 'static> EstRequestState<E> {
         );
     }
 
-    /// Inject ResponseMeta (compute time, utilization) into the response.
-    pub(crate) fn inject_response_meta<Ret>(
-        &self,
-        ctx: &Context,
-        result: &mut Result<Response<Ret>, Status>,
-    ) {
+    /// Set ResponseMeta (compute time, utilization) on the shared context.
+    ///
+    /// The caller is responsible for serializing `ctx` into the response;
+    /// this method only mutates the in-memory context.
+    pub(crate) fn inject_response_meta(&self, ctx: &mut Context) {
         let compute_time_us = self.poll_compute_us.load(Ordering::Relaxed);
         let utilization = tokio::task::current_utilization() as f32;
         let max_child_util = *self.max_child_downstream_util.lock().unwrap();
         let max_downstream_util = utilization.max(max_child_util);
 
-        let mut ctx = ctx.clone();
         ctx.set_response_meta(ResponseMeta {
             compute_time_us,
             utilization,
             max_downstream_util,
         });
-
-        match result {
-            Ok(resp) => {
-                resp.set_masa_context(&ctx);
-            }
-            Err(status) => {
-                status.set_masa_context(&ctx);
-            }
-        }
     }
 
     /// Process a child RPC response: extract ResponseMeta, track latencies,

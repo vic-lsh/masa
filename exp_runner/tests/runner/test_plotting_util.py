@@ -22,8 +22,14 @@ def test_get_policy_display_name_new_names():
     assert get_policy_display_name("sched_slo") == "Masa (global ddl) (no-drop)"
     assert get_policy_display_name("sched_slo,slo_abort") == "Masa (global ddl)"
     assert get_policy_display_name("sched_slo,sched_pred") == "Masa (local ddl)"
-    assert get_policy_display_name("sched_slo,sched_tailclipper") == "Tailclipper (no-drop)"
-    assert get_policy_display_name("sched_slo,sched_tailclipper,slo_abort") == "Tailclipper"
+    assert (
+        get_policy_display_name("sched_slo,sched_tailclipper")
+        == "Tailclipper (no-drop)"
+    )
+    assert (
+        get_policy_display_name("sched_slo,sched_tailclipper,slo_abort")
+        == "Tailclipper"
+    )
 
 
 def test_get_policy_display_name_previous_names():

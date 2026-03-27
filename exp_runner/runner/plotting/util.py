@@ -356,8 +356,7 @@ def _is_prio(policy_lower: str) -> bool:
     if policy_lower.startswith("sched_slo"):
         # sched_slo without sched_tailclipper or sched_pred is the new prio_global
         return not (
-            ",sched_tailclipper" in policy_lower
-            or ",sched_pred" in policy_lower
+            ",sched_tailclipper" in policy_lower or ",sched_pred" in policy_lower
         )
     if policy_lower.startswith("sched_prio"):
         # sched_prio without tailclipper or pred_sched is the old-new prio_global

@@ -4,16 +4,18 @@
 // scheduling policies (sched_fifo, sched_slo, sched_tailclipper, sched_pred).
 // The actual scheduling differences are handled by the tokio runtime and,
 // when enabled, the active overlay (predictive or rajomon).
+//
+// Overlays are called in field order: slo_abort (guard), policy (scheduling),
+// queue_lat (observer). The first `Err` short-circuits.
 
 use std::sync::Arc;
 use std::task::Poll;
 
-use crate::context_ext::{read_context, MasaRequestExt};
+use crate::context_ext::{read_context, MasaRequestExt, MasaResponseExt, MasaStatusExt};
 use crate::overlay::{
-    ActiveOverlay, ActiveOverlayChild, ActiveOverlayServer, ChildRpcContext, Overlay, OverlayChild,
-    OverlayServer,
+    ActivePolicyOverlay, ChildRpcContext, Overlay, OverlayChild, OverlayServer, QueueLatOverlay,
+    SloAbortOverlay,
 };
-use crate::slo_abort::SloAbortHandler;
 use masa_core::{Context, ContextBuilder};
 use tonic_core::masa_ext::resolve_method_name_from_http;
 use tonic_core::masa_ext::resolve_method_name_from_request;
@@ -32,13 +34,17 @@ impl Hooks for PolicyHooks {
 
 #[derive(Debug)]
 pub struct ServerContext {
-    overlay: ActiveOverlayServer,
+    slo_abort: <SloAbortOverlay as Overlay>::Server,
+    policy: <ActivePolicyOverlay as Overlay>::Server,
+    queue_lat: <QueueLatOverlay as Overlay>::Server,
 }
 
 impl ServerHooks for ServerContext {
     fn new(_service_name: &'static str) -> Self {
         Self {
-            overlay: ActiveOverlayServer::new(),
+            slo_abort: <<SloAbortOverlay as Overlay>::Server as OverlayServer>::new(),
+            policy: <<ActivePolicyOverlay as Overlay>::Server as OverlayServer>::new(),
+            queue_lat: <<QueueLatOverlay as Overlay>::Server as OverlayServer>::new(),
         }
     }
 }
@@ -48,24 +54,13 @@ impl ServerHooks for ServerContext {
 pub struct ParentContext {
     ctx: Context,
     resolved_method: CowGrpcMethod,
-    q_lat_tracker: QueueLatencyTracker,
-    slo_abort: SloAbortHandler,
-    pub(crate) overlay: ActiveOverlay,
+    pub(crate) slo_abort: SloAbortOverlay,
+    pub(crate) policy: ActivePolicyOverlay,
+    pub(crate) queue_lat: QueueLatOverlay,
 }
 
 impl ParentContext {
-    fn check_guards<Ret>(&self) -> Result<(), Result<Response<Ret>, Status>> {
-        if self.slo_abort.check(&self.ctx) {
-            return Err(Err(self.slo_abort.issue_error()));
-        }
-        Ok(())
-    }
-
-    fn check_guards_status(&self) -> Result<(), Status> {
-        self.check_guards::<()>().map_err(|e| e.unwrap_err())
-    }
-
-    #[cfg(feature = "est")]
+    #[cfg(all(feature = "est", test))]
     pub(crate) fn ctx(&self) -> &Context {
         &self.ctx
     }
@@ -80,23 +75,23 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         let mut ctx = read_context(req);
         let resolved_method = resolve_method_name_from_http(method, req);
 
-        let overlay = ActiveOverlay::new(&resolved_method, &server_ctx.overlay, &mut ctx);
-        let slo_abort = SloAbortHandler::new(resolved_method.clone());
-        let q_lat_tracker = QueueLatencyTracker::new();
+        let slo_abort = SloAbortOverlay::new(&resolved_method, &server_ctx.slo_abort, &mut ctx);
+        let policy = ActivePolicyOverlay::new(&resolved_method, &server_ctx.policy, &mut ctx);
+        let queue_lat = QueueLatOverlay::new(&resolved_method, &server_ctx.queue_lat, &mut ctx);
 
         Self {
             ctx,
             resolved_method,
-            q_lat_tracker,
             slo_abort,
-            overlay,
+            policy,
+            queue_lat,
         }
     }
 
     fn before_poll<Ret>(&self) -> Result<(), Result<Response<Ret>, Status>> {
-        self.check_guards()?;
-        self.overlay.before_poll(&self.ctx)?;
-        self.q_lat_tracker.track_poll();
+        self.slo_abort.before_poll(&self.ctx)?;
+        self.policy.before_poll(&self.ctx)?;
+        self.queue_lat.before_poll(&self.ctx)?;
         Ok(())
     }
 
@@ -106,23 +101,39 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         request: &mut Request<T>,
         child_ctx: &mut ChildContext,
     ) -> Result<(), Status> {
-        self.check_guards_status()?;
-
         let child_method_name = resolve_method_name_from_request(child_method, request);
         child_ctx.set_method_name(child_method_name.clone());
 
-        let builder = ContextBuilder::from(&self.ctx);
+        let mut child_rpc = ChildRpcContext::from_parent(&self.ctx);
 
-        let ChildRpcContext { builder, .. } = self.overlay.before_child_rpc(
+        self.slo_abort.before_child_rpc(
             &self.ctx,
             &child_method_name,
-            &mut child_ctx.overlay,
+            &mut child_ctx.slo_abort,
             request,
-            builder,
-            || self.slo_abort.issue_error(),
+            &mut child_rpc,
+        )?;
+        self.policy.before_child_rpc(
+            &self.ctx,
+            &child_method_name,
+            &mut child_ctx.policy,
+            request,
+            &mut child_rpc,
+        )?;
+        self.queue_lat.before_child_rpc(
+            &self.ctx,
+            &child_method_name,
+            &mut child_ctx.queue_lat,
+            request,
+            &mut child_rpc,
         )?;
 
-        let child_recv_ctx = builder.build();
+        let child_recv_ctx = ContextBuilder::from(&self.ctx)
+            .deadline(child_rpc.deadline)
+            .prio_hint(child_rpc.prio_hint)
+            .hop_count(child_rpc.hop_count)
+            .tokens(child_rpc.tokens)
+            .build();
         request.set_masa_context(&child_recv_ctx);
 
         Ok(())
@@ -134,20 +145,22 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         response: &mut Result<Response<T>, Status>,
         child_ctx: ChildContext,
     ) -> Result<(), Status> {
-        self.q_lat_tracker.track_child_response(response);
-
-        let child_method = child_ctx.child_method_name.as_ref();
-
-        if let Some(child_method) = child_method {
-            self.overlay.after_child_rpc(
+        if let Some(child_method) = child_ctx.child_method_name.as_ref() {
+            self.slo_abort.after_child_rpc(
                 &self.ctx,
                 child_method,
                 response,
-                &child_ctx.overlay,
+                &child_ctx.slo_abort,
             )?;
-            self.slo_abort.set_last_child(child_method.clone());
+            self.policy
+                .after_child_rpc(&self.ctx, child_method, response, &child_ctx.policy)?;
+            self.queue_lat.after_child_rpc(
+                &self.ctx,
+                child_method,
+                response,
+                &child_ctx.queue_lat,
+            )?;
         }
-
         Ok(())
     }
 
@@ -155,31 +168,40 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         &self,
         poll: &Poll<Result<Response<Ret>, Status>>,
     ) -> Result<(), Result<Response<Ret>, Status>> {
-        self.overlay.after_poll(poll);
-        if let Poll::Pending = poll {
-            self.check_guards()?;
-        }
+        self.slo_abort.after_poll(&self.ctx, poll)?;
+        self.policy.after_poll(&self.ctx, poll)?;
+        self.queue_lat.after_poll(&self.ctx, poll)?;
         Ok(())
     }
 
     fn finalize_before_serialization<Ret>(&self, result: &mut Result<Response<Ret>, Status>) {
-        self.overlay.finalize(&self.ctx, result);
-        self.q_lat_tracker
-            .inject_context_metadata(&self.ctx, result);
+        let mut ctx = self.ctx.clone();
+        self.slo_abort.finalize(&mut ctx, result);
+        self.policy.finalize(&mut ctx, result);
+        self.queue_lat.finalize(&mut ctx, result);
+        // Single serialization point — all overlays wrote to `ctx`.
+        match result {
+            Ok(resp) => resp.set_masa_context(&ctx),
+            Err(status) => status.set_masa_context(&ctx),
+        }
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct ChildContext {
     pub child_method_name: Option<CowGrpcMethod>,
-    overlay: ActiveOverlayChild,
+    slo_abort: <SloAbortOverlay as Overlay>::Child,
+    pub(crate) policy: <ActivePolicyOverlay as Overlay>::Child,
+    queue_lat: <QueueLatOverlay as Overlay>::Child,
 }
 
 impl ClientHooks for ChildContext {
     fn new<T>(_method: GrpcMethod, _request: &Request<T>) -> Self {
         Self {
             child_method_name: None,
-            overlay: ActiveOverlayChild::new(),
+            slo_abort: <<SloAbortOverlay as Overlay>::Child as OverlayChild>::new(),
+            policy: <<ActivePolicyOverlay as Overlay>::Child as OverlayChild>::new(),
+            queue_lat: <<QueueLatOverlay as Overlay>::Child as OverlayChild>::new(),
         }
     }
 }
@@ -187,106 +209,6 @@ impl ClientHooks for ChildContext {
 impl ChildContext {
     pub fn set_method_name(&mut self, name: CowGrpcMethod) {
         self.child_method_name = Some(name);
-    }
-}
-
-// ── Queue Latency Tracker ───────────────────────────────────────────────
-
-#[cfg(feature = "trace-queue")]
-use masa_core::QueueLatencies;
-#[cfg(feature = "trace-queue")]
-use std::sync::atomic::AtomicU64;
-#[cfg(feature = "trace-queue")]
-use std::sync::atomic::{AtomicBool, Ordering};
-
-#[cfg(feature = "trace-queue")]
-#[derive(Debug)]
-struct QueueLatencyTracker {
-    initial_q_lat: AtomicU64,
-    resume_q_lat: AtomicU64,
-    is_first_poll: AtomicBool,
-}
-
-#[cfg(feature = "trace-queue")]
-impl Default for QueueLatencyTracker {
-    fn default() -> Self {
-        Self {
-            initial_q_lat: AtomicU64::new(0),
-            resume_q_lat: AtomicU64::new(0),
-            is_first_poll: AtomicBool::new(true),
-        }
-    }
-}
-
-#[cfg(feature = "trace-queue")]
-impl QueueLatencyTracker {
-    fn new() -> Self {
-        Self::default()
-    }
-
-    fn track_poll(&self) {
-        let queue_latency = tokio::task::obtain_task_queue_latency().as_micros() as u64;
-        if queue_latency > 0 {
-            if self.is_first_poll.swap(false, Ordering::Relaxed) {
-                self.initial_q_lat
-                    .fetch_add(queue_latency, Ordering::AcqRel);
-            } else {
-                self.resume_q_lat.fetch_add(queue_latency, Ordering::AcqRel);
-            }
-        }
-    }
-
-    fn track_child_response<T>(&self, response: &Result<Response<T>, Status>) {
-        if let Ok(resp) = response {
-            use crate::context_ext::MasaResponseExt;
-            if let Some(ctx) = resp.get_masa_context() {
-                if let Some(ql) = ctx.queue_latencies {
-                    self.initial_q_lat.fetch_add(ql.initial, Ordering::AcqRel);
-                    self.resume_q_lat.fetch_add(ql.resume, Ordering::AcqRel);
-                }
-            }
-        }
-    }
-
-    fn inject_context_metadata<T>(
-        &self,
-        ctx: &Context,
-        result: &mut Result<Response<T>, Status>,
-    ) {
-        use crate::context_ext::{MasaResponseExt, MasaStatusExt};
-
-        let mut ctx = ctx.clone();
-
-        let initial = self.initial_q_lat.load(Ordering::Acquire);
-        let resume = self.resume_q_lat.load(Ordering::Acquire);
-        ctx.queue_latencies = Some(QueueLatencies { initial, resume });
-
-        match result {
-            Ok(resp) => resp.set_masa_context(&ctx),
-            Err(status) => status.set_masa_context(&ctx),
-        };
-    }
-}
-
-#[cfg(not(feature = "trace-queue"))]
-#[derive(Debug, Default)]
-struct QueueLatencyTracker;
-
-#[cfg(not(feature = "trace-queue"))]
-impl QueueLatencyTracker {
-    fn new() -> Self {
-        Self
-    }
-
-    fn track_poll(&self) {}
-
-    fn track_child_response<T>(&self, _response: &Result<Response<T>, Status>) {}
-
-    fn inject_context_metadata<T>(
-        &self,
-        _ctx: &Context,
-        _result: &mut Result<Response<T>, Status>,
-    ) {
     }
 }
 
@@ -451,8 +373,8 @@ mod tests {
                 .unwrap();
 
             // Verify child context has ID and Server
-            assert!(child_ctx.overlay.est.parent_to_child_id.is_some());
-            assert!(child_ctx.overlay.est.server.is_some());
+            assert!(child_ctx.policy.est.parent_to_child_id.is_some());
+            assert!(child_ctx.policy.est.server.is_some());
 
             // Verify registry has IDs
             let registry = MethodRegistry::global();
@@ -461,7 +383,7 @@ mod tests {
 
             assert_eq!(
                 child_ctx
-                    .overlay
+                    .policy
                     .est
                     .parent_to_child_id
                     .clone()
@@ -471,7 +393,7 @@ mod tests {
             );
             assert_eq!(
                 child_ctx
-                    .overlay
+                    .policy
                     .est
                     .parent_to_child_id
                     .clone()
@@ -522,10 +444,7 @@ mod tests {
 
             // With est_remaining_floor = 0, the floor check is: time_now > e2e_deadline - 0 = e2e_deadline.
             // Since e2e_deadline is 100ms in the future, this should NOT shed.
-            let shed = parent_ctx
-                .overlay
-                .est
-                .admission_check(parent_ctx.ctx(), 0);
+            let shed = parent_ctx.policy.est.admission_check(parent_ctx.ctx(), 0);
             assert!(!shed, "should admit when plenty of time remains");
         }
     }
