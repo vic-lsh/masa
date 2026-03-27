@@ -107,7 +107,7 @@ class TestSyntheticApp:
             prefix="syn",
             experiment_name="exp 1",
             iteration=0,
-            policy="sched_fifo,slo_abort",
+            policy="sched_fifo,abort_slo",
         )
         # docker compose project name allowed chars: [a-z0-9_-]
         assert "," not in name

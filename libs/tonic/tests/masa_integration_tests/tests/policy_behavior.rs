@@ -1,12 +1,12 @@
 #![cfg(any(
     all(feature = "sched_slo", feature = "trace_queue_latency"),
-    all(feature = "sched_slo", feature = "slo_abort"),
+    all(feature = "sched_slo", feature = "abort_slo"),
     all(feature = "sched_slo", feature = "ac_rajomon")
 ))]
 
 use std::time::Duration;
 
-#[cfg(any(feature = "slo_abort", feature = "ac_rajomon"))]
+#[cfg(any(feature = "abort_slo", feature = "ac_rajomon"))]
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
@@ -24,7 +24,7 @@ use tonic::masa_ext::MasaResponseExt;
 use tonic::transport::Server;
 use tonic::{Request, Response, Status};
 
-#[cfg(any(feature = "slo_abort", feature = "ac_rajomon"))]
+#[cfg(any(feature = "abort_slo", feature = "ac_rajomon"))]
 use tonic::Code;
 
 #[cfg(all(feature = "sched_slo", feature = "trace_queue_latency"))]
@@ -83,7 +83,7 @@ async fn queue_latency_metadata_is_attached() {
     server.abort();
 }
 
-#[cfg(all(feature = "sched_slo", feature = "slo_abort"))]
+#[cfg(all(feature = "sched_slo", feature = "abort_slo"))]
 #[tokio::test(flavor = "current_thread")]
 async fn expired_context_triggers_early_return() {
     #[derive(Clone)]

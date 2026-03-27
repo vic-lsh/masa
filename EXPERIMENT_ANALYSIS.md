@@ -13,7 +13,7 @@ Before looking at the results, you must understand what was tested.
 
 *   **Policies:** What scheduling policies are being compared?
     *   Check the `policies` file in the experiment input directory (e.g., `exp/<app>/data/in/<experiment>/policies`).
-    *   Common policies: `sched_fifo`, `sched_fifo,slo_abort`, `sched_prio,pred_sched`, `sched_prio,tailclipper,slo_abort`.
+    *   Common policies: `sched_fifo`, `sched_fifo,abort_slo`, `sched_prio,pred_sched`, `sched_prio,tailclipper,abort_slo`.
 *   **Service Graph:**
     *   **Synthetic:** Defined in `config.docker.json` (look for the `call_graph` object defining services and call sequences).
     *   **MSSim:** Defined in `mssim.json` (look for `callgraph_dirs` which points to the trace directory containing the graph structure).
@@ -64,7 +64,7 @@ Correlate performance with resource usage.
 
 *   **Saturation Check:** Are services hitting 100% CPU?
 *   **Efficiency:** If two policies have the same CPU usage but different goodput, one is doing "more useful work" (better scheduling/dropping).
-    *   *Example:* `sched_prio,pred_sched` often shows high CPU (saturation) but higher goodput than `sched_fifo,slo_abort` because it spends that CPU on requests that will actually meet the deadline.
+    *   *Example:* `sched_prio,pred_sched` often shows high CPU (saturation) but higher goodput than `sched_fifo,abort_slo` because it spends that CPU on requests that will actually meet the deadline.
 
 ### C. Container Logs (`logs/*.log`)
 Check these if behavior is inexplicable (e.g., zero goodput, sudden crashes).

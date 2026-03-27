@@ -154,7 +154,7 @@ class TestExtractServiceName:
             prefix="syn",
             experiment_name="test-syn",
             iteration=2,
-            policy="sched_fifo,slo_abort",
+            policy="sched_fifo,abort_slo",
         )
         assert syn_proj.startswith("syn-")
         assert extract_service_name(f"{syn_proj}-child-service-1") == "child-service"

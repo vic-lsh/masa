@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::task::Poll;
 
-use masa_core::{time_now, Context, SLO_ABORT};
+use masa_core::{time_now, Context, ABORT_SLO};
 use tonic_core::{Code, CowGrpcMethod, Response, Status};
 
 use super::{ChildRpcContext, Layer, LayerChild, LayerServer};
@@ -15,7 +15,7 @@ use super::{ChildRpcContext, Layer, LayerChild, LayerServer};
 
 #[derive(Debug)]
 struct SloAbortHandler {
-    will_slo_abort: AtomicBool,
+    will_abort: AtomicBool,
     rpc: CowGrpcMethod,
     last_child: Mutex<Option<CowGrpcMethod>>,
 }
@@ -23,7 +23,7 @@ struct SloAbortHandler {
 impl Default for SloAbortHandler {
     fn default() -> Self {
         Self {
-            will_slo_abort: AtomicBool::new(false),
+            will_abort: AtomicBool::new(false),
             rpc: CowGrpcMethod::new("", ""),
             last_child: Mutex::new(None),
         }
@@ -33,7 +33,7 @@ impl Default for SloAbortHandler {
 impl SloAbortHandler {
     fn new(rpc: CowGrpcMethod) -> Self {
         Self {
-            will_slo_abort: AtomicBool::new(false),
+            will_abort: AtomicBool::new(false),
             rpc,
             last_child: Mutex::new(None),
         }
@@ -46,7 +46,7 @@ impl SloAbortHandler {
     }
 
     fn check(&self, ctx: &Context) -> bool {
-        if !SLO_ABORT {
+        if !ABORT_SLO {
             return false;
         }
 
@@ -59,7 +59,7 @@ impl SloAbortHandler {
             return false;
         }
 
-        if self.will_slo_abort.load(Ordering::Relaxed) {
+        if self.will_abort.load(Ordering::Relaxed) {
             return true;
         }
 
@@ -74,7 +74,7 @@ impl SloAbortHandler {
         if should_early_return {
             // We use compare_exchange_weak to ensure we only log or trigger side effects once if needed,
             // though in this simple implementation it just sets the flag.
-            let _ = self.will_slo_abort.compare_exchange_weak(
+            let _ = self.will_abort.compare_exchange_weak(
                 false,
                 true,
                 Ordering::Relaxed,
@@ -203,10 +203,10 @@ impl LayerChild for E2eDeadlineGuardChild {
 
 #[cfg(test)]
 #[macro_export]
-macro_rules! generate_slo_abort_test {
+macro_rules! generate_abort_slo_test {
     ($ParentContext:ident, $ServerContext:ident, $ChildContext:ident) => {
         #[test]
-        #[cfg(feature = "slo_abort")]
+        #[cfg(feature = "abort_slo")]
         fn test_early_return_tracking() {
             use super::{$ChildContext, $ParentContext, $ServerContext};
             use crate::context_ext::MASA_CONTEXT_HEADER;

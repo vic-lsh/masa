@@ -6,7 +6,7 @@ pub const SCHED_TAILCLIPPER: bool = cfg!(feature = "sched_tailclipper");
 
 pub const SCHED_PRED: bool = cfg!(feature = "sched_pred");
 
-pub const SLO_ABORT: bool = cfg!(feature = "slo_abort");
+pub const ABORT_SLO: bool = cfg!(feature = "abort_slo");
 
 #[allow(dead_code)]
 pub const RAJOMON: bool = cfg!(feature = "ac_rajomon");

@@ -83,9 +83,9 @@ execute_test() {
 feature_combos=(
     "sched_fifo"
     "sched_slo"
-    "sched_tailclipper,slo_abort"
+    "sched_tailclipper,abort_slo"
     "sched_slo,ac_rajomon"
-    "sched_pred,slo_abort,ac_pred,est_mean_var"
+    "sched_pred,abort_slo,ac_pred,est_mean_var"
 )
 
 # Per-combo test dispatch: runs the hotel sched_policy test for every combo,
@@ -100,15 +100,15 @@ run_feature_tests() {
             execute_test "masa-integration-tests (sched_slo+trace_queue_latency)" \
                 cargo test -p masa-integration-tests --features sched_slo,trace_queue_latency
             ;;
-        sched_tailclipper,slo_abort)
-            execute_test "masa-integration-tests (sched_slo+slo_abort)" \
-                cargo test -p masa-integration-tests --features sched_slo,slo_abort
+        sched_tailclipper,abort_slo)
+            execute_test "masa-integration-tests (sched_slo+abort_slo)" \
+                cargo test -p masa-integration-tests --features sched_slo,abort_slo
             ;;
         sched_slo,ac_rajomon)
             execute_test "masa-integration-tests (ac_rajomon)" \
                 cargo test -p masa-integration-tests --features sched_slo,ac_rajomon
             ;;
-        sched_pred,slo_abort,ac_pred,est_mean_var)
+        sched_pred,abort_slo,ac_pred,est_mean_var)
             execute_test "tonic (est_mean_var)" \
                 cargo test -p tonic --features masa,sched_pred,est_mean_var
             ;;
