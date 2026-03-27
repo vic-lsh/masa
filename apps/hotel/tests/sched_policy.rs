@@ -1,7 +1,8 @@
 #[cfg(not(any(
     feature = "sched_fifo",
     feature = "sched_slo",
-    feature = "sched_tailclipper"
+    feature = "sched_tailclipper",
+    feature = "sched_pred"
 )))]
 #[test]
 fn test_default_policy_is_fifo() {
