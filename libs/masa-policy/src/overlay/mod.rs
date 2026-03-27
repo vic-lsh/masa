@@ -57,10 +57,17 @@ pub(crate) struct ChildRpcContext {
 
 impl ChildRpcContext {
     pub fn from_parent(ctx: &Context) -> Self {
+        // hop_count is only incremented when estimation-based admission control
+        // is active — it uses hop_count to distinguish ingress from internal hops.
+        let hop_count = if cfg!(feature = "est") {
+            ctx.hop_count().saturating_add(1)
+        } else {
+            ctx.hop_count()
+        };
         Self {
             deadline: ctx.deadline(),
             prio_hint: ctx.prio_hint(),
-            hop_count: ctx.hop_count().saturating_add(1),
+            hop_count,
             tokens: ctx.tokens(),
         }
     }
