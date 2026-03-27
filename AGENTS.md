@@ -68,19 +68,19 @@ Key policy flags:
 - `sched_fifo`: FIFO ordering (baseline)
 - `sched_slo`: Priority by end-to-end SLO deadline (implies tokio priority queue)
 - `sched_tailclipper`: TailClipper paper's oldest-request-first policy with round-robin fairness
-- `sched_pred`: Adds deadline tightening and dynamic reprioritization using latency estimates. Implies `sched_slo` and `est`.
+- `sched_pred`: Adds deadline tightening and dynamic reprioritization using downstream work estimates. Implies `sched_slo` and `estimator`.
 
 **Estimation infrastructure:**
-- `est`: Enables shared latency estimation infrastructure (estimator type selection, latency maps, estimation state). Implied by `sched_pred` and `ac_est`. Does not require `slo_abort` on its own.
+- `estimator`: Enables shared latency estimation infrastructure (estimator type selection, latency maps, estimation state). Implied by `sched_pred` and `ac_pred`. Does not require `slo_abort` on its own.
 
 **Composable modifiers:**
 - `slo_abort`: Returns early for requests past their e2e deadline, avoiding wasteful work. Composable with any scheduling policy.
 
 **Admission control** (mutually exclusive):
-- `ac_est`: Progressive cost-aware admission control — uses compute-time estimates and downstream utilization signals. Requires `est`.
+- `ac_pred`: Progressive cost-aware admission control — uses compute-time estimates and downstream utilization signals. Requires `estimator`.
 - `ac_rajomon`: Token-bucket rate limiting admission control.
 
-`scripts/check.sh` checks: default (no features), `sched_fifo`, `sched_fifo,slo_abort`, `sched_slo`, `sched_slo,slo_abort`, `sched_tailclipper,slo_abort`, `sched_slo,ac_rajomon`, `sched_slo,ac_est,est_mean_var`, `sched_pred,slo_abort,ac_est,est_mean_var`.
+`scripts/check.sh` checks: default (no features), `sched_fifo`, `sched_fifo,slo_abort`, `sched_slo`, `sched_slo,slo_abort`, `sched_tailclipper,slo_abort`, `sched_slo,ac_rajomon`, `sched_slo,ac_pred,est_mean_var`, `sched_pred,slo_abort,ac_pred,est_mean_var`.
 
 ## Architecture
 

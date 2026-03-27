@@ -118,7 +118,7 @@ pub struct ParentContext {
 }
 
 impl ParentContext {
-    #[cfg(all(feature = "est", test))]
+    #[cfg(all(feature = "estimator", test))]
     pub(crate) fn ctx(&self) -> &Context {
         &self.ctx
     }
@@ -247,7 +247,7 @@ impl ChildContext {
 mod tests {
     crate::generate_slo_abort_test!(ParentContext, ServerContext, ChildContext);
 
-    #[cfg(feature = "est")]
+    #[cfg(feature = "estimator")]
     mod est_tests {
         use super::super::{ChildContext, ParentContext, ServerContext};
         use crate::context_ext::MASA_CONTEXT_HEADER;
