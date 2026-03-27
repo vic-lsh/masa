@@ -8,7 +8,7 @@
 /// Masa context extension traits and helpers (moved from tonic to break circular dep).
 pub mod context_ext;
 mod hooks;
-pub(crate) mod overlay;
+pub(crate) mod layer;
 /// Method registry for mapping service/method strings to IDs.
 pub mod registry;
 
@@ -21,6 +21,6 @@ pub use registry::MethodRegistry;
 
 // Re-export Rajomon public items when the feature is enabled.
 #[cfg(feature = "ac_rajomon")]
-pub use overlay::rajomon::{
+pub use layer::admission::rajomon::{
     ClientTokenBucket, RajomonSharedState, CLIENT_TOKEN_BUCKET, MAX_TOKEN, RAJOMON_STATE,
 };

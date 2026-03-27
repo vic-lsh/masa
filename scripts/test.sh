@@ -97,8 +97,8 @@ run_feature_tests() {
         sched_slo)
             execute_test "masa-integration-tests (sched_slo)" \
                 cargo test -p masa-integration-tests --features sched_slo
-            execute_test "masa-integration-tests (sched_slo+trace-queue)" \
-                cargo test -p masa-integration-tests --features sched_slo,trace-queue
+            execute_test "masa-integration-tests (sched_slo+trace_queue_latency)" \
+                cargo test -p masa-integration-tests --features sched_slo,trace_queue_latency
             ;;
         sched_tailclipper,slo_abort)
             execute_test "masa-integration-tests (sched_slo+slo_abort)" \

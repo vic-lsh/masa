@@ -1,5 +1,5 @@
 #![cfg(any(
-    all(feature = "sched_slo", feature = "trace-queue"),
+    all(feature = "sched_slo", feature = "trace_queue_latency"),
     all(feature = "sched_slo", feature = "slo_abort"),
     all(feature = "sched_slo", feature = "ac_rajomon")
 ))]
@@ -19,7 +19,7 @@ use masa_integration_tests::pb::{
     Input1, Input2, Output1, Output2,
 };
 use tonic::masa_ext::MasaRequestExt;
-#[cfg(feature = "trace-queue")]
+#[cfg(feature = "trace_queue_latency")]
 use tonic::masa_ext::MasaResponseExt;
 use tonic::transport::Server;
 use tonic::{Request, Response, Status};
@@ -27,7 +27,7 @@ use tonic::{Request, Response, Status};
 #[cfg(any(feature = "slo_abort", feature = "ac_rajomon"))]
 use tonic::Code;
 
-#[cfg(all(feature = "sched_slo", feature = "trace-queue"))]
+#[cfg(all(feature = "sched_slo", feature = "trace_queue_latency"))]
 #[tokio::test(flavor = "current_thread")]
 async fn queue_latency_metadata_is_attached() {
     struct QueueSvc;

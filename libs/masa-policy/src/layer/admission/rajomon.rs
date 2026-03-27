@@ -1,4 +1,4 @@
-// Rajomon token-based admission control overlay.
+// Rajomon token-based admission control layer.
 //
 // Implements per-request token-budget admission control with server-side
 // price signals and client-side token bucket rate limiting. Aligned with
@@ -13,7 +13,7 @@ use once_cell::sync::Lazy;
 use std::sync::atomic::{AtomicU64, Ordering};
 use tonic_core::{CowGrpcMethod, Response, Status};
 
-use super::{ChildRpcContext, Overlay, OverlayChild, OverlayServer};
+use super::super::{ChildRpcContext, Layer, LayerChild, LayerServer};
 
 // ── Rajomon Tunable Parameters ──
 // Aligned with the original Go implementation (3rd_party/rajomon/).
@@ -230,19 +230,19 @@ impl RajomonSharedState {
     }
 }
 
-// ── Overlay Implementation ──────────────────────────────────────────────
+// ── Layer Implementation ────────────────────────────────────────────────
 
 #[derive(Debug)]
-pub(crate) struct RajomonOverlayServer;
+pub(crate) struct RajomonServer;
 
-impl OverlayServer for RajomonOverlayServer {
+impl LayerServer for RajomonServer {
     fn new() -> Self {
         Self
     }
 }
 
 #[derive(Debug)]
-pub(crate) struct RajomonOverlay {
+pub(crate) struct RajomonLayer {
     rpc: CowGrpcMethod,
     should_drop: bool,
     /// Remaining token budget for this request, shared across fan-out branches.
@@ -251,14 +251,14 @@ pub(crate) struct RajomonOverlay {
     inbound_tokens: AtomicU64,
 }
 
-impl Overlay for RajomonOverlay {
-    type Server = RajomonOverlayServer;
-    type Child = RajomonOverlayChild;
+impl Layer for RajomonLayer {
+    type Server = RajomonServer;
+    type Child = RajomonChild;
 
-    fn new(method: &CowGrpcMethod, _server: &RajomonOverlayServer, ctx: &mut Context) -> Self {
+    fn new(method: &CowGrpcMethod, _server: &RajomonServer, ctx: &mut Context) -> Self {
         RajomonSharedState::ensure_worker_started();
 
-        let mut overlay = Self {
+        let mut layer = Self {
             rpc: method.clone(),
             should_drop: false,
             remaining_tokens: AtomicU64::new(0),
@@ -266,23 +266,21 @@ impl Overlay for RajomonOverlay {
         };
 
         // Inbound admission check
-        let accumulated = RAJOMON_STATE.accumulated_price(&overlay.rpc);
+        let accumulated = RAJOMON_STATE.accumulated_price(&layer.rpc);
         let own = RAJOMON_STATE.own_price.load(Ordering::Relaxed);
-        overlay
-            .inbound_tokens
-            .store(ctx.tokens(), Ordering::Relaxed);
+        layer.inbound_tokens.store(ctx.tokens(), Ordering::Relaxed);
         // Enforce a minimum effective price of 1 so that requests with 0 tokens
         // are always rejected, even when the server is not congested (own_price=0).
         let effective_accumulated = accumulated.max(1);
         if ctx.tokens() < effective_accumulated {
-            overlay.should_drop = true;
+            layer.should_drop = true;
         } else {
-            overlay
+            layer
                 .remaining_tokens
                 .store(ctx.tokens() - own, Ordering::Relaxed);
         }
 
-        overlay
+        layer
     }
 
     #[inline]
@@ -306,7 +304,7 @@ impl Overlay for RajomonOverlay {
         &self,
         _ctx: &Context,
         child_method: &CowGrpcMethod,
-        _child_ctx: &mut RajomonOverlayChild,
+        _child_ctx: &mut RajomonChild,
         _request: &mut tonic_core::Request<T>,
         child_rpc: &mut ChildRpcContext,
     ) -> Result<(), Status> {
@@ -347,7 +345,7 @@ impl Overlay for RajomonOverlay {
         _ctx: &Context,
         child_method: &CowGrpcMethod,
         response: &mut Result<Response<T>, Status>,
-        _child_ctx: &RajomonOverlayChild,
+        _child_ctx: &RajomonChild,
     ) -> Result<(), Status> {
         // Extract and cache downstream prices from child response
         let metadata = match response {
@@ -401,7 +399,7 @@ impl Overlay for RajomonOverlay {
     }
 }
 
-impl RajomonOverlay {
+impl RajomonLayer {
     fn issue_error(&self, child_method: Option<&CowGrpcMethod>) -> Status {
         let mut msg = format!(
             "/EarlyReturn?src={}::{}",
@@ -434,9 +432,9 @@ impl RajomonOverlay {
 // ── Per-Child-RPC ───────────────────────────────────────────────────────
 
 #[derive(Debug, Clone)]
-pub(crate) struct RajomonOverlayChild;
+pub(crate) struct RajomonChild;
 
-impl OverlayChild for RajomonOverlayChild {
+impl LayerChild for RajomonChild {
     fn new() -> Self {
         Self
     }
@@ -745,9 +743,9 @@ mod tests {
             .remove(&CowGrpcMethod::new("svc", "method"));
 
         let mut ctx = masa_core::ContextBuilder::new("test", 0).tokens(20).build();
-        let overlay = RajomonOverlay::new(&method, &RajomonOverlayServer, &mut ctx);
-        assert!(!overlay.should_drop);
-        assert_eq!(overlay.remaining_tokens.load(Ordering::Relaxed), 17); // 20 - own(3) = 17
+        let layer = RajomonLayer::new(&method, &RajomonServer, &mut ctx);
+        assert!(!layer.should_drop);
+        assert_eq!(layer.remaining_tokens.load(Ordering::Relaxed), 17); // 20 - own(3) = 17
     }
 
     /// When downstream price > own_price, gate uses accumulated but deduction uses own only.
@@ -763,9 +761,9 @@ mod tests {
             .max_downstream_for_method
             .insert(method.clone(), 20); // accumulated = max(5, 20) = 20
         let mut ctx = masa_core::ContextBuilder::new("test", 0).tokens(25).build();
-        let overlay = RajomonOverlay::new(&method, &RajomonOverlayServer, &mut ctx);
-        assert!(!overlay.should_drop); // tok(25) >= accumulated(20) -> admitted
-        assert_eq!(overlay.remaining_tokens.load(Ordering::Relaxed), 20); // 25 - own(5) = 20, not 25 - 20 = 5
+        let layer = RajomonLayer::new(&method, &RajomonServer, &mut ctx);
+        assert!(!layer.should_drop); // tok(25) >= accumulated(20) -> admitted
+        assert_eq!(layer.remaining_tokens.load(Ordering::Relaxed), 20); // 25 - own(5) = 20, not 25 - 20 = 5
     }
 
     #[test]
@@ -775,8 +773,8 @@ mod tests {
         RAJOMON_STATE.own_price.store(100, Ordering::Relaxed);
 
         let mut ctx = masa_core::ContextBuilder::new("test", 0).tokens(10).build();
-        let overlay = RajomonOverlay::new(&method, &RajomonOverlayServer, &mut ctx);
-        assert!(overlay.should_drop);
+        let layer = RajomonLayer::new(&method, &RajomonServer, &mut ctx);
+        assert!(layer.should_drop);
     }
 
     #[test]
@@ -789,9 +787,9 @@ mod tests {
             .remove(&CowGrpcMethod::new("svc", "exact_method"));
 
         let mut ctx = masa_core::ContextBuilder::new("test", 0).tokens(10).build();
-        let overlay = RajomonOverlay::new(&method, &RajomonOverlayServer, &mut ctx);
-        assert!(!overlay.should_drop);
-        assert_eq!(overlay.remaining_tokens.load(Ordering::Relaxed), 0); // 10 - 10 = 0
+        let layer = RajomonLayer::new(&method, &RajomonServer, &mut ctx);
+        assert!(!layer.should_drop);
+        assert_eq!(layer.remaining_tokens.load(Ordering::Relaxed), 0); // 10 - 10 = 0
     }
 
     #[test]
@@ -803,8 +801,8 @@ mod tests {
         // Even with own_price=0, the baseline minimum effective price is 1,
         // so a request with 0 tokens is always rejected.
         let mut ctx = masa_core::ContextBuilder::new("test", 0).tokens(0).build();
-        let overlay = RajomonOverlay::new(&method, &RajomonOverlayServer, &mut ctx);
-        assert!(overlay.should_drop);
+        let layer = RajomonLayer::new(&method, &RajomonServer, &mut ctx);
+        assert!(layer.should_drop);
     }
 
     // ── E. Downstream Price Tests (Max Recomputation, Not Ratchet) ──
@@ -944,23 +942,23 @@ mod tests {
         // but own_price=0, so remaining=100-0=100
         // inbound_tokens=100
 
-        // Need to construct overlay to test should_propagate_price
-        let overlay = RajomonOverlay::new(&method, &RajomonOverlayServer, &mut ctx);
+        // Need to construct layer to test should_propagate_price
+        let layer = RajomonLayer::new(&method, &RajomonServer, &mut ctx);
 
-        overlay.inbound_tokens.store(5, Ordering::Relaxed);
-        assert!(overlay.should_propagate_price()); // 5 % 5 == 0
+        layer.inbound_tokens.store(5, Ordering::Relaxed);
+        assert!(layer.should_propagate_price()); // 5 % 5 == 0
 
-        overlay.inbound_tokens.store(10, Ordering::Relaxed);
-        assert!(overlay.should_propagate_price()); // 10 % 5 == 0
+        layer.inbound_tokens.store(10, Ordering::Relaxed);
+        assert!(layer.should_propagate_price()); // 10 % 5 == 0
 
-        overlay.inbound_tokens.store(0, Ordering::Relaxed);
-        assert!(overlay.should_propagate_price()); // 0 % 5 == 0
+        layer.inbound_tokens.store(0, Ordering::Relaxed);
+        assert!(layer.should_propagate_price()); // 0 % 5 == 0
 
-        overlay.inbound_tokens.store(3, Ordering::Relaxed);
-        assert!(!overlay.should_propagate_price()); // 3 % 5 != 0
+        layer.inbound_tokens.store(3, Ordering::Relaxed);
+        assert!(!layer.should_propagate_price()); // 3 % 5 != 0
 
-        overlay.inbound_tokens.store(7, Ordering::Relaxed);
-        assert!(!overlay.should_propagate_price()); // 7 % 5 != 0
+        layer.inbound_tokens.store(7, Ordering::Relaxed);
+        assert!(!layer.should_propagate_price()); // 7 % 5 != 0
     }
 
     // ── H. End-to-End Algorithmic Equivalence Tests ──
@@ -973,9 +971,9 @@ mod tests {
         RAJOMON_STATE.max_downstream_for_method.remove(&method);
 
         let mut ctx = masa_core::ContextBuilder::new("test", 0).tokens(20).build();
-        let overlay = RajomonOverlay::new(&method, &RajomonOverlayServer, &mut ctx);
-        assert!(!overlay.should_drop);
-        assert_eq!(overlay.remaining_tokens.load(Ordering::Relaxed), 13); // 20 - 7 = 13
+        let layer = RajomonLayer::new(&method, &RajomonServer, &mut ctx);
+        assert!(!layer.should_drop);
+        assert_eq!(layer.remaining_tokens.load(Ordering::Relaxed), 13); // 20 - 7 = 13
     }
 
     #[test]
@@ -992,13 +990,13 @@ mod tests {
             let mut ctx = masa_core::ContextBuilder::new("test", 0)
                 .tokens(token_val)
                 .build();
-            let overlay = RajomonOverlay::new(&method, &RajomonOverlayServer, &mut ctx);
-            if overlay.should_drop {
+            let layer = RajomonLayer::new(&method, &RajomonServer, &mut ctx);
+            if layer.should_drop {
                 rejected += 1;
             } else {
                 accepted += 1;
                 if i >= 5 {
-                    assert_eq!(overlay.remaining_tokens.load(Ordering::Relaxed), 10);
+                    assert_eq!(layer.remaining_tokens.load(Ordering::Relaxed), 10);
                     // 20 - 10
                 }
             }

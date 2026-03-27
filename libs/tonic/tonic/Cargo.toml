@@ -56,7 +56,7 @@ channel = []
 
 # masa-specific features
 masa = []
-trace-queue = []
+trace_queue_latency = []
 sched_slo = ["masa", "masa-core/sched_slo", "masa-policy/sched_slo", "tokio/sched_prio"]
 sched_tailclipper = ["masa", "masa-core/sched_tailclipper", "masa-policy/sched_tailclipper", "tokio/sched_prio", "tokio/tailclipper"]
 sched_fifo = ["masa", "masa-core/sched_fifo", "masa-policy/sched_fifo", "tokio/sched_fifo"]

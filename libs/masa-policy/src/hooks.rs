@@ -3,18 +3,18 @@
 // `PolicyHooks` is the single concrete `Hooks` implementation used by all
 // scheduling policies (sched_fifo, sched_slo, sched_tailclipper, sched_pred).
 // The actual scheduling differences are handled by the tokio runtime and,
-// when enabled, the active overlay (predictive or rajomon).
+// when enabled, the active layer (predictive or rajomon).
 //
-// Overlays are called in field order: slo_abort (guard), policy (scheduling),
-// queue_latency (observer). The first `Err` short-circuits.
+// Layers are called in field order: e2e_deadline_guard (guard), policy
+// (scheduling), queue_latency (observer). The first `Err` short-circuits.
 
 use std::sync::Arc;
 use std::task::Poll;
 
 use crate::context_ext::{read_context, MasaRequestExt, MasaResponseExt, MasaStatusExt};
-use crate::overlay::{
-    AdmissionControlOverlay, ChildRpcContext, Overlay, OverlayChild, OverlayServer,
-    QueueLatencyOverlay, SloAbortOverlay,
+use crate::layer::{
+    ChildRpcContext, E2eDeadlineGuardLayer, Layer, LayerChild, LayerServer, PolicyLayer,
+    QueueLatencyLayer,
 };
 use masa_core::{Context, ContextBuilder};
 use tonic_core::masa_ext::resolve_method_name_from_http;
@@ -22,21 +22,21 @@ use tonic_core::masa_ext::resolve_method_name_from_request;
 use tonic_core::masa_ext::{ClientHooks, Hooks, ParentHooks, ServerHooks};
 use tonic_core::{CowGrpcMethod, GrpcMethod, Request, Response, Status};
 
-/// Invoke `$body` for each overlay in field order (slo_abort → policy → queue_latency).
+/// Invoke `$body` for each layer in field order (e2e_deadline_guard → policy → queue_latency).
 /// The first `Err` short-circuits via `?` if the body uses it.
 ///
 /// Forms:
-///   for_each_overlay!(self, |o| body)                      — parent overlay only
-///   for_each_overlay!(self, mut child, |o, c| body)        — with mutable child field
-///   for_each_overlay!(self, child, |o, c| body)            — with immutable child field
-macro_rules! for_each_overlay {
+///   for_each_layer!(self, |o| body)                      — parent layer only
+///   for_each_layer!(self, mut child, |o, c| body)        — with mutable child field
+///   for_each_layer!(self, child, |o, c| body)            — with immutable child field
+macro_rules! for_each_layer {
     ($self:ident, |$o:ident| $body:expr) => {{
         {
-            let $o = &$self.slo_abort;
+            let $o = &$self.e2e_deadline_guard;
             $body
         }
         {
-            let $o = &$self.admission;
+            let $o = &$self.policy;
             $body
         }
         {
@@ -46,13 +46,13 @@ macro_rules! for_each_overlay {
     }};
     ($self:ident, mut $child:ident, |$o:ident, $c:ident| $body:expr) => {{
         {
-            let $o = &$self.slo_abort;
-            let $c = &mut $child.slo_abort;
+            let $o = &$self.e2e_deadline_guard;
+            let $c = &mut $child.e2e_deadline_guard;
             $body
         }
         {
-            let $o = &$self.admission;
-            let $c = &mut $child.admission;
+            let $o = &$self.policy;
+            let $c = &mut $child.policy;
             $body
         }
         {
@@ -63,13 +63,13 @@ macro_rules! for_each_overlay {
     }};
     ($self:ident, $child:ident, |$o:ident, $c:ident| $body:expr) => {{
         {
-            let $o = &$self.slo_abort;
-            let $c = &$child.slo_abort;
+            let $o = &$self.e2e_deadline_guard;
+            let $c = &$child.e2e_deadline_guard;
             $body
         }
         {
-            let $o = &$self.admission;
-            let $c = &$child.admission;
+            let $o = &$self.policy;
+            let $c = &$child.policy;
             $body
         }
         {
@@ -92,17 +92,17 @@ impl Hooks for PolicyHooks {
 
 #[derive(Debug)]
 pub struct ServerContext {
-    slo_abort: <SloAbortOverlay as Overlay>::Server,
-    admission: <AdmissionControlOverlay as Overlay>::Server,
-    queue_latency: <QueueLatencyOverlay as Overlay>::Server,
+    e2e_deadline_guard: <E2eDeadlineGuardLayer as Layer>::Server,
+    policy: <PolicyLayer as Layer>::Server,
+    queue_latency: <QueueLatencyLayer as Layer>::Server,
 }
 
 impl ServerHooks for ServerContext {
     fn new(_service_name: &'static str) -> Self {
         Self {
-            slo_abort: <<SloAbortOverlay as Overlay>::Server as OverlayServer>::new(),
-            admission: <<AdmissionControlOverlay as Overlay>::Server as OverlayServer>::new(),
-            queue_latency: <<QueueLatencyOverlay as Overlay>::Server as OverlayServer>::new(),
+            e2e_deadline_guard: <<E2eDeadlineGuardLayer as Layer>::Server as LayerServer>::new(),
+            policy: <<PolicyLayer as Layer>::Server as LayerServer>::new(),
+            queue_latency: <<QueueLatencyLayer as Layer>::Server as LayerServer>::new(),
         }
     }
 }
@@ -112,9 +112,9 @@ impl ServerHooks for ServerContext {
 pub struct ParentContext {
     ctx: Context,
     resolved_method: CowGrpcMethod,
-    pub(crate) slo_abort: SloAbortOverlay,
-    pub(crate) admission: AdmissionControlOverlay,
-    pub(crate) queue_latency: QueueLatencyOverlay,
+    pub(crate) e2e_deadline_guard: E2eDeadlineGuardLayer,
+    pub(crate) policy: PolicyLayer,
+    pub(crate) queue_latency: QueueLatencyLayer,
 }
 
 impl ParentContext {
@@ -133,22 +133,23 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         let mut ctx = read_context(req);
         let resolved_method = resolve_method_name_from_http(method, req);
 
-        let slo_abort = SloAbortOverlay::new(&resolved_method, &server_ctx.slo_abort, &mut ctx);
-        let admission =
-            AdmissionControlOverlay::new(&resolved_method, &server_ctx.admission, &mut ctx);
-        let queue_latency = QueueLatencyOverlay::new(&resolved_method, &server_ctx.queue_latency, &mut ctx);
+        let e2e_deadline_guard =
+            E2eDeadlineGuardLayer::new(&resolved_method, &server_ctx.e2e_deadline_guard, &mut ctx);
+        let policy = PolicyLayer::new(&resolved_method, &server_ctx.policy, &mut ctx);
+        let queue_latency =
+            QueueLatencyLayer::new(&resolved_method, &server_ctx.queue_latency, &mut ctx);
 
         Self {
             ctx,
             resolved_method,
-            slo_abort,
-            admission,
+            e2e_deadline_guard,
+            policy,
             queue_latency,
         }
     }
 
     fn before_poll<Ret>(&self) -> Result<(), Result<Response<Ret>, Status>> {
-        for_each_overlay!(self, |o| o.before_poll(&self.ctx)?);
+        for_each_layer!(self, |o| o.before_poll(&self.ctx)?);
         Ok(())
     }
 
@@ -163,7 +164,7 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
 
         let mut child_rpc = ChildRpcContext::from_parent(&self.ctx);
 
-        for_each_overlay!(self, mut child_ctx, |o, c| o.before_child_rpc(
+        for_each_layer!(self, mut child_ctx, |o, c| o.before_child_rpc(
             &self.ctx,
             &child_method_name,
             c,
@@ -189,7 +190,7 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         child_ctx: ChildContext,
     ) -> Result<(), Status> {
         if let Some(child_method) = child_ctx.child_method_name.as_ref() {
-            for_each_overlay!(self, child_ctx, |o, c| o.after_child_rpc(
+            for_each_layer!(self, child_ctx, |o, c| o.after_child_rpc(
                 &self.ctx,
                 child_method,
                 response,
@@ -203,14 +204,14 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         &self,
         poll: &Poll<Result<Response<Ret>, Status>>,
     ) -> Result<(), Result<Response<Ret>, Status>> {
-        for_each_overlay!(self, |o| o.after_poll(&self.ctx, poll)?);
+        for_each_layer!(self, |o| o.after_poll(&self.ctx, poll)?);
         Ok(())
     }
 
     fn finalize_before_serialization<Ret>(&self, result: &mut Result<Response<Ret>, Status>) {
         let mut ctx = self.ctx.clone();
-        for_each_overlay!(self, |o| o.finalize(&mut ctx, result));
-        // Single serialization point — all overlays wrote to `ctx`.
+        for_each_layer!(self, |o| o.finalize(&mut ctx, result));
+        // Single serialization point — all layers wrote to `ctx`.
         match result {
             Ok(resp) => resp.set_masa_context(&ctx),
             Err(status) => status.set_masa_context(&ctx),
@@ -221,18 +222,18 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
 #[derive(Debug, Clone)]
 pub struct ChildContext {
     pub child_method_name: Option<CowGrpcMethod>,
-    slo_abort: <SloAbortOverlay as Overlay>::Child,
-    pub(crate) admission: <AdmissionControlOverlay as Overlay>::Child,
-    queue_latency: <QueueLatencyOverlay as Overlay>::Child,
+    e2e_deadline_guard: <E2eDeadlineGuardLayer as Layer>::Child,
+    pub(crate) policy: <PolicyLayer as Layer>::Child,
+    queue_latency: <QueueLatencyLayer as Layer>::Child,
 }
 
 impl ClientHooks for ChildContext {
     fn new<T>(_method: GrpcMethod, _request: &Request<T>) -> Self {
         Self {
             child_method_name: None,
-            slo_abort: <<SloAbortOverlay as Overlay>::Child as OverlayChild>::new(),
-            admission: <<AdmissionControlOverlay as Overlay>::Child as OverlayChild>::new(),
-            queue_latency: <<QueueLatencyOverlay as Overlay>::Child as OverlayChild>::new(),
+            e2e_deadline_guard: <<E2eDeadlineGuardLayer as Layer>::Child as LayerChild>::new(),
+            policy: <<PolicyLayer as Layer>::Child as LayerChild>::new(),
+            queue_latency: <<QueueLatencyLayer as Layer>::Child as LayerChild>::new(),
         }
     }
 }
@@ -251,8 +252,8 @@ mod tests {
     mod est_tests {
         use super::super::{ChildContext, ParentContext, ServerContext};
         use crate::context_ext::MASA_CONTEXT_HEADER;
-        use crate::overlay::predictive::est::estimator::ParentToChildId;
-        use crate::overlay::predictive::est::state::EstServerState;
+        use crate::layer::est::estimator::ParentToChildId;
+        use crate::layer::est::state::EstServerState;
         use masa_core::{ContextBuilder, LatencyRms};
         use std::sync::Arc;
         use tonic_core::masa_ext::resolve_method_name_from_http;
@@ -404,8 +405,8 @@ mod tests {
                 .unwrap();
 
             // Verify child context has ID and Server
-            assert!(child_ctx.admission.est.parent_to_child_id.is_some());
-            assert!(child_ctx.admission.est.server.is_some());
+            assert!(child_ctx.policy.est.parent_to_child_id.is_some());
+            assert!(child_ctx.policy.est.server.is_some());
 
             // Verify registry has IDs
             let registry = MethodRegistry::global();
@@ -414,7 +415,7 @@ mod tests {
 
             assert_eq!(
                 child_ctx
-                    .admission
+                    .policy
                     .est
                     .parent_to_child_id
                     .clone()
@@ -424,7 +425,7 @@ mod tests {
             );
             assert_eq!(
                 child_ctx
-                    .admission
+                    .policy
                     .est
                     .parent_to_child_id
                     .clone()
@@ -475,10 +476,7 @@ mod tests {
 
             // With est_remaining_floor = 0, the floor check is: time_now > e2e_deadline - 0 = e2e_deadline.
             // Since e2e_deadline is 100ms in the future, this should NOT shed.
-            let shed = parent_ctx
-                .admission
-                .est
-                .admission_check(parent_ctx.ctx(), 0);
+            let shed = parent_ctx.policy.est.admission_check(parent_ctx.ctx(), 0);
             assert!(!shed, "should admit when plenty of time remains");
         }
     }

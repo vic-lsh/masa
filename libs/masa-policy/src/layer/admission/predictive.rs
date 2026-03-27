@@ -1,22 +1,219 @@
-// Predictive admission control.
+// Predictive admission control layer — latency estimation, deadline
+// tightening, and predictive admission control.
 //
-// Provides `PredictiveAdmission` (zero-cost wrapper selecting between full ac_pred
-// and floor-only checks), `AdmissionController` (compute-budget token bucket),
-// and `BottleneckTracker` (per-API utilization tracking with staleness decay).
-//
-// `PredictiveAdmission` is owned by `PredictiveOverlay` and called from
-// `before_child_rpc`. It reads estimation maps from `EstServerState`.
-
-use masa_core::Context;
-
-use super::est::estimator::DefaultLatencyEstimator;
-use super::est::state::EstServerState;
-
-// ── Bottleneck Tracker ──────────────────────────────────────────────────
+// When `estimator` is enabled, this layer tracks latency distributions,
+// tightens child deadlines (when `sched_pred` is also enabled), and runs
+// predictive admission control.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::sync::Mutex;
+use std::task::Poll;
 use std::time::Instant;
+
+use masa_core::{Context, PriorityHint};
+use tonic_core::{Code, CowGrpcMethod, Response, Status};
+
+use super::super::{ChildRpcContext, Layer, LayerChild, LayerServer};
+use crate::layer::est::estimator::DefaultLatencyEstimator;
+use crate::layer::est::state::{
+    is_early_return_response, EstChildState, EstRequestState, EstServerState,
+};
+use crate::MethodRegistry;
+
+// ── Server ──────────────────────────────────────────────────────────────
+
+/// Server-level predictive layer state (shared across requests).
+#[derive(Debug)]
+pub(crate) struct PredAdmissionServer {
+    est: Arc<EstServerState<DefaultLatencyEstimator>>,
+    pred_admission: Arc<PredictiveAdmission>,
+}
+
+impl LayerServer for PredAdmissionServer {
+    fn new() -> Self {
+        Self {
+            est: Arc::new(EstServerState::new()),
+            pred_admission: Arc::new(PredictiveAdmission::new()),
+        }
+    }
+}
+
+// ── Per-Request ─────────────────────────────────────────────────────────
+
+/// Per-request predictive layer state.
+#[derive(Debug)]
+pub(crate) struct PredAdmissionLayer {
+    pub(crate) est: EstRequestState<DefaultLatencyEstimator>,
+    pred_admission: Arc<PredictiveAdmission>,
+    rpc: CowGrpcMethod,
+}
+
+impl Layer for PredAdmissionLayer {
+    type Server = PredAdmissionServer;
+    type Child = PredAdmissionChild;
+
+    fn new(method: &CowGrpcMethod, server: &PredAdmissionServer, _ctx: &mut Context) -> Self {
+        let resolved_method_id =
+            MethodRegistry::global().get_or_register_method(method.service(), method.method());
+        Self {
+            est: EstRequestState::new(resolved_method_id, server.est.clone()),
+            pred_admission: server.pred_admission.clone(),
+            rpc: method.clone(),
+        }
+    }
+
+    /// Reprioritize the current task based on remaining time to deadline.
+    #[inline]
+    fn before_poll<Ret>(&self, ctx: &Context) -> Result<(), Result<Response<Ret>, Status>> {
+        #[cfg(feature = "sched_pred")]
+        {
+            let remaining = ctx.deadline().saturating_sub(masa_core::time_now());
+            tokio::task::reprioritize(PriorityHint::new(remaining));
+        }
+        #[cfg(not(feature = "sched_pred"))]
+        let _ = ctx;
+
+        self.est.start_compute_tracking();
+        Ok(())
+    }
+
+    /// Compute child deadline and priority, run predictive admission control,
+    /// and set the child request context.
+    ///
+    /// Returns `Err` if the request should be shed.
+    #[inline]
+    fn before_child_rpc<T>(
+        &self,
+        ctx: &Context,
+        child_method_name: &CowGrpcMethod,
+        child_ctx: &mut PredAdmissionChild,
+        _request: &mut tonic_core::Request<T>,
+        child_rpc: &mut ChildRpcContext,
+    ) -> Result<(), Status> {
+        let est_remaining = {
+            let result =
+                self.est
+                    .prepare_before_child_rpc(ctx, child_method_name, &mut child_ctx.est);
+
+            if self.pred_admission.admission_check(
+                &self.est.server,
+                self.est.resolved_method_id,
+                ctx,
+                result.key,
+            ) {
+                return Err(Status::new(
+                    Code::DeadlineExceeded,
+                    format!(
+                        "/EarlyReturn?src={}::{}?last_rpc={}::{}",
+                        self.rpc.service(),
+                        self.rpc.method(),
+                        child_method_name.service(),
+                        child_method_name.method(),
+                    ),
+                ));
+            }
+
+            result.est_remaining
+        };
+
+        let (deadline, prio_hint) = Self::child_deadline_and_prio(ctx, est_remaining);
+        child_rpc.deadline = deadline;
+        child_rpc.prio_hint = prio_hint;
+
+        Ok(())
+    }
+
+    /// Process a child RPC response: track latencies, propagate errors.
+    #[inline]
+    fn after_child_rpc<T>(
+        &self,
+        ctx: &Context,
+        _child_method: &CowGrpcMethod,
+        response: &mut Result<Response<T>, Status>,
+        child_ctx: &PredAdmissionChild,
+    ) -> Result<(), Status> {
+        child_ctx.est.finalize(response);
+        if let Some(downstream_util) = self.est.after_child_rpc(response, &child_ctx.est) {
+            self.pred_admission
+                .update_bottleneck(ctx.api(), downstream_util);
+        }
+
+        #[cfg(feature = "sched_pred")]
+        if let Err(status) = response {
+            return Err(status.clone());
+        }
+
+        Ok(())
+    }
+
+    /// Stop compute tracking after a poll.
+    #[inline]
+    fn after_poll<Ret>(
+        &self,
+        _ctx: &Context,
+        _poll: &Poll<Result<Response<Ret>, Status>>,
+    ) -> Result<(), Result<Response<Ret>, Status>> {
+        self.est.stop_compute_tracking();
+        Ok(())
+    }
+
+    /// Track latencies and inject response metadata at finalization.
+    ///
+    /// Sets `response_meta` on the shared `ctx`; the caller serializes once.
+    #[inline]
+    fn finalize<Ret>(&self, ctx: &mut Context, result: &mut Result<Response<Ret>, Status>) {
+        if !is_early_return_response(result) {
+            self.est.track_latencies();
+        }
+        self.est.inject_response_meta(ctx);
+    }
+}
+
+impl PredAdmissionLayer {
+    /// Compute child deadline and priority hint.
+    ///
+    /// When `sched_pred` is enabled, tightens the deadline by subtracting
+    /// `est_remaining`.  Uses deadline alone as `prio_hint` (not
+    /// `deadline - est_child`) to avoid priority inversions under load.
+    ///
+    /// When `sched_pred` is disabled, passes through the parent values.
+    #[inline]
+    fn child_deadline_and_prio(ctx: &Context, est_remaining: u64) -> (u64, PriorityHint) {
+        #[cfg(feature = "sched_pred")]
+        {
+            let d = ctx.deadline().saturating_sub(est_remaining);
+            (d, PriorityHint::new(d))
+        }
+        #[cfg(not(feature = "sched_pred"))]
+        {
+            let _ = est_remaining;
+            (ctx.deadline(), ctx.prio_hint())
+        }
+    }
+}
+
+// ── Per-Child-RPC ───────────────────────────────────────────────────────
+
+/// Per-child-RPC predictive layer state.
+#[derive(Debug, Clone)]
+pub(crate) struct PredAdmissionChild {
+    pub(crate) est: EstChildState<DefaultLatencyEstimator>,
+}
+
+impl LayerChild for PredAdmissionChild {
+    fn new() -> Self {
+        Self {
+            est: EstChildState::new(),
+        }
+    }
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// Predictive admission control
+// ══════════════════════════════════════════════════════════════════════════
+
+// ── Bottleneck Tracker ──────────────────────────────────────────────────
 
 const STALENESS_SECS: f64 = 2.0;
 const STALENESS_DEFAULT: f32 = 0.5;
