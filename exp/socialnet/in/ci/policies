@@ -1,4 +1,4 @@
-fifo
-fifo,early
-prio_local,early
-prio_oldest,early
+sched_fifo
+sched_fifo,abort_slo
+sched_pred,abort_slo,est_mean_var
+sched_tailclipper,abort_slo

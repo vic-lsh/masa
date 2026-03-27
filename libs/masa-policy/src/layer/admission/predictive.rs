@@ -5,10 +5,13 @@
 // tightens child deadlines (when `sched_pred` is also enabled), and runs
 // predictive admission control.
 
+#[cfg(feature = "ac_pred")]
 use std::collections::HashMap;
 use std::sync::Arc;
+#[cfg(feature = "ac_pred")]
 use std::sync::Mutex;
 use std::task::Poll;
+#[cfg(feature = "ac_pred")]
 use std::time::Instant;
 
 use masa_core::{Context, PriorityHint};
@@ -215,15 +218,19 @@ impl LayerChild for PredAdmissionChild {
 
 // ── Bottleneck Tracker ──────────────────────────────────────────────────
 
+#[cfg(feature = "ac_pred")]
 const STALENESS_SECS: f64 = 2.0;
+#[cfg(feature = "ac_pred")]
 const STALENESS_DEFAULT: f32 = 0.5;
 
 /// Tracks max_downstream_util per API with staleness decay.
+#[cfg(feature = "ac_pred")]
 #[derive(Debug)]
 pub(crate) struct BottleneckTracker {
     inner: Mutex<HashMap<String, (f32, Instant)>>,
 }
 
+#[cfg(feature = "ac_pred")]
 impl BottleneckTracker {
     pub(crate) fn new() -> Self {
         Self {
@@ -255,17 +262,23 @@ impl BottleneckTracker {
 
 // ── Admission Controller ────────────────────────────────────────────────
 
+#[cfg(feature = "ac_pred")]
 const UTIL_TARGET: f64 = 0.92;
+#[cfg(feature = "ac_pred")]
 const ADJUST_RATE: f64 = 0.5;
+#[cfg(feature = "ac_pred")]
 const MAX_BURST_SECS: f64 = 0.1;
+#[cfg(feature = "ac_pred")]
 const INITIAL_BUDGET_RATE: f64 = 10_000_000.0; // us/s — start generous
 
+#[cfg(feature = "ac_pred")]
 struct BudgetState {
     budget_us: f64,
     budget_rate: f64,
     last_refill: Instant,
 }
 
+#[cfg(feature = "ac_pred")]
 impl std::fmt::Debug for BudgetState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("BudgetState")
@@ -276,12 +289,14 @@ impl std::fmt::Debug for BudgetState {
 }
 
 /// Admission controller using compute-budget token bucket.
+#[cfg(feature = "ac_pred")]
 #[derive(Debug)]
 pub(crate) struct AdmissionController {
     bottleneck: BottleneckTracker,
     state: Mutex<BudgetState>,
 }
 
+#[cfg(feature = "ac_pred")]
 impl AdmissionController {
     pub(crate) fn new() -> Self {
         Self {
