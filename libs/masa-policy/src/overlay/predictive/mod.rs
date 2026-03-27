@@ -135,7 +135,8 @@ impl Overlay for PredictiveOverlay {
     ) -> Result<(), Status> {
         child_ctx.est.finalize(response);
         if let Some(downstream_util) = self.est.after_child_rpc(response, &child_ctx.est) {
-            self.pred_admission.update_bottleneck(ctx.api(), downstream_util);
+            self.pred_admission
+                .update_bottleneck(ctx.api(), downstream_util);
         }
 
         #[cfg(feature = "sched_pred")]

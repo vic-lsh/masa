@@ -13,8 +13,8 @@ use std::task::Poll;
 
 use crate::context_ext::{read_context, MasaRequestExt, MasaResponseExt, MasaStatusExt};
 use crate::overlay::{
-    AdmissionControlOverlay, ChildRpcContext, Overlay, OverlayChild, OverlayServer, QueueLatOverlay,
-    SloAbortOverlay,
+    AdmissionControlOverlay, ChildRpcContext, Overlay, OverlayChild, OverlayServer,
+    QueueLatOverlay, SloAbortOverlay,
 };
 use masa_core::{Context, ContextBuilder};
 use tonic_core::masa_ext::resolve_method_name_from_http;
@@ -31,19 +31,52 @@ use tonic_core::{CowGrpcMethod, GrpcMethod, Request, Response, Status};
 ///   for_each_overlay!(self, child, |o, c| body)            — with immutable child field
 macro_rules! for_each_overlay {
     ($self:ident, |$o:ident| $body:expr) => {{
-        { let $o = &$self.slo_abort; $body }
-        { let $o = &$self.admission; $body }
-        { let $o = &$self.queue_lat; $body }
+        {
+            let $o = &$self.slo_abort;
+            $body
+        }
+        {
+            let $o = &$self.admission;
+            $body
+        }
+        {
+            let $o = &$self.queue_lat;
+            $body
+        }
     }};
     ($self:ident, mut $child:ident, |$o:ident, $c:ident| $body:expr) => {{
-        { let $o = &$self.slo_abort; let $c = &mut $child.slo_abort; $body }
-        { let $o = &$self.admission; let $c = &mut $child.admission; $body }
-        { let $o = &$self.queue_lat; let $c = &mut $child.queue_lat; $body }
+        {
+            let $o = &$self.slo_abort;
+            let $c = &mut $child.slo_abort;
+            $body
+        }
+        {
+            let $o = &$self.admission;
+            let $c = &mut $child.admission;
+            $body
+        }
+        {
+            let $o = &$self.queue_lat;
+            let $c = &mut $child.queue_lat;
+            $body
+        }
     }};
     ($self:ident, $child:ident, |$o:ident, $c:ident| $body:expr) => {{
-        { let $o = &$self.slo_abort; let $c = &$child.slo_abort; $body }
-        { let $o = &$self.admission; let $c = &$child.admission; $body }
-        { let $o = &$self.queue_lat; let $c = &$child.queue_lat; $body }
+        {
+            let $o = &$self.slo_abort;
+            let $c = &$child.slo_abort;
+            $body
+        }
+        {
+            let $o = &$self.admission;
+            let $c = &$child.admission;
+            $body
+        }
+        {
+            let $o = &$self.queue_lat;
+            let $c = &$child.queue_lat;
+            $body
+        }
     }};
 }
 
@@ -101,7 +134,8 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         let resolved_method = resolve_method_name_from_http(method, req);
 
         let slo_abort = SloAbortOverlay::new(&resolved_method, &server_ctx.slo_abort, &mut ctx);
-        let admission = AdmissionControlOverlay::new(&resolved_method, &server_ctx.admission, &mut ctx);
+        let admission =
+            AdmissionControlOverlay::new(&resolved_method, &server_ctx.admission, &mut ctx);
         let queue_lat = QueueLatOverlay::new(&resolved_method, &server_ctx.queue_lat, &mut ctx);
 
         Self {
@@ -129,9 +163,13 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
 
         let mut child_rpc = ChildRpcContext::from_parent(&self.ctx);
 
-        for_each_overlay!(self, mut child_ctx, |o, c|
-            o.before_child_rpc(&self.ctx, &child_method_name, c, request, &mut child_rpc)?
-        );
+        for_each_overlay!(self, mut child_ctx, |o, c| o.before_child_rpc(
+            &self.ctx,
+            &child_method_name,
+            c,
+            request,
+            &mut child_rpc
+        )?);
 
         let child_recv_ctx = ContextBuilder::from(&self.ctx)
             .deadline(child_rpc.deadline)
@@ -151,9 +189,12 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         child_ctx: ChildContext,
     ) -> Result<(), Status> {
         if let Some(child_method) = child_ctx.child_method_name.as_ref() {
-            for_each_overlay!(self, child_ctx, |o, c|
-                o.after_child_rpc(&self.ctx, child_method, response, c)?
-            );
+            for_each_overlay!(self, child_ctx, |o, c| o.after_child_rpc(
+                &self.ctx,
+                child_method,
+                response,
+                c
+            )?);
         }
         Ok(())
     }
@@ -434,7 +475,10 @@ mod tests {
 
             // With est_remaining_floor = 0, the floor check is: time_now > e2e_deadline - 0 = e2e_deadline.
             // Since e2e_deadline is 100ms in the future, this should NOT shed.
-            let shed = parent_ctx.admission.est.admission_check(parent_ctx.ctx(), 0);
+            let shed = parent_ctx
+                .admission
+                .est
+                .admission_check(parent_ctx.ctx(), 0);
             assert!(!shed, "should admit when plenty of time remains");
         }
     }

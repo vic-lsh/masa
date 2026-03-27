@@ -1,7 +1,7 @@
 use hdrhistogram::Histogram;
 use masa::Context;
-use masa_policy::context_ext::{get_masa_context_from_metadata, set_masa_context_in_metadata};
 use std::time::{Duration, Instant};
+use tonic::masa_ext::{get_masa_context_from_metadata, set_masa_context_in_metadata};
 use tonic::metadata::MetadataMap;
 use tonic::{transport::Server, Request, Response, Status};
 

@@ -2,8 +2,6 @@ pub use masa_core::{
     time_now, Context, ContextBuilder, FutureSpan, LatencyDistribution, MethodId, PriorityHint,
 };
 
-pub use masa_policy;
-
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
@@ -67,3 +65,13 @@ pub fn attach_context<T>(req: &mut tonic::Request<T>, api: &str, slo: Duration) 
     let ctx = create_context(api, slo);
     req.set_masa_context(&ctx);
 }
+
+/// Update the cached Rajomon price for a method (called when a response header is received).
+#[cfg(feature = "ac_rajomon")]
+pub fn update_rajomon_price(method: &tonic::CowGrpcMethod, price: u64) {
+    masa_policy::CLIENT_TOKEN_BUCKET.update_price(method, price);
+}
+
+/// Maximum token value for Rajomon admission control.
+#[cfg(feature = "ac_rajomon")]
+pub use masa_policy::MAX_TOKEN;
