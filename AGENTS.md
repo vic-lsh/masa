@@ -107,8 +107,8 @@ Core hook trait definitions (`Hooks`, `ServerHooks`, `ParentHooks`, `ClientHooks
 
 ### libs/masa-policy/
 Policy implementations extracted from tonic:
-- `hooks.rs`: `PolicyHooks` — unified hook implementation with `for_each_overlay!` macro dispatch
-- `overlay/`: Composable overlay system — `slo_abort.rs`, `queue_latency.rs`, `predictive/` (estimation + admission), `rajomon.rs`
+- `hooks.rs`: `PolicyHooks` — unified hook implementation with `for_each_layer!` macro dispatch
+- `layer/`: Composable layer system — `e2e_deadline_guard.rs`, `queue_latency.rs`, `est/` (estimation), `admission/` (predictive + rajomon)
 - `context_ext.rs`: Context serialization helpers for tonic requests/responses
 
 ### libs/tonic/tonic/src/masa_ext/

@@ -45,7 +45,7 @@ compile_error!(
 compile_error!("Enable at most one admission control strategy: ac_pred | ac_rajomon");
 
 // Admission control requires a scheduling policy to be active, otherwise
-// DefaultHooks resolves to NoopHooks and the overlay is never invoked.
+// DefaultHooks resolves to NoopHooks and the layer is never invoked.
 #[cfg(all(
     any(feature = "ac_pred", feature = "ac_rajomon"),
     not(any(

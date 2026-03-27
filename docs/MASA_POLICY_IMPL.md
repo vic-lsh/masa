@@ -46,10 +46,10 @@ The `DefaultHooks` type alias (in `libs/tonic/tonic/src/masa_ext/mod.rs`) is res
 - Any scheduling feature (`sched_fifo`, `sched_slo`, `sched_tailclipper`) → `masa_policy::PolicyHooks`
 - No scheduling features → `NoopHooks`
 
-`PolicyHooks` uses composable overlays selected at compile time:
-- **SLO abort**: `SloAbortOverlay` (enabled by `slo_abort` feature)
-- **Admission control** (mutually exclusive): `PredictiveOverlay` (`est`), `RajomonOverlay` (`ac_rajomon`), or `NoopOverlay`
-- **Queue latency**: `QueueLatencyOverlay` (always active under a scheduling policy)
+`PolicyHooks` uses composable layers selected at compile time:
+- **E2E deadline guard**: `E2eDeadlineGuardLayer` (enabled by `slo_abort` feature)
+- **Admission control** (mutually exclusive): `PredAdmissionLayer` (`estimator`), `RajomonLayer` (`ac_rajomon`), or `NoopLayer`
+- **Queue latency**: `QueueLatencyLayer` (always active under a scheduling policy)
 
 Each scheduling flag also selects the corresponding tokio queue implementation (see Section 5).
 
@@ -153,12 +153,12 @@ For a complete request lifecycle:
 10. `finalize_after_serialization()` — after response is serialized (e.g., inject `x-queue-latency` header).
 
 ### Policy Implementation
-All scheduling policies are unified into `PolicyHooks` (`libs/masa-policy/src/hooks.rs`), which dispatches to composable overlays:
-*   **`SloAbortOverlay`** (`overlay/slo_abort.rs`): Checks deadline in `before_poll`/`after_poll`; aborts past-deadline requests. Enabled by `slo_abort` feature.
-*   **`PredictiveOverlay`** (`overlay/predictive/`): Computes local deadlines via latency estimates, tightens child deadlines, and performs predictive admission control. Enabled by `est` feature.
-*   **`RajomonOverlay`** (`overlay/rajomon.rs`): Token-bucket admission control with server-side price signals. Enabled by `ac_rajomon` feature.
-*   **`QueueLatencyOverlay`** (`overlay/queue_latency.rs`): Tracks queue latency across the call graph via `x-queue-latency` headers.
-*   **`NoopOverlay`** (`overlay/noop.rs`): Zero-cost no-op, used when no admission control overlay is active.
+All scheduling policies are unified into `PolicyHooks` (`libs/masa-policy/src/hooks.rs`), which dispatches to composable layers:
+*   **`E2eDeadlineGuardLayer`** (`layer/e2e_deadline_guard.rs`): Checks deadline in `before_poll`/`after_poll`; aborts past-deadline requests. Enabled by `slo_abort` feature.
+*   **`PredAdmissionLayer`** (`layer/admission/predictive.rs`): Computes local deadlines via latency estimates, tightens child deadlines, and performs predictive admission control. Enabled by `estimator` feature.
+*   **`RajomonLayer`** (`layer/admission/rajomon.rs`): Token-bucket admission control with server-side price signals. Enabled by `ac_rajomon` feature.
+*   **`QueueLatencyLayer`** (`layer/queue_latency.rs`): Tracks queue latency across the call graph via `x-queue-latency` headers.
+*   **`NoopLayer`** (`layer/admission/mod.rs`): Zero-cost no-op, used when no admission control layer is active.
 *   **`NoopHooks`** (`tonic-core/src/masa_ext/noop.rs`): Selected when no scheduling feature is active.
 ### Client Code Generation
 
@@ -322,7 +322,7 @@ This means the tonic `before_poll`/`after_poll` closures (installed on the top-l
 
 Early Return uses poll hooks to abort requests that have already missed their deadline, avoiding wasteful computation. It is gated by the compile-time `slo_abort` feature flag (`libs/masa-core/src/flag.rs`: `pub const SLO_ABORT: bool = cfg!(feature = "slo_abort")`).
 
-The `SloAbortOverlay` (`libs/masa-policy/src/overlay/slo_abort.rs`) tracks whether a request should be aborted:
+The `E2eDeadlineGuardLayer` (`libs/masa-policy/src/layer/e2e_deadline_guard.rs`) tracks whether a request should be aborted:
 
 *   `before_poll`: Compares the current time against `ctx.e2e_deadline()`. If expired, returns a `DeadlineExceeded` error to abort the request immediately.
 *   `after_poll`: Only checks when the poll returned `Pending` (the handler is blocked on I/O or a child RPC). If the deadline has passed while waiting, aborts rather than waiting for the next wake-up. When the poll is `Ready`, the request is already done so no check is needed.
@@ -331,19 +331,19 @@ SLO abort is composable with any scheduling policy via the `slo_abort` feature f
 
 ### Queue Latency Tracking
 
-The `QueueLatencyOverlay` (`libs/masa-policy/src/overlay/queue_latency.rs`) accumulates queue latency — the time a task spent in the ready queue before being polled. It calls `tokio::task::obtain_task_queue_latency()` during `before_poll` to read the current task's queue wait time from its `TraceTimer` in the task header. This value is accumulated across all polls and child RPC responses (via the `x-queue-latency` response header), then injected into the outgoing response in `finalize`.
+The `QueueLatencyLayer` (`libs/masa-policy/src/layer/queue_latency.rs`) accumulates queue latency — the time a task spent in the ready queue before being polled. It calls `tokio::task::obtain_task_queue_latency()` during `before_poll` to read the current task's queue wait time from its `TraceTimer` in the task header. This value is accumulated across all polls and child RPC responses (via the `x-queue-latency` response header), then injected into the outgoing response in `finalize`.
 
 Queue latency tracking is active under all scheduling policies via `PolicyHooks`.
 
-### Per-Overlay Summary
+### Per-Layer Summary
 
-| Overlay | `before_poll` | `after_poll` | `before_child_rpc` | `finalize` |
+| Layer | `before_poll` | `after_poll` | `before_child_rpc` | `finalize` |
 |---|---|---|---|---|
-| `SloAbortOverlay` | Deadline check → abort | Deadline check on `Pending` | — | — |
-| `PredictiveOverlay` | — | — | Tighten deadline, admission check | Update estimates |
-| `RajomonOverlay` | — | — | Token deduction | — |
-| `QueueLatencyOverlay` | Accumulate queue latency | — | — | Inject `x-queue-latency` header |
-| `NoopOverlay` | No-op | No-op | No-op | No-op |
+| `E2eDeadlineGuardLayer` | Deadline check → abort | Deadline check on `Pending` | — | — |
+| `PredAdmissionLayer` | — | — | Tighten deadline, admission check | Update estimates |
+| `RajomonLayer` | — | — | Token deduction | — |
+| `QueueLatencyLayer` | Accumulate queue latency | — | — | Inject `x-queue-latency` header |
+| `NoopLayer` | No-op | No-op | No-op | No-op |
 | `NoopHooks` | No-op | No-op | No-op | No-op |
 
 ## 7. Application Integration
@@ -365,7 +365,7 @@ Services connect to downstream replicas using `LoadBalancedChannel` (`libs/tonic
 
 ### `x-queue-latency` Response Header
 
-The `QueueLatencyOverlay` propagates accumulated queue wait times in the `x-queue-latency` response header. It aggregates:
+The `QueueLatencyLayer` propagates accumulated queue wait times in the `x-queue-latency` response header. It aggregates:
 *   The current task's queue latency (from `tokio::task::obtain_task_queue_latency()`).
 *   Queue latency reported by child RPCs (parsed from their `x-queue-latency` response headers).
 
@@ -407,7 +407,7 @@ The total is injected into the outgoing response in `finalize()`, creating a rec
 
 **Scheduling disciplines** (`sched_fifo`, `sched_slo`): Mutually exclusive base queue implementations. `sched_slo` implies the tokio priority queue (binary heap); `sched_fifo` uses FIFO.
 
-**Scheduling modifiers** (`sched_tailclipper`, `sched_pred`): Overlays on `sched_slo`. `sched_tailclipper` implements the TailClipper paper's policy exactly (round-robin fairness for top-N priority tasks) — it cannot be combined with `sched_pred` or `ac_pred` to preserve the paper's design. `sched_pred` adds deadline tightening and dynamic reprioritization using downstream work estimates. `sched_pred` implies `sched_slo` and `estimator`.
+**Scheduling modifiers** (`sched_tailclipper`, `sched_pred`): Layers on `sched_slo`. `sched_tailclipper` implements the TailClipper paper's policy exactly (round-robin fairness for top-N priority tasks) — it cannot be combined with `sched_pred` or `ac_pred` to preserve the paper's design. `sched_pred` adds deadline tightening and dynamic reprioritization using downstream work estimates. `sched_pred` implies `sched_slo` and `estimator`.
 
 **Abort strategies** (`slo_abort`): Aborts requests that have already exceeded their e2e SLO. Composable with any scheduling policy. `sched_pred` additionally performs proactive abort for requests predicted to miss their SLO based on estimated remaining work.
 
