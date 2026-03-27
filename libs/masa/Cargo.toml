@@ -17,12 +17,12 @@ sched_fifo  = ["masa-core/sched_fifo",  "tokio/sched_fifo",  "tonic/sched_fifo",
 sched_pred = ["masa-core/sched_pred", "tonic/sched_pred", "sched_slo", "masa-policy/sched_pred"]
 
 slo_abort = ["masa-core/slo_abort", "tonic/slo_abort", "masa-policy/slo_abort"]
-est = ["masa-core/est", "tonic/est", "masa-policy/est"]
+estimator = ["masa-core/estimator", "tonic/estimator", "masa-policy/estimator"]
 
 est_rms = ["tonic/est_rms", "masa-policy/est_rms"]
 est_hist = ["tonic/est_hist", "masa-policy/est_hist"]
 est_mean_var = ["tonic/est_mean_var", "masa-policy/est_mean_var"]
 
-ac_est = ["masa-core/ac_est", "tonic/ac_est", "masa-policy/ac_est"]
+ac_pred = ["masa-core/ac_pred", "tonic/ac_pred", "masa-policy/ac_pred"]
 ac_rajomon = ["masa-core/ac_rajomon", "tonic/ac_rajomon", "masa-policy/ac_rajomon"]
 trace-queue = ["tonic/trace-queue", "masa-policy/trace-queue"]

@@ -1,6 +1,6 @@
 // Predictive admission control.
 //
-// Provides `PredictiveAdmission` (zero-cost wrapper selecting between full ac_est
+// Provides `PredictiveAdmission` (zero-cost wrapper selecting between full ac_pred
 // and floor-only checks), `AdmissionController` (compute-budget token bucket),
 // and `BottleneckTracker` (per-API utilization tracking with staleness decay).
 //
@@ -149,15 +149,15 @@ impl AdmissionController {
 
 // ── PredictiveAdmission ────────────────────────────────────────────────────────
 
-// ac_est ENABLED
+// ac_pred ENABLED
 
-#[cfg(feature = "ac_est")]
+#[cfg(feature = "ac_pred")]
 #[derive(Debug)]
 pub(crate) struct PredictiveAdmission {
     controller: AdmissionController,
 }
 
-#[cfg(feature = "ac_est")]
+#[cfg(feature = "ac_pred")]
 impl PredictiveAdmission {
     pub(crate) fn new() -> Self {
         Self {
@@ -230,13 +230,13 @@ impl PredictiveAdmission {
     }
 }
 
-// ac_est DISABLED
+// ac_pred DISABLED
 
-#[cfg(not(feature = "ac_est"))]
+#[cfg(not(feature = "ac_pred"))]
 #[derive(Debug)]
 pub(crate) struct PredictiveAdmission;
 
-#[cfg(not(feature = "ac_est"))]
+#[cfg(not(feature = "ac_pred"))]
 impl PredictiveAdmission {
     #[inline]
     pub(crate) fn new() -> Self {
@@ -245,7 +245,7 @@ impl PredictiveAdmission {
 
     /// Floor-based deadline feasibility check using latency estimates.
     ///
-    /// When `ac_est` is disabled, this is the only admission check that runs.
+    /// When `ac_pred` is disabled, this is the only admission check that runs.
     #[inline]
     pub(crate) fn admission_check(
         &self,

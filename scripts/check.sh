@@ -10,8 +10,8 @@ flag_combos=(
     "sched_slo,slo_abort"
     "sched_tailclipper,slo_abort"
     "sched_slo,ac_rajomon"
-    "sched_slo,ac_est,est_mean_var"
-    "sched_pred,slo_abort,ac_est,est_mean_var"
+    "sched_slo,ac_pred,est_mean_var"
+    "sched_pred,slo_abort,ac_pred,est_mean_var"
 )
 
 CONTINUE_ON_ERROR=false
