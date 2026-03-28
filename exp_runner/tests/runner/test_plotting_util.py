@@ -22,9 +22,7 @@ def test_get_policy_display_name_delegates_to_policy():
         get_policy_display_name("sched_fifo,abort_slo")
         == "prio=fifo, drop=e2e_slo, ac=none"
     )
-    assert (
-        get_policy_display_name("sched_slo") == "prio=e2e_slo, drop=none, ac=none"
-    )
+    assert get_policy_display_name("sched_slo") == "prio=e2e_slo, drop=none, ac=none"
     assert (
         get_policy_display_name("sched_pred,abort_slo,est_mean_var")
         == "prio=slack, drop=e2e_slo, ac=none, est=mean_var"
