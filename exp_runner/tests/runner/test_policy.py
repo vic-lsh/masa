@@ -91,7 +91,9 @@ class TestOrderAgnostic:
 
 class TestDisplayName:
     def test_fifo_bare(self):
-        assert Policy.parse("sched_fifo").display_name == "prio=fifo, drop=none, ac=none"
+        assert (
+            Policy.parse("sched_fifo").display_name == "prio=fifo, drop=none, ac=none"
+        )
 
     def test_fifo_with_drop(self):
         assert (
@@ -113,8 +115,7 @@ class TestDisplayName:
 
     def test_e2e_slo_bare(self):
         assert (
-            Policy.parse("sched_slo").display_name
-            == "prio=e2e_slo, drop=none, ac=none"
+            Policy.parse("sched_slo").display_name == "prio=e2e_slo, drop=none, ac=none"
         )
 
     def test_e2e_slo_with_drop(self):
