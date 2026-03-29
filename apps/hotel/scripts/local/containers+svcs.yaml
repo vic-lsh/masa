@@ -36,6 +36,7 @@ services:
       - LOG_LEVEL=${LOG_LEVEL:-info}
     volumes:
       - ${PROJECT_CONFIG_PATH}:/usr/config.json:ro
+      - ${POLICY_PARAMS_PATH}:/usr/policy_params.json:ro
     deploy:
       resources:
         limits:
@@ -78,6 +79,7 @@ services:
       - LOG_LEVEL=${LOG_LEVEL:-info}
     volumes:
       - ${PROJECT_CONFIG_PATH}:/usr/config.json:ro
+      - ${POLICY_PARAMS_PATH}:/usr/policy_params.json:ro
     deploy:
       resources:
         limits:
@@ -120,6 +122,7 @@ services:
       - LOG_LEVEL=${LOG_LEVEL:-info}
     volumes:
       - ${PROJECT_CONFIG_PATH}:/usr/config.json:ro
+      - ${POLICY_PARAMS_PATH}:/usr/policy_params.json:ro
     deploy:
       resources:
         limits:
@@ -150,6 +153,7 @@ services:
       - LOG_LEVEL=${LOG_LEVEL:-info}
     volumes:
       - ${PROJECT_CONFIG_PATH}:/usr/config.json:ro
+      - ${POLICY_PARAMS_PATH}:/usr/policy_params.json:ro
     deploy:
       resources:
         limits:
@@ -165,6 +169,7 @@ services:
       - LOG_LEVEL=${LOG_LEVEL:-info}
     volumes:
       - ${PROJECT_CONFIG_PATH}:/usr/config.json:ro
+      - ${POLICY_PARAMS_PATH}:/usr/policy_params.json:ro
     deploy:
       resources:
         limits:
@@ -183,6 +188,7 @@ services:
       - LOG_LEVEL=${LOG_LEVEL:-info}
     volumes:
       - ${PROJECT_CONFIG_PATH}:/usr/config.json:ro
+      - ${POLICY_PARAMS_PATH}:/usr/policy_params.json:ro
     deploy:
       resources:
         limits:
@@ -207,6 +213,7 @@ services:
       - LOG_LEVEL=${LOG_LEVEL:-info}
     volumes:
       - ${PROJECT_CONFIG_PATH}:/usr/config.json:ro
+      - ${POLICY_PARAMS_PATH}:/usr/policy_params.json:ro
     deploy:
       resources:
         limits:

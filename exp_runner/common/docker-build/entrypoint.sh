@@ -10,6 +10,11 @@ fi
 # Export the RUST_LOG variable for Rust's logging frameworks.
 export RUST_LOG="${LOG_LEVEL}"
 
+# If the policy params file is mounted, point the runtime at it.
+if [ -f "/usr/policy_params.json" ]; then
+  export MASA_POLICY_PARAMS_PATH=/usr/policy_params.json
+fi
+
 # Auto-detect binary name: each image contains exactly one binary in /usr/local/bin
 # If BINARY_NAME is explicitly set (for backward compatibility), use it
 # Otherwise, find the single binary in /usr/local/bin

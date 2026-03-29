@@ -19,6 +19,7 @@ use tonic_core::{Code, CowGrpcMethod, Response, Status};
 
 use super::super::{ChildRpcContext, Layer, LayerChild, LayerServer};
 use crate::layer::est::estimator::DefaultLatencyEstimator;
+use crate::policy_params::PolicyParams;
 use crate::layer::est::state::{
     is_early_return_response, EstChildState, EstRequestState, EstServerState,
 };
@@ -218,11 +219,6 @@ impl LayerChild for PredAdmissionChild {
 
 // ── Bottleneck Tracker ──────────────────────────────────────────────────
 
-#[cfg(feature = "ac_pred")]
-const STALENESS_SECS: f64 = 2.0;
-#[cfg(feature = "ac_pred")]
-const STALENESS_DEFAULT: f32 = 0.5;
-
 /// Tracks max_downstream_util per API with staleness decay.
 #[cfg(feature = "ac_pred")]
 #[derive(Debug)]
@@ -244,32 +240,24 @@ impl BottleneckTracker {
     }
 
     pub(crate) fn get(&self, api: &str) -> f32 {
+        let p = &PolicyParams::global().pred;
         let map = self.inner.lock().unwrap();
         if let Some((util, last_update)) = map.get(api) {
             let age = last_update.elapsed().as_secs_f64();
-            if age > STALENESS_SECS {
+            if age > p.staleness_secs {
                 // Decay toward default as data becomes stale
-                let decay = (-(age - STALENESS_SECS) / STALENESS_SECS).exp() as f32;
-                *util * decay + STALENESS_DEFAULT * (1.0 - decay)
+                let decay = (-(age - p.staleness_secs) / p.staleness_secs).exp() as f32;
+                *util * decay + p.staleness_default * (1.0 - decay)
             } else {
                 *util
             }
         } else {
-            STALENESS_DEFAULT
+            p.staleness_default
         }
     }
 }
 
 // ── Admission Controller ────────────────────────────────────────────────
-
-#[cfg(feature = "ac_pred")]
-const UTIL_TARGET: f64 = 0.92;
-#[cfg(feature = "ac_pred")]
-const ADJUST_RATE: f64 = 0.5;
-#[cfg(feature = "ac_pred")]
-const MAX_BURST_SECS: f64 = 0.1;
-#[cfg(feature = "ac_pred")]
-const INITIAL_BUDGET_RATE: f64 = 10_000_000.0; // us/s — start generous
 
 #[cfg(feature = "ac_pred")]
 struct BudgetState {
@@ -299,11 +287,12 @@ pub(crate) struct AdmissionController {
 #[cfg(feature = "ac_pred")]
 impl AdmissionController {
     pub(crate) fn new() -> Self {
+        let p = &PolicyParams::global().pred;
         Self {
             bottleneck: BottleneckTracker::new(),
             state: Mutex::new(BudgetState {
-                budget_us: INITIAL_BUDGET_RATE * MAX_BURST_SECS,
-                budget_rate: INITIAL_BUDGET_RATE,
+                budget_us: p.initial_budget_rate * p.max_burst_secs,
+                budget_rate: p.initial_budget_rate,
                 last_refill: Instant::now(),
             }),
         }
@@ -326,6 +315,7 @@ impl AdmissionController {
         _est_total_mean: u64,
     ) -> bool {
         let bottleneck_util = self.bottleneck.get(api) as f64;
+        let p = &PolicyParams::global().pred;
 
         let mut state = self.state.lock().unwrap();
         let now = Instant::now();
@@ -334,19 +324,19 @@ impl AdmissionController {
 
         // Refill tokens, capped at burst limit
         state.budget_us += state.budget_rate * elapsed;
-        let max_budget = state.budget_rate * MAX_BURST_SECS;
+        let max_budget = state.budget_rate * p.max_burst_secs;
         if state.budget_us > max_budget {
             state.budget_us = max_budget;
         }
 
         // Adjust rate based on bottleneck utilization
-        if bottleneck_util > UTIL_TARGET {
-            state.budget_rate *= 1.0 - ADJUST_RATE * elapsed;
+        if bottleneck_util > p.util_target {
+            state.budget_rate *= 1.0 - p.adjust_rate * elapsed;
         } else {
-            state.budget_rate *= 1.0 + ADJUST_RATE * elapsed;
+            state.budget_rate *= 1.0 + p.adjust_rate * elapsed;
         }
         // Don't let rate go negative or explode
-        state.budget_rate = state.budget_rate.clamp(1.0, INITIAL_BUDGET_RATE * 10.0);
+        state.budget_rate = state.budget_rate.clamp(1.0, p.initial_budget_rate * 10.0);
 
         // Admit if we have enough budget
         let cost = est_compute as f64;
@@ -484,6 +474,9 @@ impl PredictiveAdmission {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // Default parameter value matching PolicyParams default.
+    const STALENESS_DEFAULT: f32 = 0.5;
 
     #[test]
     fn test_bottleneck_tracker_default() {
