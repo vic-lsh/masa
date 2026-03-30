@@ -92,3 +92,27 @@ Same config as surge_1 (800-2000 RPS, 30s per step, 50ms SLO). This directly tes
 5. Expected outcome #1 (ac_pred firing) confirmed ✅. #2 (higher goodput) confirmed ✅. #3 (regression) did NOT occur ✅. #4 (reduced oscillation) partially — still oscillating but not collapsing.
 
 **Root cause of remaining 1600 dip:** The utilization signal takes time to propagate. At 1600 RPS, the system transitions from "fine" to "overloaded" mid-sweep. The token bucket needs several seconds of high-util responses to start throttling, during which the queue builds up and early returns spike. By 1800, the token bucket is already adapted from the 1600 experience.
+
+---
+
+## Iteration 2: Faster admission control response with higher ADJUST_RATE (surge_3)
+
+**Status:** Pending
+
+### Change
+- `ADJUST_RATE`: 0.5 → 2.0 in `libs/masa-policy/src/layer/admission/predictive.rs`
+- Cap max budget rate: `INITIAL_BUDGET_RATE * 10.0` → `INITIAL_BUDGET_RATE * 3.0` (reduce from 50M to 15M max)
+
+### Hypothesis
+The 1600 RPS dip occurs because the token bucket responds too slowly to utilization crossing the 0.80 threshold. With ADJUST_RATE=0.5, the rate decreases by ~5% per 100ms interval. Starting from a high rate accumulated during warmup, it takes 2-3 seconds to reduce enough to reject requests. During that delay, the queue builds up.
+
+Increasing ADJUST_RATE to 2.0 means 4x faster rate reduction (20% per 100ms). Additionally, capping the max rate at 3x initial (15M µs/s instead of 50M) prevents excessive rate inflation during warmup, so the starting point for throttling is closer to the target.
+
+### Expected outcomes if hypothesis is correct:
+1. 1600 RPS dip eliminated or reduced — goodput closer to 1300 instead of 1173
+2. Faster convergence to stable goodput at each RPS level (less oscillation)
+3. Possible slight regression at 1200-1400 if ADJUST_RATE is too aggressive (over-corrects)
+4. ac_pred should fire earlier (within seconds of overload onset, not after queue collapse)
+
+### Experiment design
+Same config as surge_1/2 (800-2000 RPS, 30s per step, 50ms SLO).
