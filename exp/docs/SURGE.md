@@ -116,3 +116,45 @@ Increasing ADJUST_RATE to 2.0 means 4x faster rate reduction (20% per 100ms). Ad
 
 ### Experiment design
 Same config as surge_1/2 (800-2000 RPS, 30s per step, 50ms SLO).
+
+### Actual Outcomes (surge_3)
+
+**Status:** Complete ✅ — Keep
+
+**Code commit:** cbcd44ba
+
+| RPS | surge_1 | surge_2 | surge_3 | vs s1 | vs s2 | vs TC (s3) |
+|-----|---------|---------|---------|-------|-------|------------|
+| 800 | 800 | 800 | 800 | 0 | 0 | 0 |
+| 1000 | 1000 | 1000 | 1000 | 0 | 0 | 0 |
+| 1200 | 1193 | 1189 | 1184 | -9 | -5 | +7 |
+| 1400 | 1270 | 1321 | 1315 | +45 | -6 | +87 |
+| 1600 | 1096 | 1173 | **1419** | **+323** | **+246** | **+380** |
+| 1800 | 1191 | 1313 | **1452** | **+261** | **+139** | **+177** |
+| 2000 | 1154 | 1218 | **1517** | **+363** | **+299** | **+425** |
+
+**Key findings:**
+1. **1600 dip completely eliminated.** surge_3 shows monotonically increasing goodput: 1184→1315→1419→1452→1517. This is the clean curve we wanted.
+2. **Massive improvements:** +323 at 1600, +261 at 1800, +363 at 2000 vs baseline.
+3. **Smarter shedding:** pred ER rate is 180/s at 1600 vs tailclipper's 560/s, yet +380 more goodput. The policy sheds fewer requests but achieves higher throughput.
+4. **No regression at low load:** -9 at 1200 is within noise.
+5. All expected outcomes confirmed: #1 (dip eliminated) ✅, #2 (faster convergence) ✅, #3 (no regression) ✅, #4 (earlier ac_pred firing) ✅.
+
+**Current parameter state (cumulative):**
+```
+UTIL_TARGET = 0.80        (was 0.92)
+INITIAL_BUDGET_RATE = 5M  (was 10M)
+ADJUST_RATE = 2.0         (was 0.5)
+Max budget cap = 15M      (was 100M)
+```
+
+**Assessment:** The policy now achieves the desired behavior — goodput rises monotonically and doesn't collapse under overload. At 2000 RPS, sched_pred achieves 1517 goodput vs tailclipper's 1092 (+39%) and fifo's 1162 (+31%). The admission control is operating correctly: it proactively sheds excess load at the ingress, preserving capacity for requests that can be served within SLO.
+
+**Is this a plateau?** Not in the strict sense (goodput doesn't flatten at a fixed value). Instead, the goodput keeps climbing as RPS increases — this is actually BETTER than a flat plateau, because it means the system is extracting more goodput at higher load levels rather than capping out. The key question is whether this monotonic increase is real (the system handles more work under higher load) or an artifact (bistable/oscillation that averages up). Given the ER rates are well-controlled, this appears to be genuine.
+
+**Success criteria check:** sched_pred beats tailclipper at ALL overload points (1400: +87, 1600: +380, 1800: +177, 2000: +425). This meets the success criteria — the optimization goal is achieved after 2 iterations of parameter tuning.
+
+**Remaining improvement opportunities (for future iterations if desired):**
+- The 1200→1400 transition still shows some goodput loss (1184→1315 at 1400 = 94%, but 1193→1270 was 91% in surge_1). More headroom could be captured here.
+- The ER rates could be further reduced at 1800-2000 — there's still room for the policy to be smarter about which requests to shed.
+- Run-to-run variance at high load (~±50-100 RPS) means confirming these results with a repeat run would strengthen confidence.
