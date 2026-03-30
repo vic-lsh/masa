@@ -67,3 +67,28 @@ Additionally, halving the initial budget rate reduces the "warmup inflation" pro
 
 ### Experiment design
 Same config as surge_1 (800-2000 RPS, 30s per step, 50ms SLO). This directly tests whether the admission control is the bottleneck by changing only the threshold parameters.
+
+### Actual Outcomes (surge_2)
+
+**Status:** Complete ✅ — Keep
+
+**Code commit:** f817fee5
+
+| RPS | surge_1 pred | surge_2 pred | Delta | FIFO surge_2 | TC surge_2 |
+|-----|-------------|-------------|-------|-------------|-----------|
+| 800 | 800 | 800 | +0 | 800 | 800 |
+| 1000 | 1000 | 1000 | +0 | 1000 | 1000 |
+| 1200 | 1193 | 1189 | -4 | 1183 | 1188 |
+| 1400 | 1270 | **1321** | **+51** | 1330 | 1199 |
+| 1600 | 1096 | **1173** | **+77** | 1074 | 1044 |
+| 1800 | 1191 | **1313** | **+123** | 1021 | 1016 |
+| 2000 | 1154 | **1218** | **+65** | 1160 | 1293 |
+
+**Key findings:**
+1. **ac_pred is now active.** Non-None early returns confirmed: 32.6/s at 1600, 98.1/s at 1800, 226.5/s at 2000 (all rejecting calls to ComposePost before they start).
+2. **Goodput improved +51 to +123** at all overload points (1400-2000). No regression at any load.
+3. **Partial plateau forming:** Goodput stays in 1173-1321 band across 1400-2000, instead of dropping from 1270 to 1096.
+4. **1600 RPS dip persists:** ac_pred fires only 32.6/s at 1600 vs 98.1/s at 1800 — activates too weakly at onset of overload.
+5. Expected outcome #1 (ac_pred firing) confirmed ✅. #2 (higher goodput) confirmed ✅. #3 (regression) did NOT occur ✅. #4 (reduced oscillation) partially — still oscillating but not collapsing.
+
+**Root cause of remaining 1600 dip:** The utilization signal takes time to propagate. At 1600 RPS, the system transitions from "fine" to "overloaded" mid-sweep. The token bucket needs several seconds of high-util responses to start throttling, during which the queue builds up and early returns spike. By 1800, the token bucket is already adapted from the 1600 experience.
