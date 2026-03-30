@@ -265,7 +265,10 @@ impl BottleneckTracker {
 #[cfg(feature = "ac_pred")]
 const UTIL_TARGET: f64 = 0.80;
 #[cfg(feature = "ac_pred")]
-const ADJUST_RATE: f64 = 2.0;
+/// Rate adjustment when bottleneck_util > UTIL_TARGET (fast throttle).
+const ADJUST_RATE_DOWN: f64 = 2.0;
+/// Rate adjustment when bottleneck_util <= UTIL_TARGET (slow recovery, AIMD-style).
+const ADJUST_RATE_UP: f64 = 0.3;
 #[cfg(feature = "ac_pred")]
 const MAX_BURST_SECS: f64 = 0.1;
 #[cfg(feature = "ac_pred")]
@@ -339,11 +342,11 @@ impl AdmissionController {
             state.budget_us = max_budget;
         }
 
-        // Adjust rate based on bottleneck utilization
+        // Adjust rate based on bottleneck utilization (AIMD: fast decrease, slow increase)
         if bottleneck_util > UTIL_TARGET {
-            state.budget_rate *= 1.0 - ADJUST_RATE * elapsed;
+            state.budget_rate *= 1.0 - ADJUST_RATE_DOWN * elapsed;
         } else {
-            state.budget_rate *= 1.0 + ADJUST_RATE * elapsed;
+            state.budget_rate *= 1.0 + ADJUST_RATE_UP * elapsed;
         }
         // Don't let rate go negative or explode
         state.budget_rate = state.budget_rate.clamp(1.0, INITIAL_BUDGET_RATE * 3.0);
