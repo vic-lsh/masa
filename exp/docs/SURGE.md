@@ -274,3 +274,42 @@ With additive increase at 5M µs/s per second, starting from 3M, it takes 2.4 se
 
 ### Experiment design
 Same config as surge_1-5 (800-2000 RPS, 30s per step, 50ms SLO).
+
+### Actual Outcomes (surge_6)
+
+**Status:** Regression ❌ — Reverted (b4d84d5f reverted via 2378301a)
+
+| RPS | surge_3 | surge_6 | Delta |
+|-----|---------|---------|-------|
+| 1200 | 1184 | 1196 | +12 |
+| 1400 | 1315 | 1307 | -8 |
+| 1600 | 1419 | 1393 | **-26** |
+| 1800 | 1452 | 1429 | **-23** |
+| 2000 | 1517 | 1516 | -1 |
+
+**Stability:** StdDev at 1800=307 (was 236, worse), at 2000=280 (was 328, better). Oscillation persists. Additive increase at 5M/s is still fast enough to overshoot at 2000 RPS.
+
+**Root cause re-analysis:** Three approaches (asymmetric rate, rate freeze, additive increase) all failed. The oscillation is NOT caused by rate-of-change dynamics. It's caused by **feedback delay**: the utilization signal arrives ~50ms after admission decisions (the SLO latency), creating a phase lag. All rate-tuning approaches react to stale util, producing the same limit cycle.
+
+---
+
+## Iteration 6: Reduce burst capacity to prevent accumulation-driven oscillation (surge_7)
+
+**Status:** Pending
+
+### Change
+- `MAX_BURST_SECS`: 0.1 → 0.005 (5ms, was 100ms)
+
+### Hypothesis
+New framing: the oscillation is driven by burst accumulation, not rate dynamics. During "good" seconds, the budget accumulates because refill > drain (not all of the budget is consumed). This accumulated surplus lets the controller admit a large burst of requests, which overloads downstream, causing the subsequent "bad" second.
+
+With MAX_BURST_SECS=0.005, the budget can hold at most 5ms × rate µs. At rate=10M µs/s, that's 50K µs, which is ~10 requests at 5000µs est_child cost. This prevents the system from building up enough budget to admit a burst that overloads downstream. Instead, admission is metered smoothly at the rate, request-by-request.
+
+### Expected outcomes if hypothesis is correct:
+1. Oscillation amplitude greatly reduced — no more "admit everything" bursts
+2. Average goodput may decrease slightly (tighter admission at moderate loads)
+3. The goodput curve should be smoother second-by-second
+4. System response to load changes will be slower (less burst headroom)
+
+### Experiment design
+Same config (800-2000 RPS, 30s per step, 50ms SLO).
