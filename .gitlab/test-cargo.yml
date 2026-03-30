@@ -2,7 +2,7 @@ cargo_test:
     stage: test
     parallel:
         matrix:
-            - POLICY_FEATURE: ["", "fifo", "prio_global", "prio_oldest", "prio_local", "prio_local,est_rms", "prio_local,est_hist", "prio_global,early", "prio_global,trace-queue"]
+            - POLICY_FEATURE: ["", "sched_fifo", "sched_slo", "sched_tailclipper,abort_slo", "sched_slo,ac_rajomon", "sched_pred,abort_slo,ac_pred,est_mean_var"]
     variables:
         CI: "true"
         CARGO_BUILD_JOBS: "4"

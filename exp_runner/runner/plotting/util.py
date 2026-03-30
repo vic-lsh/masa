@@ -318,73 +318,17 @@ def parse_args() -> Namespace:
 
 
 def get_policy_color(policy: str) -> str | None:
-    """
-    Get color for a policy.
+    """Get matplotlib color for a policy, or None for the default cycle."""
+    from exp_runner.runner.policy import Policy
 
-    Color scheme:
-    - FIFO uses grey hues
-    - prio_global uses blue hues
-    - prio_local uses pink hues
-    - prio_oldest uses purple hues
-
-    Args:
-        policy: Policy name
-
-    Returns:
-        Color string, or None to use matplotlib default color cycle
-    """
-    policy_lower = policy.lower()
-    if policy_lower.startswith("fifo"):
-        if ",early" in policy_lower:
-            return "darkgrey"
-        return "grey"
-    elif policy_lower.startswith("prio_global"):
-        if ",early" in policy_lower:
-            return "cornflowerblue"
-        return "steelblue"
-    elif policy_lower.startswith("prio_local"):
-        if "est_mean_var" in policy_lower or "est_hist" in policy_lower:
-            if "adctl" in policy_lower:
-                return "forestgreen"
-            return "coral"
-        if ",early" in policy_lower:
-            return "lightpink"
-        return "hotpink"
-    elif policy_lower.startswith("prio_oldest"):
-        if ",early" in policy_lower:
-            return "mediumpurple"
-        return "purple"
-    return None  # Use matplotlib default color cycle
+    return Policy.parse(policy).color
 
 
 def get_policy_display_name(policy: str) -> str:
-    """
-    Return a human-friendly display name for a policy.
+    """Return a human-friendly key=value display name for a policy."""
+    from exp_runner.runner.policy import Policy
 
-    Rules:
-    - Drop the trailing ",early" suffix if present.
-    - Add "(no-drop)" when the policy does not have the ",early" suffix.
-    - Map known base policy names to display names.
-    """
-    base_policy = policy
-    has_early = False
-    if base_policy.endswith(",early"):
-        base_policy = base_policy[: -len(",early")]
-        has_early = True
-
-    base_lower = base_policy.lower()
-    display_name_map = {
-        "fifo": "FIFO",
-        "prio_global": "Masa (global ddl)",
-        "prio_local": "Masa (local ddl)",
-        "prio_oldest": "Tailclipper",
-    }
-    display = display_name_map.get(base_lower, base_policy)
-
-    if not has_early:
-        display = f"{display} (no-drop)"
-
-    return display
+    return Policy.parse(policy).display_name
 
 
 def filter_excluded_errors(df):

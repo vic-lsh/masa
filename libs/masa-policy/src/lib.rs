@@ -1,0 +1,26 @@
+// Masa scheduling policy implementations.
+//
+// This crate contains the scheduling, estimation, and admission control
+// implementations for Masa. It depends on `tonic-core` for gRPC types and
+// hook traits, and optionally `tonic` depends on this crate to wire up
+// `DefaultHooks`.
+
+/// Masa context extension traits and helpers (moved from tonic to break circular dep).
+pub mod context_ext;
+mod hooks;
+pub(crate) mod layer;
+/// Method registry for mapping service/method strings to IDs.
+pub mod registry;
+
+pub use context_ext::{
+    get_masa_context_from_metadata, read_context, set_masa_context_in_metadata, MasaRequestExt,
+    MasaResponseExt, MasaStatusExt, MASA_CONTEXT_HEADER,
+};
+pub use hooks::{ChildContext, ParentContext, PolicyHooks, ServerContext};
+pub use registry::MethodRegistry;
+
+// Re-export Rajomon public items when the feature is enabled.
+#[cfg(feature = "ac_rajomon")]
+pub use layer::admission::rajomon::{
+    ClientTokenBucket, RajomonSharedState, CLIENT_TOKEN_BUCKET, MAX_TOKEN, RAJOMON_STATE,
+};

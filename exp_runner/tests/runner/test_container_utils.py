@@ -133,7 +133,7 @@ class TestExtractServiceName:
             prefix="hotel",
             experiment_name="test-exp",
             iteration=0,
-            policy="fifo",
+            policy="sched_fifo",
         )
         assert hotel_proj.startswith("hotel-")
         assert extract_service_name(f"{hotel_proj}-rate-service-1") == "rate-service"
@@ -143,7 +143,7 @@ class TestExtractServiceName:
             prefix="mssim",
             experiment_name="test-mssim",
             iteration=1,
-            policy="prio_global",
+            policy="sched_slo",
             extra_suffix="100.0",
         )
         assert mssim_proj.startswith("mssim-")
@@ -154,7 +154,7 @@ class TestExtractServiceName:
             prefix="syn",
             experiment_name="test-syn",
             iteration=2,
-            policy="fifo,early",
+            policy="sched_fifo,abort_slo",
         )
         assert syn_proj.startswith("syn-")
         assert extract_service_name(f"{syn_proj}-child-service-1") == "child-service"
@@ -164,7 +164,7 @@ class TestExtractServiceName:
             prefix="socialnet",
             experiment_name="test-social",
             iteration=3,
-            policy="fifo",
+            policy="sched_fifo",
         )
         assert social_proj.startswith("socialnet-")
         assert (

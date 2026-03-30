@@ -158,7 +158,16 @@ impl ContextBuilder {
             slo: self.slo,
             gateway_entry: self.gateway_entry,
             deadline: self.deadline,
-            prio_hint: self.prio_hint.unwrap_or(PriorityHint::new(self.deadline)),
+            prio_hint: self.prio_hint.unwrap_or_else(|| {
+                #[cfg(feature = "sched_tailclipper")]
+                {
+                    PriorityHint::new(self.gateway_entry)
+                }
+                #[cfg(not(feature = "sched_tailclipper"))]
+                {
+                    PriorityHint::new(self.deadline)
+                }
+            }),
             frontend_elapse: self.frontend_elapse,
             queue_latencies: self.queue_latencies,
             response_meta: self.response_meta,

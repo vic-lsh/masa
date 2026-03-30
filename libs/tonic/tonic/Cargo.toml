@@ -56,17 +56,18 @@ channel = []
 
 # masa-specific features
 masa = []
-trace-queue = []
-prio_global = ["masa-core/prio_global", "tokio/prio_global"]
-prio_oldest = ["masa-core/prio_oldest", "tokio/prio_oldest"]
-prio_local = ["masa-core/prio_local", "tokio/prio_local"]
-fifo = ["masa-core/fifo", "tokio/fifo"]
-early = ["masa", "masa-core/early"]
-rajomon = ["masa", "masa-core/rajomon"]
+trace_queue_latency = []
+sched_slo = ["masa", "masa-core/sched_slo", "masa-policy/sched_slo", "tokio/sched_prio"]
+sched_tailclipper = ["masa", "masa-core/sched_tailclipper", "masa-policy/sched_tailclipper", "tokio/sched_prio", "tokio/tailclipper"]
+sched_fifo = ["masa", "masa-core/sched_fifo", "masa-policy/sched_fifo", "tokio/sched_fifo"]
+abort_slo = ["masa-core/abort_slo", "masa-policy/abort_slo"]
+estimator = ["masa-core/estimator", "masa-policy/estimator"]
+sched_pred = ["estimator", "sched_slo", "masa-core/sched_pred", "masa-policy/sched_pred"]
+ac_pred = ["estimator", "masa-core/ac_pred", "masa-policy/ac_pred"]
+ac_rajomon = ["masa-core/ac_rajomon", "masa-policy/ac_rajomon"]
 est_rms = []
 est_hist = []
 est_mean_var = []
-adctl = []
 
 
 # [[bench]]
@@ -90,8 +91,14 @@ pin-project = "1.0.11"
 tower-layer = { path = "../../../libs/tower/tower-layer/" }
 tower-service = { path = "../../../libs/tower/tower-service" }
 
-# Needed for our code-gen modification
+# Core types shared between tonic and masa-policy
+tonic-core = { path = "../tonic-core" }
+
+# Needed for context serialization and transport priority
 masa-core = { path = "../../masa-core" }
+
+# Scheduling policy implementations and context extension traits.
+masa-policy = { path = "../../masa-policy" }
 
 # prost
 prost = { version = "0.12", default-features = false, features = [

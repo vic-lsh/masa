@@ -105,7 +105,7 @@ def plot_queue_vs_request_id(df: pd.DataFrame, output_path: Path) -> None:
         s=12,
         alpha=0.7,
         color=prio_color,
-        label="Prio_global queue latency",
+        label="Sched_prio queue latency",
     )
     plt.scatter(
         x_positions,
@@ -125,7 +125,7 @@ def plot_queue_vs_request_id(df: pd.DataFrame, output_path: Path) -> None:
             color=prio_color,
             linewidth=2,
             alpha=0.8,
-            label="Prio-global quadratic fit",
+            label="Sched_prio quadratic fit",
         )
 
     if len(queue_b_ms) >= 3:
@@ -141,7 +141,7 @@ def plot_queue_vs_request_id(df: pd.DataFrame, output_path: Path) -> None:
         )
     plt.xlabel("e2e request latency")
     plt.ylabel("Queue latency across all microservices(ms)")
-    plt.title("Queue latency comparison between FIFO and Prio_global schedulers")
+    plt.title("Queue latency comparison between FIFO and Sched_prio schedulers")
     plt.legend()
     plt.tight_layout()
     plt.savefig(output_path, dpi=200)
@@ -163,7 +163,7 @@ def plot_queue_vs_e2e(df: pd.DataFrame, output_path: Path) -> None:
         s=12,
         alpha=0.7,
         color=prio_color,
-        label="Prio-global",
+        label="Sched_prio",
     )
     plt.scatter(
         e2e_b_ms,
@@ -184,7 +184,7 @@ def plot_queue_vs_e2e(df: pd.DataFrame, output_path: Path) -> None:
             color=prio_color,
             linewidth=2,
             alpha=0.8,
-            label="Prio-global quadratic fit",
+            label="Sched_prio quadratic fit",
         )
 
     if len(e2e_b_ms) >= 3:
@@ -202,7 +202,7 @@ def plot_queue_vs_e2e(df: pd.DataFrame, output_path: Path) -> None:
     plt.axvline(SLO_US / 1_000.0, color="red", linestyle="--", label="SLO 50 ms")
     plt.xlabel("End-to-end latency (ms)")
     plt.ylabel("Queue latency across all microservices(ms)")
-    plt.title("Queueing vs end-to-end latency in FIFO and Prio_global schedulers")
+    plt.title("Queueing vs end-to-end latency in FIFO and Sched_prio schedulers")
     plt.legend()
     plt.tight_layout()
     plt.savefig(output_path, dpi=200)

@@ -61,7 +61,7 @@ uv run -m exp_runner run-multiple <app> "<exp1> <exp2>" --plot
 ### 3. Viewing Results
 
 *   **Raw Data**: Saved in `exp/<app>/data/out/<experiment_name>/`.
-    *   Organized by iteration (`0`, `1`, ...) and policy (`fifo`, `prio_global`, etc.).
+    *   Organized by iteration (`0`, `1`, ...) and policy (`sched_fifo`, `sched_prio`, etc.).
     *   Contains logs (`*.log`) and trace CSVs.
 *   **Plots**: Saved in `exp/<app>/data/plots/<experiment_name>/`.
     *   Includes goodput, latency CDFs, and CPU usage.

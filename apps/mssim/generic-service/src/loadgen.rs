@@ -8,7 +8,7 @@ use std::{
 };
 
 use app_utils::load_gen::TraceRecord;
-use masa::{time_now, ContextBuilder as MasaContextBuilder, PriorityHint};
+use masa::{time_now, ContextBuilder as MasaContextBuilder};
 use rand_distr::{Distribution, Exp};
 use serde::Deserialize;
 use serde_json;
@@ -18,7 +18,7 @@ use tokio::sync::{mpsc, Mutex, Semaphore};
 use tokio::task::JoinSet;
 use tokio::time::{Instant, MissedTickBehavior};
 use tokio::{fs, time};
-use tonic::masa::MasaRequestExt;
+use tonic::masa_ext::MasaRequestExt;
 use tonic::transport::masa_channel::LoadBalancedChannel;
 use tonic::Request;
 use tracing_subscriber::layer::SubscriberExt;
@@ -294,17 +294,15 @@ async fn run_root_load(
                         let slo_us = entry.slo_ms * 1000;
                         let start_at = time_now();
                         let deadline = start_at + slo_us;
-                        let prio_hint = if masa::PRIO_OLDEST { start_at } else { deadline };
                         #[allow(unused_mut)]
                         let mut builder = MasaContextBuilder::new("root".to_string(), req_id)
                             .slo(slo_us)
                             .gateway_entry(start_at)
-                            .deadline(deadline)
-                            .prio_hint(PriorityHint::new(prio_hint));
-                        #[cfg(feature = "rajomon")]
+                            .deadline(deadline);
+                        #[cfg(feature = "ac_rajomon")]
                         {
                             use rand::Rng;
-                            use tonic::masa::context::rajomon::MAX_TOKEN;
+                            use masa::MAX_TOKEN;
                             // Bid is a uniform random value in [0, MAX_TOKEN]. The server
                             // admits requests whose bid >= its current price, giving a
                             // (MAX_TOKEN - price) / MAX_TOKEN admission fraction. Drawing
