@@ -313,3 +313,42 @@ With MAX_BURST_SECS=0.005, the budget can hold at most 5ms × rate µs. At rate=
 
 ### Experiment design
 Same config (800-2000 RPS, 30s per step, 50ms SLO).
+
+### Actual Outcomes (surge_7)
+
+**Status:** Complete ✅ — Keep
+
+**Code commit:** 6c8c2a4a
+
+| RPS | surge_3 | surge_7 | Delta | StdDev Δ |
+|-----|---------|---------|-------|----------|
+| 800 | 800 | 800 | 0 | — |
+| 1000 | 1000 | 1000 | 0 | — |
+| 1200 | 1184 | 1183 | -1 | — |
+| 1400 | 1315 | 1342 | **+27** | — |
+| 1600 | 1419 | 1443 | **+24** | **-23%** |
+| 1800 | 1452 | 1485 | **+33** | +8% |
+| 2000 | 1517 | 1576 | **+59** | **-25%** |
+
+**Key findings:**
+1. **Both goodput AND stability improved.** +27 to +59 at overload, with 23-25% lower per-second std dev at 1600 and 2000.
+2. **Oscillation damps faster.** The alternating high/low pattern still exists in sec 0-6 at 2000 RPS, but narrows by sec 7-9 (gap: 500 → 300) and settles faster than surge_3.
+3. **No regression at any load point.** The tighter burst cap doesn't hurt underload performance.
+4. **Mechanism confirmed:** smaller burst → smaller overshoot per cycle → less downstream overload → fewer early returns → higher goodput average.
+
+**Current cumulative parameter state:**
+```
+UTIL_TARGET = 0.80         (was 0.92)
+INITIAL_BUDGET_RATE = 5M   (was 10M)
+ADJUST_RATE = 2.0          (was 0.5)
+Max budget cap = 15M       (was 100M)
+MAX_BURST_SECS = 0.005     (was 0.1)
+```
+
+**vs surge_1 baseline (total improvement):**
+| RPS | surge_1 | surge_7 | Delta | vs TC (s7) |
+|-----|---------|---------|-------|------------|
+| 1400 | 1270 | 1342 | +72 | +143 (vs TC 1199) |
+| 1600 | 1096 | 1443 | **+347** | +399 (vs TC 1044) |
+| 1800 | 1191 | 1485 | **+294** | +469 (vs TC 1016) |
+| 2000 | 1154 | 1576 | **+422** | +283 (vs TC 1293) |
