@@ -339,28 +339,23 @@ impl AdmissionController {
             state.budget_us = max_budget;
         }
 
-        // Admit if we have enough budget
-        let cost = est_compute as f64;
-        let admitted = state.budget_us >= cost;
-        if admitted {
-            state.budget_us -= cost;
-        }
-
-        // Adjust rate based on bottleneck utilization.
-        // Key insight: only increase the rate when we are actually admitting requests.
-        // If budget is depleted (we're rejecting), the low utilization is CAUSED by
-        // our rejections, not by spare capacity. Increasing the rate in that state
-        // causes boom-bust oscillation.
+        // Adjust rate based on bottleneck utilization
         if bottleneck_util > UTIL_TARGET {
             state.budget_rate *= 1.0 - ADJUST_RATE * elapsed;
-        } else if admitted {
-            // Only ramp up when we're admitting AND util is below target
+        } else {
             state.budget_rate *= 1.0 + ADJUST_RATE * elapsed;
         }
         // Don't let rate go negative or explode
         state.budget_rate = state.budget_rate.clamp(1.0, INITIAL_BUDGET_RATE * 3.0);
 
-        admitted
+        // Admit if we have enough budget
+        let cost = est_compute as f64;
+        if state.budget_us >= cost {
+            state.budget_us -= cost;
+            true
+        } else {
+            false
+        }
     }
 }
 
