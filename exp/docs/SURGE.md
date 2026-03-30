@@ -249,3 +249,28 @@ The oscillation appears to be a fundamental property of the token-bucket feedbac
 - **Probabilistic admission** instead of binary (accept with probability proportional to budget/cost)
 - **Use a different signal** that doesn't oscillate (e.g., queue depth, recent ER fraction)
 - **Accept that the oscillation exists** and focus on ensuring the average goodput stays high (which it does — surge_3 achieved +323 to +363 vs baseline at overload)
+
+---
+
+## Iteration 5: True AIMD — additive increase, multiplicative decrease (surge_6)
+
+**Status:** Pending
+
+### Change
+Replace multiplicative rate increase with additive increase:
+- Decrease (util > target): unchanged — `rate *= 1.0 - 2.0 * elapsed` (multiplicative, fast backoff)
+- Increase (util <= target): `rate += 5_000_000.0 * elapsed` (additive, linear probe)
+
+### Hypothesis
+Root cause re-analysis: the multiplicative increase `rate *= 1.0 + 2.0 * elapsed` compounds across ~2000 per-request calls per second. At 2000 RPS, elapsed ≈ 0.5ms, giving `1.001^2000 ≈ 7.3x` rate increase per second. The rate swings from throttled (e.g., 3M) to max (15M) within a single "good" second — this is the burst that overloads the system and triggers the next "bad" second.
+
+With additive increase at 5M µs/s per second, starting from 3M, it takes 2.4 seconds to reach 15M. This is independent of request rate — whether we're at 1000 or 2000 RPS, the rate increases at the same wall-clock speed. This prevents the exponential explosion that drives the oscillation.
+
+### Expected outcomes if hypothesis is correct:
+1. Rate increases gradually across multiple seconds instead of snapping to max in one second
+2. Oscillation amplitude reduced — "bad" seconds should be milder because the burst is smaller
+3. Average goodput may be slightly lower (slower ramp-up means longer recovery from legitimate load drops)
+4. Per-second std dev should decrease significantly
+
+### Experiment design
+Same config as surge_1-5 (800-2000 RPS, 30s per step, 50ms SLO).
