@@ -187,3 +187,40 @@ With ADJUST_RATE_UP=0.3, recovery from throttling takes ~7x longer. After a dip,
 
 ### Experiment design
 Same config as surge_1/2/3 (800-2000 RPS, 30s per step, 50ms SLO).
+
+### Actual Outcomes (surge_4)
+
+**Status:** Regression ❌ — Reverted (5cf6a4db reverted via 337e4026)
+
+| RPS | surge_3 | surge_4 | Delta |
+|-----|---------|---------|-------|
+| 1200 | 1184 | 1171 | -13 |
+| 1400 | 1315 | 1329 | +14 |
+| 1600 | 1419 | 1412 | -7 |
+| 1800 | 1452 | 1446 | -6 |
+| 2000 | 1517 | 1502 | -15 |
+
+**Stability (per-second goodput std dev):** 1600: 179 (was 178), 1800: 262 (was 236), 2000: 341 (was 328). All worse or equal.
+
+**The 2-second oscillation persists unchanged.** AIMD asymmetry does not break the limit cycle because the root cause is not rate-of-change asymmetry — it's the feedback causality: when ac_pred rejects, utilization drops, making ac_pred think there's spare capacity. This is a structural issue in the feedback loop.
+
+---
+
+## Iteration 4: Suppress rate increase during rejection (surge_5)
+
+**Status:** Pending
+
+### Change
+In `should_admit()`, move the rate adjustment AFTER the admit/reject decision. Only increase the budget rate when the request is actually admitted AND util < target. When rejecting (budget depleted), freeze the rate — don't increase it even if utilization appears low.
+
+### Hypothesis
+The 2-second oscillation is caused by the admission controller increasing its rate when utilization is low, not realizing the low utilization is caused by its own rejections. By suppressing rate increases during rejection, the controller maintains its throttled rate until utilization genuinely drops because requests are completing faster (not because they're being rejected). This breaks the boom-bust cycle at its root.
+
+### Expected outcomes if hypothesis is correct:
+1. Oscillation amplitude reduced — the "good" seconds may not reach 100% goodput, but the "bad" seconds should be much milder
+2. More stable per-second goodput (lower std dev)
+3. Average goodput may decrease slightly if the controller is too conservative
+4. The rate will converge to a stable equilibrium instead of oscillating
+
+### Experiment design
+Same config as surge_1-4 (800-2000 RPS, 30s per step, 50ms SLO).
