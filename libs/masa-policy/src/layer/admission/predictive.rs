@@ -264,14 +264,8 @@ impl BottleneckTracker {
 
 #[cfg(feature = "ac_pred")]
 const UTIL_TARGET: f64 = 0.80;
-/// Multiplicative decrease factor when util > target (per second).
 #[cfg(feature = "ac_pred")]
-const ADJUST_RATE_DOWN: f64 = 2.0;
-/// Additive increase step when util <= target (µs/s per second).
-/// True AIMD: linear increase prevents the exponential rate explosion
-/// that caused 2-second goodput oscillation with multiplicative increase.
-#[cfg(feature = "ac_pred")]
-const ADJUST_STEP_UP: f64 = 5_000_000.0;
+const ADJUST_RATE: f64 = 2.0;
 #[cfg(feature = "ac_pred")]
 const MAX_BURST_SECS: f64 = 0.1;
 #[cfg(feature = "ac_pred")]
@@ -345,12 +339,11 @@ impl AdmissionController {
             state.budget_us = max_budget;
         }
 
-        // Adjust rate: multiplicative decrease (fast backoff), additive increase (slow probe).
-        // True AIMD prevents the exponential rate explosion that caused oscillation.
+        // Adjust rate based on bottleneck utilization
         if bottleneck_util > UTIL_TARGET {
-            state.budget_rate *= 1.0 - ADJUST_RATE_DOWN * elapsed;
+            state.budget_rate *= 1.0 - ADJUST_RATE * elapsed;
         } else {
-            state.budget_rate += ADJUST_STEP_UP * elapsed;
+            state.budget_rate *= 1.0 + ADJUST_RATE * elapsed;
         }
         // Don't let rate go negative or explode
         state.budget_rate = state.budget_rate.clamp(1.0, INITIAL_BUDGET_RATE * 3.0);
