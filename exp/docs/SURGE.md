@@ -224,3 +224,28 @@ The 2-second oscillation is caused by the admission controller increasing its ra
 
 ### Experiment design
 Same config as surge_1-4 (800-2000 RPS, 30s per step, 50ms SLO).
+
+### Actual Outcomes (surge_5)
+
+**Status:** Regression ❌ — Reverted (80592e33 reverted via 0cde377f)
+
+| RPS | surge_3 | surge_5 | Delta |
+|-----|---------|---------|-------|
+| 1200 | 1184 | 1179 | -5 |
+| 1400 | 1315 | 1304 | -11 |
+| 1600 | 1419 | 1394 | -25 |
+| 1800 | 1452 | 1448 | -4 |
+| 2000 | 1517 | 1533 | +16 |
+
+**Stability:** Mixed. StdDev improved at 1800 (-35) but worsened at 1600 (+12) and 2000 (+21). The 2-second oscillation persists unchanged — freezing the rate during rejection doesn't help because the rate was already too high when rejection started, and unfreezing on the next admission cycle restarts the boom-bust.
+
+## Summary of Stability Attempts (Iterations 3-4)
+
+Two approaches tried to dampen the 2-second limit cycle:
+- **AIMD (asymmetric rate adjustment):** No effect — oscillation is not caused by rate symmetry
+- **Rate freeze during rejection:** No effect — unfreezing on next admit restarts the cycle
+
+The oscillation appears to be a fundamental property of the token-bucket feedback loop interacting with the 1-second estimation update window. The admit/reject decision is binary and creates a discrete on/off pattern. Potential future approaches:
+- **Probabilistic admission** instead of binary (accept with probability proportional to budget/cost)
+- **Use a different signal** that doesn't oscillate (e.g., queue depth, recent ER fraction)
+- **Accept that the oscillation exists** and focus on ensuring the average goodput stays high (which it does — surge_3 achieved +323 to +363 vs baseline at overload)
