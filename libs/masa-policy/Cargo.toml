@@ -1,0 +1,34 @@
+[package]
+name = "masa-policy"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+masa-core = { path = "../masa-core" }
+tonic-core = { path = "../tonic/tonic-core" }
+tokio = { path = "../tokio/tokio", optional = true, features = ["rt"] }
+dashmap = "5.5"
+once_cell = "1.20"
+log = "0.4"
+http = "0.2"
+rand = "0.8"
+rand_distr = "0.4"
+
+[dev-dependencies]
+tokio = { path = "../tokio/tokio", features = ["rt", "macros"] }
+
+[features]
+default = []
+masa = []
+trace_queue_latency = ["tokio"]
+sched_slo = ["masa", "masa-core/sched_slo"]
+sched_tailclipper = ["masa", "masa-core/sched_tailclipper"]
+sched_fifo = ["masa", "masa-core/sched_fifo"]
+abort_slo = ["masa", "masa-core/abort_slo"]
+estimator = ["masa-core/estimator", "tokio"]
+sched_pred = ["estimator", "sched_slo", "masa-core/sched_pred"]
+ac_pred = ["estimator", "masa-core/ac_pred"]
+ac_rajomon = ["masa", "masa-core/ac_rajomon", "tokio"]
+est_rms = []
+est_hist = []
+est_mean_var = []

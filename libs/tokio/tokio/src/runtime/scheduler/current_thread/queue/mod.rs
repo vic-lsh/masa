@@ -1,35 +1,21 @@
-#[cfg(not(any(
-    feature = "prio_global",
-    feature = "prio_local",
-    feature = "prio_oldest",
-)))]
+#[cfg(not(feature = "sched_prio"))]
 mod fifo;
 
-#[cfg(any(
-    feature = "prio_global",
-    feature = "prio_local",
-))]
+#[cfg(all(feature = "sched_prio", not(feature = "tailclipper")))]
 mod prio_bh;
 
-#[cfg(any(feature = "prio_oldest"))]
+#[cfg(all(feature = "sched_prio", feature = "tailclipper"))]
 mod prio_bh_rr;
 
 pub(crate) type LocalRunQueue<T> = LocalRunQueueInner<T>;
 
-#[cfg(not(any(
-    feature = "prio_global",
-    feature = "prio_local",
-    feature = "prio_oldest",
-)))]
+#[cfg(not(feature = "sched_prio"))]
 pub(crate) type LocalRunQueueInner<T> = fifo::FifoQueue<T>;
 
-#[cfg(any(
-    feature = "prio_global",
-    feature = "prio_local",
-))]
+#[cfg(all(feature = "sched_prio", not(feature = "tailclipper")))]
 pub(crate) type LocalRunQueueInner<T> = prio_bh::BinaryHeapQueue<T>;
 
-#[cfg(any(feature = "prio_oldest"))]
+#[cfg(all(feature = "sched_prio", feature = "tailclipper"))]
 pub(crate) type LocalRunQueueInner<T> = prio_bh_rr::BinaryHeapRoundRobinQueue<T, false>;
 
 /// Describes the different strategies implemented by Masa.

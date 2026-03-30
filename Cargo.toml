@@ -1,6 +1,7 @@
 [workspace]
 members = [
   # tonic
+  "libs/tonic/tonic-core",
   "libs/tonic/tonic",
   "libs/tonic/tonic-build",
   "libs/tonic/tonic-health",
@@ -30,6 +31,7 @@ members = [
   "libs/tonic/tests/default_stubs",
   # masa support
   "libs/masa-core",
+  "libs/masa-policy",
   "libs/masa",
 
   # evaluation applications

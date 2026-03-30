@@ -63,16 +63,16 @@ pub(crate) fn generate_internal<T: Service>(
             use tonic::codegen::*;
             use tonic::codegen::http::Uri;
 
-            // requried to call functions in the trait, referenced through MasaHooks
+            // requried to call functions in the trait, referenced through Hooks
             #[allow(unused_imports)]
-            use tonic::masa::{ClientHooks, ParentHooks};
+            use tonic::masa_ext::{ClientHooks, ParentHooks};
 
             #service_doc
             #(#struct_attributes)*
             #[derive(Debug)]
             pub struct #service_ident<
                 T,
-                M: tonic::masa::MasaHooks = tonic::masa::DefaultMasaHooks,
+                M: tonic::masa_ext::Hooks = tonic::masa_ext::DefaultHooks,
             > {
                 inner: tonic::client::Grpc<T>,
                 _ctx_ty: std::marker::PhantomData<M>,
@@ -81,7 +81,7 @@ pub(crate) fn generate_internal<T: Service>(
             impl<T, M> Clone for #service_ident<T, M>
             where
                 T: Clone,
-                M: tonic::masa::MasaHooks
+                M: tonic::masa_ext::Hooks
             {
                 fn clone(&self) -> Self {
                     Self {
@@ -93,7 +93,7 @@ pub(crate) fn generate_internal<T: Service>(
 
             #connect
 
-            impl<T> #service_ident<T, tonic::masa::DefaultMasaHooks>
+            impl<T> #service_ident<T, tonic::masa_ext::DefaultHooks>
             where
                 T: tonic::client::GrpcService<tonic::body::BoxBody>,
                 T::Error: Into<StdError>,
@@ -133,7 +133,7 @@ pub(crate) fn generate_internal<T: Service>(
                 T::Error: Into<StdError>,
                 T::ResponseBody: Body<Data = Bytes> + Send  + 'static,
                 <T::ResponseBody as Body>::Error: Into<StdError> + Send,
-                M: tonic::masa::MasaHooks
+                M: tonic::masa_ext::Hooks
             {
                 fn new_impl(inner: T) -> Self {
                     let inner = tonic::client::Grpc::new(inner);
@@ -197,7 +197,7 @@ fn generate_get_parent_rpc_ctx(_service: &impl Service) -> TokenStream {
             //     client and server.
             //   - if custom P types are configured (e.g., in tests), the user have to
             //     ensure that. code-gen doesn't enforce this rule yet.
-            unsafe { tonic::masa::context::client::get_parent_ctx::<M>() }
+            unsafe { tonic::masa_ext::client::get_parent_ctx::<M>() }
         }
     }
 }
@@ -207,7 +207,7 @@ fn generate_connect(service_ident: &syn::Ident, enabled: bool) -> TokenStream {
     let connect_impl = quote! {
         impl #service_ident<
             tonic::transport::Channel,
-            tonic::masa::DefaultMasaHooks,
+            tonic::masa_ext::DefaultHooks,
         > {
             /// Attempt to create a new client by connecting to a given endpoint.
             pub async fn connect<D>(dst: D) -> Result<Self, tonic::transport::Error>
@@ -222,7 +222,7 @@ fn generate_connect(service_ident: &syn::Ident, enabled: bool) -> TokenStream {
 
         impl<M> #service_ident<tonic::transport::Channel, M>
         where
-            M: tonic::masa::MasaHooks
+            M: tonic::masa_ext::Hooks
         {
             /// Attempt to create a new client by connecting to a given endpoint.
             pub async fn connect_with_custom_context<D>(dst: D) -> Result<Self, tonic::transport::Error>

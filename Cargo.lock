@@ -2986,6 +2986,7 @@ name = "masa"
 version = "0.1.0"
 dependencies = [
  "masa-core",
+ "masa-policy",
  "tokio",
  "tonic",
 ]
@@ -3026,11 +3027,27 @@ dependencies = [
  "http",
  "hyper",
  "masa-core",
+ "masa-policy",
  "prost",
  "prost-build",
  "tokio",
  "tonic",
  "tonic-build",
+]
+
+[[package]]
+name = "masa-policy"
+version = "0.1.0"
+dependencies = [
+ "dashmap",
+ "http",
+ "log",
+ "masa-core",
+ "once_cell",
+ "rand 0.8.5",
+ "rand_distr 0.4.3",
+ "tokio",
+ "tonic-core",
 ]
 
 [[package]]
@@ -5750,6 +5767,7 @@ dependencies = [
  "hyper-timeout",
  "log",
  "masa-core",
+ "masa-policy",
  "once_cell",
  "percent-encoding",
  "pin-project",
@@ -5767,6 +5785,7 @@ dependencies = [
  "tokio",
  "tokio-rustls 0.26.4",
  "tokio-stream",
+ "tonic-core",
  "tower",
  "tower-layer",
  "tower-service",
@@ -5786,6 +5805,20 @@ dependencies = [
  "quote",
  "syn 2.0.114",
  "tonic",
+]
+
+[[package]]
+name = "tonic-core"
+version = "0.1.0"
+dependencies = [
+ "base64 0.21.7",
+ "bytes",
+ "http",
+ "http-body",
+ "percent-encoding",
+ "pin-project",
+ "tokio-stream",
+ "tracing",
 ]
 
 [[package]]

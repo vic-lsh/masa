@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
-    pass
+    from exp_runner.runner.executor import CommandExecutor
 
 logger = logging.getLogger(__name__)
 

@@ -4,18 +4,14 @@
 export RUSTFLAGS="-D warnings"
 
 flag_combos=(
-    "fifo"
-    "fifo,early,adctl"
-    "fifo,rajomon"
-    "fifo,rajomon,early"
-    "prio_global"
-    "prio_global,rajomon"
-    "prio_global,early"
-    "prio_global,early,adctl"
-    "prio_oldest,early,adctl"
-    "prio_local,early"
-    "prio_local,early,adctl,est_mean_var"
-    "prio_local,rajomon,early"
+    "sched_fifo"
+    "sched_fifo,abort_slo"
+    "sched_slo"
+    "sched_slo,abort_slo"
+    "sched_tailclipper,abort_slo"
+    "sched_slo,ac_rajomon"
+    "sched_slo,ac_pred,est_mean_var"
+    "sched_pred,abort_slo,ac_pred,est_mean_var"
 )
 
 CONTINUE_ON_ERROR=false

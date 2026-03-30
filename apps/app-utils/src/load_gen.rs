@@ -415,14 +415,13 @@ where
 
         let (response, error) = map_response(response, latency <= self.slo);
 
-        #[cfg(feature = "rajomon")]
+        #[cfg(feature = "ac_rajomon")]
         if let Some((ref metadata, _)) = response {
             if let Some(price_header) = metadata.get("x-masa-rajomon-price") {
                 if let Ok(price_str) = price_header.to_str() {
                     if let Ok(price) = price_str.parse::<u64>() {
-                        use tonic::masa::context::rajomon::CLIENT_TOKEN_BUCKET;
                         let method = tonic::CowGrpcMethod::new("", self.api.clone());
-                        CLIENT_TOKEN_BUCKET.update_price(&method, price);
+                        masa::update_rajomon_price(&method, price);
                     }
                 }
             }
@@ -657,7 +656,7 @@ where
             let i = self.rng.gen_range(0..self.api_handlers.len());
             let handler = Arc::clone(&self.api_handlers[i]);
 
-            #[cfg(feature = "rajomon")]
+            #[cfg(feature = "ac_rajomon")]
             let ctx = {
                 match masa::try_create_context(
                     handler.api(),
@@ -670,7 +669,7 @@ where
                     }
                 }
             };
-            #[cfg(not(feature = "rajomon"))]
+            #[cfg(not(feature = "ac_rajomon"))]
             let ctx = masa::create_context(
                 handler.api(),
                 std::time::Duration::from_micros(handler.slo()),

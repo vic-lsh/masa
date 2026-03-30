@@ -33,20 +33,17 @@ name = "mssim-loadgen"
 path = "src/loadgen.rs"
 
 [features]
-early = ["masa/early"]
-trace-queue = ["masa/trace-queue", "tonic/trace-queue"]
-
-fifo = ["masa/fifo"]
-
-prio_oldest = ["masa/prio_oldest"]
-
-prio_global = ["masa/prio_global"]
-
-prio_local = ["masa/prio_local"]
+sched_slo = ["masa/sched_slo"]
+sched_tailclipper = ["masa/sched_tailclipper"]
+sched_fifo = ["masa/sched_fifo"]
+sched_pred = ["masa/sched_pred"]
+abort_slo = ["masa/abort_slo"]
+estimator = ["masa/estimator"]
+ac_pred = ["masa/ac_pred"]
+ac_rajomon = ["masa/ac_rajomon"]
 
 est_rms = ["masa/est_rms"]
 est_hist = ["masa/est_hist"]
 est_mean_var = ["masa/est_mean_var"]
 
-adctl = ["masa/adctl"]
-rajomon = ["masa/rajomon"]
+trace_queue_latency = ["masa/trace_queue_latency", "tonic/trace_queue_latency"]

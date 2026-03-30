@@ -5,21 +5,24 @@ edition = "2021"
 
 [dependencies]
 masa-core = { path = "../masa-core" }
+masa-policy = { path = "../masa-policy" }
 tokio = { path = "../tokio/tokio", optional = true }
 tonic = { path = "../tonic/tonic" }
 
 
 [features]
-prio_global = ["masa-core/prio_global", "tokio/prio_global", "tonic/prio_global"]
-prio_oldest = ["masa-core/prio_oldest", "tokio/prio_oldest", "tonic/prio_oldest"]
-prio_local  = ["masa-core/prio_local",  "tokio/prio_local",  "tonic/prio_local"]
-fifo        = ["masa-core/fifo",        "tokio/fifo",        "tonic/fifo"]
+sched_slo = ["masa-core/sched_slo", "tokio/sched_prio", "tonic/sched_slo", "masa-policy/sched_slo"]
+sched_tailclipper = ["masa-core/sched_tailclipper", "tokio/sched_prio", "tokio/tailclipper", "tonic/sched_tailclipper", "masa-policy/sched_tailclipper"]
+sched_fifo  = ["masa-core/sched_fifo",  "tokio/sched_fifo",  "tonic/sched_fifo", "masa-policy/sched_fifo"]
+sched_pred = ["masa-core/sched_pred", "tonic/sched_pred", "sched_slo", "masa-policy/sched_pred"]
 
-est_rms = ["tonic/est_rms"]
-est_hist = ["tonic/est_hist"]
-est_mean_var = ["tonic/est_mean_var"]
+abort_slo = ["masa-core/abort_slo", "tonic/abort_slo", "masa-policy/abort_slo"]
+estimator = ["masa-core/estimator", "tonic/estimator", "masa-policy/estimator"]
 
-early = ["masa-core/early", "tonic/early"]
-adctl = ["tonic/adctl"]
-rajomon = ["masa-core/rajomon", "tonic/rajomon"]
-trace-queue = ["tonic/trace-queue"]
+est_rms = ["tonic/est_rms", "masa-policy/est_rms"]
+est_hist = ["tonic/est_hist", "masa-policy/est_hist"]
+est_mean_var = ["tonic/est_mean_var", "masa-policy/est_mean_var"]
+
+ac_pred = ["masa-core/ac_pred", "tonic/ac_pred", "masa-policy/ac_pred"]
+ac_rajomon = ["masa-core/ac_rajomon", "tonic/ac_rajomon", "masa-policy/ac_rajomon"]
+trace_queue_latency = ["tonic/trace_queue_latency", "masa-policy/trace_queue_latency"]

@@ -14,7 +14,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Once};
 use tokio::sync::{RwLock, RwLockReadGuard};
 use tokio::task::JoinSet;
-use tonic::{masa::context::MasaRequestExt, Request, Status};
+use tonic::masa_ext::MasaRequestExt;
+use tonic::{Request, Status};
 use tracing::{info, warn};
 
 pub(crate) struct ServiceCore {
@@ -473,7 +474,9 @@ mod tests {
     };
     use std::collections::HashMap;
     use tonic::async_trait;
-    use tonic::masa::{MasaRequestExt, METHOD_NAME_OVERRIDE_HEADER, SERVICE_NAME_OVERRIDE_HEADER};
+    use tonic::masa_ext::{
+        MasaRequestExt, METHOD_NAME_OVERRIDE_HEADER, SERVICE_NAME_OVERRIDE_HEADER,
+    };
     use tonic::transport::masa_channel::LoadBalancedChannel;
     use tonic::transport::Server;
     use tonic::Request;

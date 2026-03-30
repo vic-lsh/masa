@@ -12,7 +12,7 @@ use serde::Deserialize;
 use serde_json::Value;
 use tokio::sync::{mpsc, Semaphore};
 use tokio::time::Instant;
-use tonic::masa::MasaRequestExt;
+use tonic::masa_ext::MasaRequestExt;
 use tonic::metadata::MetadataMap;
 use tonic::Request;
 

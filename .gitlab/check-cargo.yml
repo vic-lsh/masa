@@ -7,11 +7,12 @@ cargo_check:
             - FEATURES:
                   [
                       "",
-                      "fifo",
-                      "prio_global",
-                      "prio_global,early",
-                      "prio_local,early",
-                      "prio_oldest,early",
+                      "sched_fifo",
+                      "sched_slo",
+                      "sched_tailclipper,abort_slo",
+                      "sched_slo,ac_rajomon",
+                      "sched_slo,ac_pred,est_mean_var",
+                      "sched_pred,abort_slo,ac_pred,est_mean_var",
                   ]
     script:
         - rustc --version && cargo --version # Print version info for debugging
