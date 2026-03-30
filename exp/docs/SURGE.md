@@ -158,3 +158,32 @@ Max budget cap = 15M      (was 100M)
 - The 1200→1400 transition still shows some goodput loss (1184→1315 at 1400 = 94%, but 1193→1270 was 91% in surge_1). More headroom could be captured here.
 - The ER rates could be further reduced at 1800-2000 — there's still room for the policy to be smarter about which requests to shed.
 - Run-to-run variance at high load (~±50-100 RPS) means confirming these results with a repeat run would strengthen confidence.
+
+---
+
+## Iteration 3: Asymmetric ADJUST_RATE (AIMD-style) to dampen oscillation (surge_4)
+
+**Status:** Pending
+
+### Change
+- Split symmetric `ADJUST_RATE = 2.0` into asymmetric rates:
+  - `ADJUST_RATE_DOWN = 2.0` (when util > UTIL_TARGET: fast throttle, unchanged)
+  - `ADJUST_RATE_UP = 0.3` (when util < UTIL_TARGET: slow recovery, was 2.0)
+
+### Hypothesis
+Per-second analysis of surge_3 reveals a **deterministic 2-second limit cycle** driven by ac_pred:
+1. Good second: low estimates → rate recovers fast (×1.2 per 100ms with ADJUST_RATE=2.0) → budget refills → admit everything → burst
+2. Bad second: burst causes queueing → estimates spike → rate drops fast → budget depletes → reject 30-50%
+
+The root cause is that ADJUST_RATE=2.0 is symmetric — recovery is just as fast as throttle. This is like a TCP sender that doubles its window after every successful RTT. TCP's AIMD (Additive Increase Multiplicative Decrease) works because increase is slow and decrease is fast.
+
+With ADJUST_RATE_UP=0.3, recovery from throttling takes ~7x longer. After a dip, the rate ramps up gradually over several seconds instead of snapping back in one second. This prevents the burst that triggers the next dip.
+
+### Expected outcomes if hypothesis is correct:
+1. 2-second oscillation eliminated or significantly dampened
+2. Goodput should be more stable second-to-second (less variance within each RPS level)
+3. Average goodput may decrease slightly (slower recovery means briefly under-admitting after dips)
+4. The sustained 7-second dip at sec 10-16 should either shorten or disappear
+
+### Experiment design
+Same config as surge_1/2/3 (800-2000 RPS, 30s per step, 50ms SLO).
