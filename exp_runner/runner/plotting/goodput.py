@@ -6,6 +6,8 @@ import matplotlib
 import numpy as np
 import pandas as pd
 
+from exp_runner.runner.policy import Policy
+
 from .util import (
     filter_excluded_errors,
     get_plot_worker_count,
@@ -47,30 +49,19 @@ def get_request_type_hatch(request_type: str):
 
 
 def sort_policies_by_type(policies):
-    """Sort policies to group fifo first, then prio_global, then prio_local."""
-    fifo_policies = []
-    prio_global_policies = []
-    prio_local_policies = []
-    other_policies = []
+    """Sort policies: fifo → e2e_slo → slack → oldest → other.
 
-    for policy in policies:
-        policy_lower = policy.lower()
-        if policy_lower.startswith("fifo"):
-            fifo_policies.append(policy)
-        elif policy_lower.startswith("prio_global"):
-            prio_global_policies.append(policy)
-        elif policy_lower.startswith("prio_local"):
-            prio_local_policies.append(policy)
-        else:
-            other_policies.append(policy)
+    Within each group, policies without drop come before those with drop.
+    """
+    _PRIO_ORDER = {"fifo": 0, "e2e_slo": 1, "slack": 2, "oldest": 3}
 
-    # Sort within each group (base policy before early variant)
-    fifo_policies.sort(key=lambda p: (",early" in p.lower(), p))
-    prio_global_policies.sort(key=lambda p: (",early" in p.lower(), p))
-    prio_local_policies.sort(key=lambda p: (",early" in p.lower(), p))
-    other_policies.sort()
+    def _sort_key(raw: str):
+        p = Policy.parse(raw)
+        group = _PRIO_ORDER.get(p.prio, 99) if p.prio else 99
+        has_drop = p.drop is not None
+        return (group, has_drop, raw)
 
-    return fifo_policies + prio_global_policies + prio_local_policies + other_policies
+    return sorted(policies, key=_sort_key)
 
 
 def compute_goodput(df):

@@ -1,6 +1,7 @@
 use hdrhistogram::Histogram;
 use masa::Context;
 use std::time::{Duration, Instant};
+use tonic::masa_ext::{get_masa_context_from_metadata, set_masa_context_in_metadata};
 use tonic::metadata::MetadataMap;
 use tonic::{transport::Server, Request, Response, Status};
 
@@ -63,20 +64,26 @@ fn benchmark_serialization() {
     let mut map = MetadataMap::new();
     let start = Instant::now();
     for _ in 0..iterations {
-        map.insert_ctx("x-masa-context", &ctx);
+        set_masa_context_in_metadata(&mut map, &ctx);
         map.remove("x-masa-context"); // cleanup to keep map size constant
     }
     let elapsed = start.elapsed();
-    println!("MetadataMap::insert_ctx: {:?} per op", elapsed / iterations);
+    println!(
+        "set_masa_context_in_metadata: {:?} per op",
+        elapsed / iterations
+    );
 
     // Measure MetadataMap extraction
-    map.insert_ctx("x-masa-context", &ctx);
+    set_masa_context_in_metadata(&mut map, &ctx);
     let start = Instant::now();
     for _ in 0..iterations {
-        let _ = map.get_ctx("x-masa-context");
+        let _ = get_masa_context_from_metadata(&map);
     }
     let elapsed = start.elapsed();
-    println!("MetadataMap::get_ctx: {:?} per op", elapsed / iterations);
+    println!(
+        "get_masa_context_from_metadata: {:?} per op",
+        elapsed / iterations
+    );
 }
 
 async fn benchmark_e2e() -> Result<(), Box<dyn std::error::Error>> {
@@ -112,7 +119,7 @@ async fn benchmark_e2e() -> Result<(), Box<dyn std::error::Error>> {
         });
 
         // Attach Masa context
-        req.metadata_mut().insert_ctx("x-masa-context", &ctx);
+        set_masa_context_in_metadata(req.metadata_mut(), &ctx);
 
         let start = Instant::now();
         let _ = client.handle_ping(req).await?;

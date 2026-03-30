@@ -27,7 +27,7 @@ def test_experiment_config_load_mssim_minimal() -> None:
         in_dir = repo_root / "exp" / "mssim" / "in" / "e2e_test"
         in_dir.mkdir(parents=True)
 
-        (in_dir / "policies").write_text("fifo\n", encoding="utf-8")
+        (in_dir / "policies").write_text("sched_fifo\n", encoding="utf-8")
         (in_dir / "gen_config.json").write_text(
             json.dumps(
                 {"Repeats": 1, "Rps": [200], "DurationSecs": 1, "WarmupSecs": 0}
@@ -55,6 +55,6 @@ def test_experiment_config_load_mssim_minimal() -> None:
 
         assert cfg.app_name == "mssim"
         assert cfg.experiment_name == "e2e_test"
-        assert cfg.policies == ["fifo"]
+        assert cfg.policies == ["sched_fifo"]
         assert cfg.gen_config["Rps"] == [200]
         assert isinstance(cfg.app_config, dict)

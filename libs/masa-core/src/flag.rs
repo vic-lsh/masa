@@ -1,25 +1,60 @@
-pub const PRIO_GLOBAL: bool = cfg!(feature = "prio_global");
+pub const SCHED_FIFO: bool = cfg!(feature = "sched_fifo");
 
-pub const PRIO_OLDEST: bool = cfg!(feature = "prio_oldest");
+pub const SCHED_SLO: bool = cfg!(feature = "sched_slo");
 
-pub const PRIO_LOCAL: bool = cfg!(feature = "prio_local");
+pub const SCHED_TAILCLIPPER: bool = cfg!(feature = "sched_tailclipper");
 
-pub const FIFO: bool = cfg!(feature = "fifo");
+pub const SCHED_PRED: bool = cfg!(feature = "sched_pred");
 
-pub const EARLY_RETURN: bool = cfg!(feature = "early");
+pub const ABORT_SLO: bool = cfg!(feature = "abort_slo");
 
 #[allow(dead_code)]
-pub const RAJOMON: bool = cfg!(feature = "rajomon");
+pub const RAJOMON: bool = cfg!(feature = "ac_rajomon");
 
-#[cfg(any(
-    all(feature = "fifo", feature = "prio_global"),
-    all(feature = "fifo", feature = "prio_oldest"),
-    all(feature = "fifo", feature = "prio_local"),
-    all(feature = "prio_global", feature = "prio_oldest"),
-    all(feature = "prio_global", feature = "prio_local"),
-    all(feature = "prio_oldest", feature = "prio_local"),
+// === Scheduling discipline constraints ===
+// The base scheduling policies are mutually exclusive.
+#[cfg(all(feature = "sched_fifo", feature = "sched_slo"))]
+compile_error!("Enable at most one scheduling policy: sched_fifo | sched_slo | sched_tailclipper");
+
+#[cfg(all(feature = "sched_fifo", feature = "sched_tailclipper"))]
+compile_error!("Enable at most one scheduling policy: sched_fifo | sched_slo | sched_tailclipper");
+
+#[cfg(all(feature = "sched_slo", feature = "sched_tailclipper"))]
+compile_error!("Enable at most one scheduling policy: sched_slo | sched_tailclipper");
+
+// === TailClipper constraints ===
+// sched_tailclipper implements the TailClipper paper's scheduling policy exactly:
+// sched_prio + round-robin fairness for the top-N priority tasks.
+// Adding sched_pred or ac_pred would modify the paper's original design.
+#[cfg(all(feature = "sched_tailclipper", feature = "sched_pred"))]
+compile_error!(
+    "'sched_tailclipper' cannot be combined with 'sched_pred': \
+    sched_tailclipper implements the TailClipper paper's policy as-is"
+);
+
+#[cfg(all(feature = "sched_tailclipper", feature = "ac_pred"))]
+compile_error!(
+    "'sched_tailclipper' cannot be combined with 'ac_pred': \
+    sched_tailclipper implements the TailClipper paper's policy as-is"
+);
+
+// === Admission control constraints ===
+// ac_pred (estimation-based) and ac_rajomon (token-based) are two different admission
+// control strategies. Only one can be active at a time.
+#[cfg(all(feature = "ac_pred", feature = "ac_rajomon"))]
+compile_error!("Enable at most one admission control strategy: ac_pred | ac_rajomon");
+
+// Admission control requires a scheduling policy to be active, otherwise
+// DefaultHooks resolves to NoopHooks and the layer is never invoked.
+#[cfg(all(
+    any(feature = "ac_pred", feature = "ac_rajomon"),
+    not(any(
+        feature = "sched_fifo",
+        feature = "sched_slo",
+        feature = "sched_tailclipper"
+    ))
 ))]
-compile_error!("Enable at most one policy feature: fifo | prio_global | prio_oldest | prio_local");
-
-// early + rajomon can now be combined: rajomon handles admission control
-// (token-based), early handles in-flight abortion (deadline-based).
+compile_error!(
+    "Admission control (ac_pred | ac_rajomon) requires a scheduling policy \
+     (sched_fifo | sched_slo | sched_tailclipper)"
+);

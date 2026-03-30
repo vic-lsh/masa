@@ -58,24 +58,34 @@ uv run -m exp_runner plot <app> <experiment_name>
 
 Policies are selected at **compile time** via feature flags. Applications must be built with the desired policy:
 ```bash
-cargo build -p hotel --features prio_global --release
-cargo build -p hotel --features "prio_global,early" --release
+cargo build -p hotel --features sched_slo --release
+cargo build -p hotel --features "sched_slo,abort_slo" --release
 ```
 
 Key policy flags:
-- `fifo`: FIFO ordering (baseline)
-- `prio_global`: Priority by end-to-end SLO end time
-- `prio_oldest`: Oldest request first (from the TailClipper paper)
-- `prio_local`: Priority by local deadline — **only works for `hotel`** as it requires a call graph description
-- `early`: Combined with a policy (e.g., `prio_global,early`) to return early for requests past their e2e deadline, avoiding wasteful work
-- `adctl`: Progressive cost-aware admission control — uses compute-time estimates and downstream utilization signals. Requires `early`. Works with all scheduling policies (`fifo`, `prio_global`, `prio_oldest`, `prio_local`). Replaces the old `emp_admission` flag.
 
-`scripts/check.sh` checks: default (no features), `fifo`, `fifo,early,adctl`, `prio_global`, `prio_global,early`, `prio_global,early,adctl`, `prio_oldest,early,adctl`, `prio_local,early`, `prio_local,early,adctl,est_mean_var`. CI additionally checks `prio_oldest,early`.
+**Scheduling policies** (mutually exclusive):
+- `sched_fifo`: FIFO ordering (baseline)
+- `sched_slo`: Priority by end-to-end SLO deadline (implies tokio priority queue)
+- `sched_tailclipper`: TailClipper paper's oldest-request-first policy with round-robin fairness
+- `sched_pred`: Adds deadline tightening and dynamic reprioritization using downstream work estimates. Implies `sched_slo` and `estimator`.
+
+**Estimation infrastructure:**
+- `estimator`: Enables shared latency estimation infrastructure (estimator type selection, latency maps, estimation state). Implied by `sched_pred` and `ac_pred`. Does not require `abort_slo` on its own.
+
+**Composable modifiers:**
+- `abort_slo`: Returns early for requests past their e2e deadline, avoiding wasteful work. Composable with any scheduling policy.
+
+**Admission control** (mutually exclusive):
+- `ac_pred`: Progressive cost-aware admission control — uses compute-time estimates and downstream utilization signals. Requires `estimator`.
+- `ac_rajomon`: Token-bucket rate limiting admission control.
+
+`scripts/check.sh` checks: default (no features), `sched_fifo`, `sched_fifo,abort_slo`, `sched_slo`, `sched_slo,abort_slo`, `sched_tailclipper,abort_slo`, `sched_slo,ac_rajomon`, `sched_slo,ac_pred,est_mean_var`, `sched_pred,abort_slo,ac_pred,est_mean_var`.
 
 ## Architecture
 
 ### Data Flow
-1. Client's `MasaHooks` calculates child deadline/priority, serializes `Context` to JSON in HTTP/2 header (`ctx` key)
+1. Client's `Hooks` calculates child deadline/priority, serializes `Context` to JSON in HTTP/2 header (`ctx` key)
 2. Server-side `hyper` parses `ctx` header, extracts `PriorityHint`
 3. `hyper` calls `tokio::spawn_with_prio(handler_future, priority)` via the `Exec::Masa` executor
 4. Modified `tokio` runtime enqueues task in a priority queue (binary heap); lower `PriorityHint` value = higher priority
@@ -92,10 +102,20 @@ Core Masa types and utilities:
 - `Prioritize`: Priority calculation trait
 - `LatencyEstimator`: Latency distribution tracking
 
-### libs/tonic/tonic/src/masa/
-Masa integration into Tonic gRPC:
-- `context/mod.rs`: `MasaHooks` trait with `before_child_rpc`, `before_poll`, `after_poll` hooks; feature flags select the `DefaultMasaHooks` implementation
-- `context/`: Policy implementations — `fifo.rs`, `global.rs`, `local/`, `prio_oldest.rs`, `queue_global.rs`, tracing variants
+### libs/tonic/tonic-core/src/masa_ext/
+Core hook trait definitions (`Hooks`, `ServerHooks`, `ParentHooks`, `ClientHooks`) and `NoopHooks`, plus shared types (`Request`, `Response`, `Status`, metadata). Has no dependency on `masa-policy` or `masa-core`.
+
+### libs/masa-policy/
+Policy implementations extracted from tonic:
+- `hooks.rs`: `PolicyHooks` — unified hook implementation with `for_each_layer!` macro dispatch
+- `layer/`: Composable layer system — `e2e_deadline_guard.rs`, `queue_latency.rs`, `est/` (estimation), `admission/` (predictive + rajomon)
+- `context_ext.rs`: Context serialization helpers for tonic requests/responses
+
+### libs/tonic/tonic/src/masa_ext/
+Tonic-specific glue:
+- `mod.rs`: `DefaultHooks` type alias selected by feature flags; re-exports from `tonic-core` and `masa-policy`
+- `runtime/mod.rs`: Bridge from tonic `ParentContext` to tokio `PollHook`
+- `thread_local.rs`: Thread-local storage for parent/server context propagation
 - `transport/masa_channel/`: Masa-aware channel transport
 
 ### Patched Libraries

@@ -1,12 +1,12 @@
 #![cfg(any(
-    all(feature = "prio_global", feature = "trace-queue"),
-    all(feature = "prio_global", feature = "early"),
-    all(feature = "prio_global", feature = "rajomon")
+    all(feature = "sched_slo", feature = "trace_queue_latency"),
+    all(feature = "sched_slo", feature = "abort_slo"),
+    all(feature = "sched_slo", feature = "ac_rajomon")
 ))]
 
 use std::time::Duration;
 
-#[cfg(any(feature = "early", feature = "rajomon"))]
+#[cfg(any(feature = "abort_slo", feature = "ac_rajomon"))]
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
@@ -18,16 +18,16 @@ use masa_integration_tests::pb::{
     child_service_server::{ChildService, ChildServiceServer},
     Input1, Input2, Output1, Output2,
 };
-use tonic::masa::context::MasaRequestExt;
-#[cfg(feature = "trace-queue")]
-use tonic::masa::context::MasaResponseExt;
+use tonic::masa_ext::MasaRequestExt;
+#[cfg(feature = "trace_queue_latency")]
+use tonic::masa_ext::MasaResponseExt;
 use tonic::transport::Server;
 use tonic::{Request, Response, Status};
 
-#[cfg(any(feature = "early", feature = "rajomon"))]
+#[cfg(any(feature = "abort_slo", feature = "ac_rajomon"))]
 use tonic::Code;
 
-#[cfg(all(feature = "prio_global", feature = "trace-queue"))]
+#[cfg(all(feature = "sched_slo", feature = "trace_queue_latency"))]
 #[tokio::test(flavor = "current_thread")]
 async fn queue_latency_metadata_is_attached() {
     struct QueueSvc;
@@ -47,9 +47,7 @@ async fn queue_latency_metadata_is_attached() {
     let server = tokio::spawn(async move {
         Server::builder()
             .add_service(
-                ChildServiceServer::<_, tonic::masa::DefaultMasaHooks>::with_custom_context(
-                    QueueSvc,
-                ),
+                ChildServiceServer::<_, masa_policy::PolicyHooks>::with_custom_context(QueueSvc),
             )
             .serve_with_masa(addr)
             .await
@@ -85,7 +83,7 @@ async fn queue_latency_metadata_is_attached() {
     server.abort();
 }
 
-#[cfg(all(feature = "prio_global", feature = "early"))]
+#[cfg(all(feature = "sched_slo", feature = "abort_slo"))]
 #[tokio::test(flavor = "current_thread")]
 async fn expired_context_triggers_early_return() {
     #[derive(Clone)]
@@ -115,7 +113,7 @@ async fn expired_context_triggers_early_return() {
     let server = tokio::spawn(async move {
         Server::builder()
             .add_service(
-                ChildServiceServer::<_, tonic::masa::DefaultMasaHooks>::with_custom_context(svc),
+                ChildServiceServer::<_, masa_policy::PolicyHooks>::with_custom_context(svc),
             )
             .serve_with_masa(addr)
             .await
@@ -151,7 +149,7 @@ async fn expired_context_triggers_early_return() {
     server.abort();
 }
 
-#[cfg(all(feature = "prio_global", feature = "rajomon"))]
+#[cfg(all(feature = "sched_slo", feature = "ac_rajomon"))]
 #[tokio::test(flavor = "current_thread")]
 async fn sufficient_tokens_executes_and_piggybacks_price() {
     #[derive(Clone)]
@@ -174,7 +172,7 @@ async fn sufficient_tokens_executes_and_piggybacks_price() {
     let server = tokio::spawn(async move {
         Server::builder()
             .add_service(
-                ChildServiceServer::<_, tonic::masa::DefaultMasaHooks>::with_custom_context(svc),
+                ChildServiceServer::<_, masa_policy::PolicyHooks>::with_custom_context(svc),
             )
             .serve_with_masa(addr)
             .await
@@ -221,7 +219,7 @@ async fn sufficient_tokens_executes_and_piggybacks_price() {
     server.abort();
 }
 
-#[cfg(all(feature = "prio_global", feature = "rajomon"))]
+#[cfg(all(feature = "sched_slo", feature = "ac_rajomon"))]
 #[tokio::test(flavor = "current_thread")]
 async fn insufficient_tokens_triggers_early_return() {
     #[derive(Clone)]
@@ -251,7 +249,7 @@ async fn insufficient_tokens_triggers_early_return() {
     let server = tokio::spawn(async move {
         Server::builder()
             .add_service(
-                ChildServiceServer::<_, tonic::masa::DefaultMasaHooks>::with_custom_context(svc),
+                ChildServiceServer::<_, masa_policy::PolicyHooks>::with_custom_context(svc),
             )
             .serve_with_masa(addr)
             .await

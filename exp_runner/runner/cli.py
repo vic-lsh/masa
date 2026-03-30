@@ -403,14 +403,15 @@ Examples:
   # Build Docker images for an experiment
   uv run -m exp_runner build hotel exp1
 
-  # Build images for a specific policy
-  uv run -m exp_runner build synthetic exp1 --policy prio_global
+  # Build images for a specific policy (new or old flag names work)
+  uv run -m exp_runner build synthetic exp1 --policy sched_slo
+  uv run -m exp_runner build synthetic exp1 --policy prio_global  # old name still works
 
   # Show build commands without executing them
   uv run -m exp_runner build-dryrun hotel exp1
 
   # Show build commands for a specific policy
-  uv run -m exp_runner build-dryrun synthetic exp1 --policy prio_global
+  uv run -m exp_runner build-dryrun synthetic exp1 --policy sched_slo
 
   # Queue multiple experiments
   uv run -m exp_runner run-multiple synthetic "exp1 exp2 exp3" --plot

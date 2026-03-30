@@ -1,34 +1,34 @@
 #[cfg(not(any(
-    feature = "fifo",
-    feature = "prio_global",
-    feature = "prio_local",
-    feature = "prio_oldest"
+    feature = "sched_fifo",
+    feature = "sched_slo",
+    feature = "sched_tailclipper",
+    feature = "sched_pred"
 )))]
 #[test]
 fn test_default_policy_is_fifo() {
     assert_eq!(tokio::get_sched_flavor(), tokio::SchedFlavor::Fifo);
 }
 
-#[cfg(feature = "fifo")]
+#[cfg(feature = "sched_fifo")]
 #[test]
 fn test_fifo_policy() {
     assert_eq!(tokio::get_sched_flavor(), tokio::SchedFlavor::Fifo);
 }
 
-#[cfg(feature = "prio_global")]
+#[cfg(feature = "sched_slo")]
 #[test]
-fn test_prio_global_policy() {
+fn test_sched_slo_policy() {
     assert_eq!(tokio::get_sched_flavor(), tokio::SchedFlavor::Prio);
 }
 
-#[cfg(feature = "prio_oldest")]
+#[cfg(feature = "sched_tailclipper")]
 #[test]
-fn test_prio_oldest_policy() {
+fn test_sched_tailclipper_policy() {
     assert_eq!(tokio::get_sched_flavor(), tokio::SchedFlavor::Prio);
 }
 
-#[cfg(feature = "prio_local")]
+#[cfg(feature = "sched_pred")]
 #[test]
-fn test_prio_local_policy() {
+fn test_sched_pred_policy() {
     assert_eq!(tokio::get_sched_flavor(), tokio::SchedFlavor::Prio);
 }

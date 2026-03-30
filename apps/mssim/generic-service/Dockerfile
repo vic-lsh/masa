@@ -21,7 +21,7 @@ COPY Cargo.lock Cargo.lock
 COPY apps apps
 COPY libs libs
 
-ARG FEATURE_ARG=fifo
+ARG FEATURE_ARG=sched_fifo
 # Use a unique cache ID per build to avoid race conditions in parallel builds
 ARG CACHE_ID=mssim
 

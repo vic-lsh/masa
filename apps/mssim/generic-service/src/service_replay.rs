@@ -9,7 +9,7 @@ use sim_config::svc::ServiceName;
 use std::collections::HashMap;
 use tokio::sync::RwLockReadGuard;
 use tokio::time::{sleep, Duration};
-use tonic::masa::MasaRequestExt;
+use tonic::masa_ext::MasaRequestExt;
 use tonic::{Request, Status};
 use tracing::warn;
 
