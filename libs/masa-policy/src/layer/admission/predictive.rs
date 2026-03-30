@@ -267,7 +267,7 @@ const UTIL_TARGET: f64 = 0.80;
 #[cfg(feature = "ac_pred")]
 const ADJUST_RATE: f64 = 2.0;
 #[cfg(feature = "ac_pred")]
-const MAX_BURST_SECS: f64 = 0.1;
+const MAX_BURST_SECS: f64 = 0.005; // 5ms — minimal burst to prevent accumulation-driven oscillation
 #[cfg(feature = "ac_pred")]
 const INITIAL_BUDGET_RATE: f64 = 5_000_000.0; // us/s — start generous
 
