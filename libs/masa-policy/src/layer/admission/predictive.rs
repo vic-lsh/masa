@@ -263,13 +263,13 @@ impl BottleneckTracker {
 // ── Admission Controller ────────────────────────────────────────────────
 
 #[cfg(feature = "ac_pred")]
-const UTIL_TARGET: f64 = 0.92;
+const UTIL_TARGET: f64 = 0.80;
 #[cfg(feature = "ac_pred")]
 const ADJUST_RATE: f64 = 0.5;
 #[cfg(feature = "ac_pred")]
 const MAX_BURST_SECS: f64 = 0.1;
 #[cfg(feature = "ac_pred")]
-const INITIAL_BUDGET_RATE: f64 = 10_000_000.0; // us/s — start generous
+const INITIAL_BUDGET_RATE: f64 = 5_000_000.0; // us/s — start generous
 
 #[cfg(feature = "ac_pred")]
 struct BudgetState {
@@ -512,8 +512,8 @@ mod tests {
     fn test_admission_controller_rejects_when_budget_exhausted() {
         let ac = AdmissionController::new();
         // Exhaust the budget by admitting requests with large compute costs
-        // Initial budget = INITIAL_BUDGET_RATE * MAX_BURST_SECS = 10M * 0.1 = 1M us
-        // Each request costs 100_000 us, so ~10 requests should exhaust it
+        // Initial budget = INITIAL_BUDGET_RATE * MAX_BURST_SECS = 5M * 0.1 = 500K us
+        // Each request costs 100_000 us, so ~5 requests should exhaust it
         let mut rejected = false;
         for _ in 0..20 {
             if !ac.should_admit("Search", 100_000, 100_000, 50_000) {
