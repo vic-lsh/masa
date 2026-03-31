@@ -37,7 +37,9 @@ class ExperimentConfig:
     gen_config: dict
     policies: list[str]
     app_config: Optional[dict]
-    policy_params: Optional[dict] = None  # Contents of policy_param.json, None if absent
+    policy_params: Optional[dict] = (
+        None  # Contents of policy_param.json, None if absent
+    )
 
     @classmethod
     def load(

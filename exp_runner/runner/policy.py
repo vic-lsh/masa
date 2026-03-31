@@ -48,9 +48,7 @@ _IGNORED_FLAGS = {"sched_slo", "estimator"}
 
 def _parse_flags(policy: str) -> frozenset[str]:
     """Split a comma-separated policy string into a set of flags."""
-    return frozenset(
-        tok for raw in policy.split(",") if (tok := raw.strip().lower())
-    )
+    return frozenset(tok for raw in policy.split(",") if (tok := raw.strip().lower()))
 
 
 @dataclass(frozen=True)
