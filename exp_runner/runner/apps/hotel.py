@@ -628,9 +628,15 @@ class HotelApp(AppPlugin):
 
         # Add image tag based on policy/features
         tag = self.get_image_tag(features=policy)
+        # Write policy_param.json (empty dict = use all built-in defaults)
+        project_policy_params_path = output_dir / "policy_param.json"
+        with project_policy_params_path.open("w") as f:
+            json.dump(config.policy_params or {}, f, indent=2)
+
         env_vars["HOTEL_IMAGE_TAG"] = tag if tag else "latest"
         env_vars["DOCKER_COMPOSE_PROJECT_NAME"] = project_name
         env_vars["PROJECT_CONFIG_PATH"] = str(project_config_path.resolve())
+        env_vars["POLICY_PARAMS_PATH"] = str(project_policy_params_path.resolve())
 
         # Clean up old build logs - handled by ExpDriver now (it uses output_dir/build_logs)
         # But we might want to ensure we don't have stale ones if output_dir is reused?
@@ -686,9 +692,12 @@ class HotelApp(AppPlugin):
         # And `HotelApp.run_workload` passed `project_gen_config_path`.
 
         gen_config_path = output_dir / "gen_config.json"
+        policy_params_path = output_dir / "policy_param.json"
         volumes = {}
         if gen_config_path.exists():
             volumes[str(gen_config_path)] = "/usr/gen_config.json"
+        if policy_params_path.exists():
+            volumes[str(policy_params_path)] = "/usr/policy_params.json"
 
         return TaskSpec(
             name=f"{project_name}-loadgen" if project_name else "hotel-loadgen",

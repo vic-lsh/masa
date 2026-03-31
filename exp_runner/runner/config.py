@@ -37,6 +37,9 @@ class ExperimentConfig:
     gen_config: dict
     policies: list[str]
     app_config: Optional[dict]
+    policy_params: Optional[dict] = (
+        None  # Contents of policy_param.json, None if absent
+    )
 
     @classmethod
     def load(
@@ -123,6 +126,14 @@ class ExperimentConfig:
             app_config = app_plugin.load_app_config(app_config_path)
             logger.info(f"Loaded app config from {app_config_path}")
 
+        # Load optional policy_param.json
+        policy_params_path = in_dir / "policy_param.json"
+        policy_params = None
+        if policy_params_path.exists():
+            with open(policy_params_path) as f:
+                policy_params = json.load(f)
+            logger.info(f"Loaded policy_param.json from {policy_params_path}")
+
         return cls(
             experiment_name=experiment_name,
             app_name=app_name,
@@ -135,6 +146,7 @@ class ExperimentConfig:
             gen_config=gen_config,
             policies=policies,
             app_config=app_config,
+            policy_params=policy_params,
         )
 
     def get_repeats(self) -> int:
