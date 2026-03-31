@@ -152,3 +152,68 @@ negative, so each refill cycle lets at least one request through immediately.
 
 ### Experiment design
 Same config as geyser_1. Only ac_pred + tailclipper.
+
+### Actual Outcomes (geyser_3)
+
+**Status:** Regression ❌ — Hypothesis WRONG (again)
+
+| RPS | ac_pred (geyser_3) | tailclipper | vs ember_3 | vs geyser_1 |
+|-----|-------------------|-------------|------------|-------------|
+| 800 | 800 | 800 | 0 | 0 |
+| 1000 | 1000 | 1000 | 0 | 0 |
+| 1200 | 1171 | 1169 | -15 | -1 |
+| 1400 | 1238 | 1309 | **-106** | **-131** |
+| 1600 | 1203 | 1056 | **-235** | -83 |
+| 1800 | 1203 | 1154 | **-294** | -45 |
+| 2000 | 1293 | 1039 | **-275** | -13 |
+| 2500 | 1258 | 1052 | **-345** | -167 |
+| 3000 | 0 | 1001 | **-1582** | 0 |
+
+**Binary admission alone doesn't fix the regression.** geyser_3 is even worse than geyser_1
+(which had probabilistic smoothing). The 3000 RPS death spiral persists.
+
+### Analysis: what's actually different between pre-FLARE and all geyser experiments?
+
+Traced through the full FLARE commit diff. For socialnet (1 API), `get_max()` ≡ `get(api)`,
+so the only behavioral difference is the **ER backstop** feeding `effective_util`:
+
+```
+effective_util = max(cpu_util, er_pseudo_util)
+```
+
+Pre-FLARE used `cpu_util` alone. FLARE adds `er_pseudo_util` which is non-zero when
+abort_slo ERs occur. Even though geyser_2 "disabled" the backstop with ER_THRESHOLD=inf,
+it also had probabilistic smoothing + MIN_ADMIT_PROB which introduced different regressions.
+
+**The untested combination:** binary admission + no ER backstop (the exact pre-FLARE behavior).
+- geyser_2: no backstop + probabilistic → worse (smoothing regression dominates)
+- geyser_3: backstop + binary → worse (backstop prevents rate recovery during lulls)
+- NOT YET TESTED: no backstop + binary = exact pre-FLARE behavior
+
+The ER backstop mechanism: its slow EMA (α=0.05) lags behind instantaneous CPU improvements
+during the 2-second oscillation cycle. During lulls, cpu_util drops but pseudo_util stays
+high → effective_util stays above UTIL_TARGET → rate can't recover → over-shedding.
+
+## Iteration 3: Exact pre-FLARE revert — binary + no ER backstop (geyser_4)
+
+**Status:** Pending
+
+### Change
+1. Keep `PROB_SMOOTH = 100.0` (binary, same as geyser_3)
+2. Set `ER_THRESHOLD = f64::INFINITY` (disable ER backstop)
+3. No MIN_ADMIT_PROB (already removed in geyser_3)
+
+This is the exact behavioral equivalent of the pre-FLARE code.
+
+### Hypothesis
+The combination of binary + no backstop hasn't been tested. If this matches ember_3
+performance, the ER backstop (added in FLARE) is solely responsible for the regression
+at 1400-2500 RPS. If it still regresses, the gap is system drift / run-to-run variance,
+not code changes.
+
+### Expected outcomes:
+1. If ER backstop is the cause: 1600-2500 goodput within ±100 of ember_3 (1400-1600 range)
+2. If system drift: goodput similar to geyser_2/3 (1100-1300 range) regardless of code
+
+### Experiment design
+Same config. Only ac_pred + tailclipper.
