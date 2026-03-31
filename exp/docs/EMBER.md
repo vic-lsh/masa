@@ -106,3 +106,38 @@ The regression is caused by the token bucket cost being ~10-20x too low. Restori
 
 ### Experiment design
 Same config as surge_8/ember_1 (800-3000 RPS, 30s per step, 50ms SLO, 4 policies).
+
+### Actual Outcomes (ember_2)
+
+**Status:** Complete ✅ — Keep
+
+**Code commit:** e4eefa4c
+
+| RPS | surge_8 | ember_1 (broken) | ember_2 (fix) | vs surge_8 |
+|-----|---------|-----------------|--------------|------------|
+| 800 | 800 | 800 | 800 | 0 |
+| 1000 | 1000 | 1000 | 1000 | 0 |
+| 1200 | 1192 | 1177 | 1170 | -22 |
+| 1400 | 1332 | 1251 | 1319 | -13 |
+| 1600 | 1406 | 1060 | **1428** | +22 |
+| 1800 | 1452 | 1013 | **1439** | -13 |
+| 2000 | 1507 | 1741 | **1550** | +43 |
+| 2500 | 1554 | 1065 | **1541** | -13 |
+| 3000 | 1520 | 1018 | **1508** | -12 |
+
+**Fix fully recovers surge_8 performance.** All deltas within ±43 RPS (run-to-run noise ~±20-50).
+
+**ac_pred ER rates scale progressively:** 30/s at 1200, 81/s at 1400, 172/s at 1600, 360/s at 1800, 449/s at 2000, 958/s at 2500, 1492/s at 3000. Smooth, cost-aware admission control.
+
+**All expected outcomes confirmed:**
+1. ✅ Goodput recovered to within ±43 of surge_8 at all RPS
+2. ✅ ac_pred rejection rates healthy and progressive
+3. ✅ No regression at underload
+
+### Root cause summary
+
+The 2-layer refactor (commit 4fefbd98) changed the token bucket cost from `est_child_latency` (wall-clock child RPC time, ~45K µs for compose-post) to `est_compute_latency` (child's local compute time, ~few K µs). For fanout services, local compute << wall-clock because most wall-clock time is spent waiting for parallel child RPCs. The ~10-20x cost underestimate made the token bucket nearly a no-op.
+
+**Fix:** Restore `est_child_latency` as the token bucket cost (commit e4eefa4c). The 2-layer structure is correct and kept.
+
+**Open question for Hotel:** `est_child_latency` includes I/O wait (MongoDB ~115K µs), which caused the original Hotel crash with MAX_BURST_SECS=0.005 (budget can never cover 115K cost). This needs a separate solution — possibly `min(est_child, MAX_BURST_BUDGET * 0.5)` clamping, or the ER-rate backstop signal.
