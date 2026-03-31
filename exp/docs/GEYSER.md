@@ -217,3 +217,87 @@ not code changes.
 
 ### Experiment design
 Same config. Only ac_pred + tailclipper.
+
+### Actual Outcomes (geyser_4)
+
+**Status:** Did not match ember_3 ❌
+
+| RPS | ac_pred (geyser_4) | tailclipper | vs ember_3 | vs geyser_1 |
+|-----|-------------------|-------------|------------|-------------|
+| 800 | 800 | 800 | 0 | 0 |
+| 1000 | 1000 | 1000 | 0 | 0 |
+| 1200 | 1174 | 1152 | -12 | +2 |
+| 1400 | 1201 | 1276 | **-143** | **-168** |
+| 1600 | 1055 | 1089 | **-383** | **-231** |
+| 1800 | 990 | 1048 | **-507** | **-258** |
+| 2000 | 1261 | 1248 | **-307** | -45 |
+| 2500 | 1245 | 1056 | **-358** | -180 |
+| 3000 | 1015 | 1065 | **-567** | +1015 |
+
+### Critical cross-experiment analysis
+
+Exhaustive comparison of ac_pred goodput at 1600 RPS across ALL experiments:
+
+| Experiment | Code state | ac_pred 1600 | Notes |
+|------------|-----------|--------------|-------|
+| surge_3 | pre-FLARE | 1419 | ADJUST_RATE=2.0 (big win) |
+| surge_4 | pre-FLARE | 1412 | |
+| surge_5 | pre-FLARE | 1394 | |
+| surge_6 | pre-FLARE | 1393 | MAX_BURST_SECS=0.005 |
+| ember_2 | pre-FLARE | 1428 | est_child_latency restored |
+| ember_3 | pre-FLARE | 1438 | rate cap 20x |
+| **geyser_1** | **FLARE (all features)** | **1286** | **best FLARE variant** |
+| geyser_2 | FLARE (no backstop, prob) | 1097 | |
+| geyser_3 | FLARE (backstop, binary) | 1203 | |
+| **geyser_4** | **FLARE (pre-FLARE equiv)** | **1055** | **worst FLARE variant** |
+
+**Key findings:**
+1. Pre-FLARE (surge_3 through ember_3) clusters tightly at 1393-1438 (±45)
+2. All geyser variants cluster at 1055-1286 (much lower)
+3. The "pre-FLARE equivalent" (geyser_4) is the WORST, meaning FLARE features HELP
+4. Full FLARE (geyser_1) is closest to pre-FLARE range
+5. Tailclipper is stable across runs (~1050-1090 at 1600), ruling out system drift
+
+**Revised understanding:** The gap between pre-FLARE and geyser experiments cannot be
+explained by the FLARE code changes (which are functionally equivalent when features are
+disabled). The most likely explanation is experiment ordering effects: pre-FLARE ran 4
+policies sequentially (fifo→pred→ac_pred→tailclipper), while geyser runs only 2
+(ac_pred→tailclipper). The preceding fifo/pred runs may warm the system (page cache,
+connection pools, DB indexes) in a way that benefits ac_pred.
+
+**Strategy pivot:** Since full FLARE (geyser_1) is the best variant and beats tailclipper
+by +82 to +283 at 1400-2500 RPS, the correct path is to:
+1. Restore full FLARE settings
+2. Fix the 3000 RPS death spiral
+3. Test on hotel apps
+
+## Iteration 4: Restore full FLARE + prevent death spiral (geyser_5)
+
+**Status:** Pending
+
+### Change
+1. Restore `PROB_SMOOTH = 1.0` (full probabilistic smoothing)
+2. Restore `ER_THRESHOLD = 0.2` (full ER backstop)
+3. Add safety valve: clamp budget_us to `max(-cost, budget_us)` after each admission.
+   This limits debt to at most one request's cost, preventing unbounded accumulation
+   that locks out all requests. When budget = -cost, refill needs to recover 2×cost
+   before the next admission — but it WILL recover, unlike the current system where
+   debt can grow without bound.
+
+### Hypothesis
+The 3000 RPS death spiral is caused by unbounded budget debt from probabilistic admits.
+Each probabilistic admit debits the full cost, and at extreme overload, multiple admits
+in quick succession can drive budget to -100K or worse. The refill rate can't keep up,
+so budget stays permanently negative → all requests rejected.
+
+Clamping debt to -cost ensures recovery within a bounded time window
+(~2×cost/refill_rate seconds). This prevents permanent lockout while preserving the
+probabilistic smoothing that helps at moderate overload.
+
+### Expected outcomes:
+1. 3000 RPS: positive goodput (>500) — death spiral eliminated
+2. 1400-2500 RPS: performance similar to or better than geyser_1
+3. No regression at 800-1200 RPS
+
+### Experiment design
+Same config. Run all 4 policies to match ember_3 ordering (may reduce ordering effect).
