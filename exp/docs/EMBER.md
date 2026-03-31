@@ -1,0 +1,108 @@
+# EMBER — 2-layer admission control refactor validation (socialnet)
+
+## Key questions
+- Does the 2-layer admission control refactor (commit 4fefbd98) regress SocialNet goodput compared to the prior 3-layer implementation?
+- Is `est_compute_latency[parent→child key]` a suitable token bucket cost for CPU-bound workloads like SocialNet, where compute ≈ wall-clock?
+- Are there parameter tuning issues with the refactored code that need adjustment?
+
+## Experiment series: ember_1, ember_2, ... (socialnet)
+
+## Pre-refactor baseline: surge_8
+
+surge_8 was run on the old 3-layer code (before commit 4fefbd98). Results:
+
+| RPS | FIFO | pred (no ac) | **pred+ac_pred** | TailClipper |
+|-----|------|-------------|-----------------|-------------|
+| 800 | 800 | 800 | **800** | 800 |
+| 1000 | 1000 | 1000 | **1000** | 1000 |
+| 1200 | 1191 | 1172 | **1192** | 1184 |
+| 1400 | 1346 | 1156 | **1332** | 1246 |
+| 1600 | 1056 | 1066 | **1406** | 1040 |
+| 1800 | 994 | 1003 | **1452** | 999 |
+| 2000 | 1085 | 1048 | **1507** | 1087 |
+| 2500 | 988 | 1063 | **1554** | 996 |
+| 3000 | 124 | 1012 | **1520** | 942 |
+
+This is the reference point. The refactored code must match or exceed these numbers on SocialNet.
+
+---
+
+## Iteration 0: Post-refactor baseline (ember_1)
+
+**Status:** Running
+
+### Change
+No code changes — this tests the 2-layer refactor (commit 4fefbd98) as-is.
+
+### Hypothesis
+SocialNet is CPU-bound, so `est_compute_latency[parent→child key]` should be similar to the old `est_child` cost. The refactored 2-layer admission control should perform comparably to surge_8. Any significant regression would indicate that the compute cost estimate diverges from wall-clock more than expected, or that removing Layer 2 (compute feasibility) leaves a gap.
+
+### Expected outcomes if hypothesis is correct:
+1. pred+ac_pred goodput within ±50 of surge_8 at all RPS levels
+2. No collapse at any load point
+3. ac_pred still actively rejecting at 1600+ RPS (non-zero early returns with service names)
+
+### Experiment design
+Same config as surge_8 (800-3000 RPS, 30s per step, 50ms SLO, 4 policies).
+
+### Actual Outcomes (ember_1)
+
+**Status:** Regression ❌
+
+| RPS | surge_8 pred+ac | ember_1 pred+ac | Delta | ember_1 FIFO | ember_1 TC | ember_1 pred (no ac) |
+|-----|----------------|----------------|-------|-------------|-----------|---------------------|
+| 800 | 800 | 800 | 0 | 800 | 800 | 800 |
+| 1000 | 1000 | 1000 | 0 | 1000 | 1000 | 1000 |
+| 1200 | 1192 | 1177 | -15 | 1193 | 1185 | 1188 |
+| 1400 | 1332 | 1251 | **-81** | 1176 | 1300 | 1287 |
+| 1600 | 1406 | 1060 | **-346** | 1054 | 1074 | 1063 |
+| 1800 | 1452 | 1013 | **-439** | 1016 | 1034 | 1371 |
+| 2000 | 1507 | 1741 | +234 | 1037 | 1148 | 1345 |
+| 2500 | 1554 | 1065 | **-489** | 931 | 1040 | 1147 |
+| 3000 | 1520 | 1018 | **-502** | 212 | 1080 | 1030 |
+
+**Severe regression at 1400-3000 RPS.** At 1600-1800, pred+ac_pred performs no better than FIFO (~1060 vs ~1054). The 2000 RPS result (+234) is likely bistable noise (known SocialNet phenomenon).
+
+**ac_pred is actively rejecting** (ER rates: 1400=147/s, 1600=539/s, 1800=783/s) but rejections are not translating into goodput benefit — the token bucket cost is too low.
+
+### Root cause analysis
+
+**The token bucket cost is ~10-20x too low.** The refactor changed the cost from `est_child_latency[key]` (wall-clock child RPC time, ~45K µs for compose-post) to `est_compute_latency[key]` (child's self-reported local compute time).
+
+For SocialNet's parallel fanout architecture:
+- **Old cost (est_child):** Wall-clock time of the compose-post call ≈ 45,000 µs. This includes all downstream work (compose-post + text-service + user-mention + url-shorten + ...).
+- **New cost (est_compute):** Only compose-post's own local poll/compute time ≈ a few thousand µs. Does NOT include any child service compute.
+
+The `compute_time_us` in `ResponseMeta` (set in `inject_response_meta`, state.rs:116) is `self.poll_compute_us` — just the local service's CPU time. For a fanout service that delegates most work to children, this is a tiny fraction of the true resource cost.
+
+**Why the SURGE.md analysis was wrong:** The "Revised algorithm" section assumed `est_compute_latency[parent→child key]` would be "the child's REPORTED compute time" and said "For CPU-bound services, child compute ≈ child wall-clock." But this conflates two things:
+1. The child service IS CPU-bound (its local compute ≈ its local wall-clock)
+2. BUT the child's local compute ≠ the total downstream compute chain
+
+For a leaf service (no children), compute ≈ wall-clock holds. For a fanout service (compose-post), local compute << wall-clock because most wall-clock time is waiting for parallel child RPCs.
+
+### Fix direction
+
+The correct approach: use `est_child_latency[key]` as the token bucket cost (reverting to the old cost signal), but keep the 2-layer structure (removing the redundant Layer 2). This restores the correct cost magnitude for SocialNet while keeping the architectural cleanup.
+
+For Hotel's I/O-heavy case (where est_child includes MongoDB wait), a separate fix is needed — perhaps using `max(est_compute, est_child * cpu_fraction)` or using the ER-rate backstop signal described in SURGE.md.
+
+---
+
+## Iteration 1: Restore est_child_latency as token bucket cost (ember_2)
+
+**Status:** Pending
+
+### Change
+In `admission_check()` Layer 2, change the token bucket cost from `est_compute_latency.get_estimate(key)` back to `est_child_latency.get_estimate(key)` (with fallback to est_compute if unavailable).
+
+### Hypothesis
+The regression is caused by the token bucket cost being ~10-20x too low. Restoring `est_child_latency` (wall-clock child time) should restore surge_8-level goodput for SocialNet. The 2-layer structure (removing redundant Layer 2 compute feasibility) is kept.
+
+### Expected outcomes if hypothesis is correct:
+1. pred+ac_pred goodput recovers to within ±50 of surge_8 at all RPS levels
+2. ac_pred rejection rates similar to surge_8
+3. No regression at underload (800-1200 RPS)
+
+### Experiment design
+Same config as surge_8/ember_1 (800-3000 RPS, 30s per step, 50ms SLO, 4 policies).
