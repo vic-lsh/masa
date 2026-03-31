@@ -14,15 +14,16 @@ use std::task::Poll;
 #[cfg(feature = "ac_pred")]
 use std::time::Instant;
 
-use masa_core::{Context, PriorityHint};
+use masa_core::{Context, PriorityHint, ABORT_SLACK};
 use tonic_core::{Code, CowGrpcMethod, Response, Status};
 
 use super::super::{ChildRpcContext, Layer, LayerChild, LayerServer};
 use crate::layer::est::estimator::DefaultLatencyEstimator;
+#[cfg(feature = "ac_pred")]
+use crate::policy_params::PolicyParams;
 use crate::layer::est::state::{
     is_early_return_response, EstChildState, EstRequestState, EstServerState,
 };
-use crate::policy_params::PolicyParams;
 use crate::MethodRegistry;
 
 // ── Server ──────────────────────────────────────────────────────────────
@@ -70,6 +71,21 @@ impl Layer for PredAdmissionLayer {
     /// Reprioritize the current task based on remaining time to deadline.
     #[inline]
     fn before_poll<Ret>(&self, ctx: &Context) -> Result<(), Result<Response<Ret>, Status>> {
+        if ABORT_SLACK {
+            let local_deadline = ctx.deadline();
+            if local_deadline != 0 && masa_core::time_now() > local_deadline {
+                return Err(Err(Status::new(
+                    Code::DeadlineExceeded,
+                    format!(
+                        "/EarlyReturn?src={}::{}",
+                        self.rpc.service(),
+                        self.rpc.method(),
+                    ),
+                )));
+            }
+        }
+
+
         #[cfg(feature = "sched_pred")]
         {
             let remaining = ctx.deadline().saturating_sub(masa_core::time_now());
@@ -99,6 +115,7 @@ impl Layer for PredAdmissionLayer {
             let result =
                 self.est
                     .prepare_before_child_rpc(ctx, child_method_name, &mut child_ctx.est);
+
 
             if self.pred_admission.admission_check(
                 &self.est.server,
@@ -151,14 +168,29 @@ impl Layer for PredAdmissionLayer {
         Ok(())
     }
 
-    /// Stop compute tracking after a poll.
+    /// Stop compute tracking after a poll, and check local deadline on Pending.
     #[inline]
     fn after_poll<Ret>(
         &self,
-        _ctx: &Context,
-        _poll: &Poll<Result<Response<Ret>, Status>>,
+        ctx: &Context,
+        poll: &Poll<Result<Response<Ret>, Status>>,
     ) -> Result<(), Result<Response<Ret>, Status>> {
         self.est.stop_compute_tracking();
+        if let Poll::Pending = poll {
+            if ABORT_SLACK {
+                let local_deadline = ctx.deadline();
+                if local_deadline != 0 && masa_core::time_now() > local_deadline {
+                    return Err(Err(Status::new(
+                        Code::DeadlineExceeded,
+                        format!(
+                            "/EarlyReturn?src={}::{}",
+                            self.rpc.service(),
+                            self.rpc.method(),
+                        ),
+                    )));
+                }
+            }
+        }
         Ok(())
     }
 
