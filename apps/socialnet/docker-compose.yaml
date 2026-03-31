@@ -26,7 +26,7 @@ services:
 
   post-storage-service:
     image: post_storage_server:${SOCIALNET_IMAGE_TAG:-latest}
-    scale: 1
+    scale: ${POST_STORAGE_SERVICE_SCALE:-1}
     restart: always
     networks:
       - socialnet-network
@@ -40,6 +40,7 @@ services:
       - post-storage-memcached
     volumes:
       - ${APP_CONFIG_PATH}:/usr/config.json:ro
+      - ${POLICY_PARAMS_PATH}:/usr/policy_params.json:ro
     deploy:
       resources:
         limits:
@@ -84,13 +85,14 @@ services:
       - USER_TIMELINE_REDIS_URL=redis://user-timeline-redis:6379
       - POST_STORAGE_IP=${PROJECT_NAME}-post-storage-service
       - POST_STORAGE_PORT=8080
-      - POST_STORAGE_REPLICAS=1
+      - POST_STORAGE_REPLICAS=${POST_STORAGE_SERVICE_SCALE:-1}
     depends_on:
       - user-timeline-mongo
       - user-timeline-redis
       - post-storage-service
     volumes:
       - ${APP_CONFIG_PATH}:/usr/config.json:ro
+      - ${POLICY_PARAMS_PATH}:/usr/policy_params.json:ro
     deploy:
       resources:
         limits:
@@ -125,18 +127,19 @@ services:
       # Post Storage Config
       - POST_STORAGE_SERVICE_IP=${PROJECT_NAME}-post-storage-service
       - POST_STORAGE_SERVICE_PORT=8080
-      - POST_STORAGE_SERVICE_REPLICAS=1
+      - POST_STORAGE_SERVICE_REPLICAS=${POST_STORAGE_SERVICE_SCALE:-1}
 
       # Social Graph Config
       - SOCIAL_GRAPH_SERVICE_IP=${PROJECT_NAME}-social-graph-service
       - SOCIAL_GRAPH_SERVICE_PORT=8080
-      - SOCIAL_GRAPH_SERVICE_REPLICAS=1
+      - SOCIAL_GRAPH_SERVICE_REPLICAS=${SOCIAL_GRAPH_SERVICE_SCALE:-1}
     depends_on:
       - home-timeline-redis
       - post-storage-service
       - social-graph-service
     volumes:
       - ${APP_CONFIG_PATH}:/usr/config.json:ro
+      - ${POLICY_PARAMS_PATH}:/usr/policy_params.json:ro
     deploy:
       resources:
         limits:
@@ -156,7 +159,7 @@ services:
 
   write-home-timeline-service:
     image: write_home_timeline_server:${SOCIALNET_IMAGE_TAG:-latest}
-    scale: 1
+    scale: ${WRITE_HOME_TIMELINE_SERVICE_SCALE:-1}
     restart: always
     networks:
       - socialnet-network
@@ -168,13 +171,14 @@ services:
       # Social Graph Config
       - SOCIAL_GRAPH_SERVICE_IP=${PROJECT_NAME}-social-graph-service
       - SOCIAL_GRAPH_SERVICE_PORT=8080
-      - SOCIAL_GRAPH_SERVICE_REPLICAS=1
+      - SOCIAL_GRAPH_SERVICE_REPLICAS=${SOCIAL_GRAPH_SERVICE_SCALE:-1}
     depends_on:
       - rabbitmq
       - write-home-timeline-redis
       - social-graph-service
     volumes:
       - ${APP_CONFIG_PATH}:/usr/config.json:ro
+      - ${POLICY_PARAMS_PATH}:/usr/policy_params.json:ro
     deploy:
       resources:
         limits:
@@ -221,12 +225,13 @@ services:
       - MACHINE_ID=02
       - SOCIAL_GRAPH_SERVICE_IP=${PROJECT_NAME}-social-graph-service
       - SOCIAL_GRAPH_SERVICE_PORT=8080
-      - SOCIAL_GRAPH_SERVICE_REPLICAS=1
+      - SOCIAL_GRAPH_SERVICE_REPLICAS=${SOCIAL_GRAPH_SERVICE_SCALE:-1}
     depends_on:
       - user-mongo
       - user-redis
     volumes:
       - ${APP_CONFIG_PATH}:/usr/config.json:ro
+      - ${POLICY_PARAMS_PATH}:/usr/policy_params.json:ro
     deploy:
       resources:
         limits:
@@ -261,7 +266,7 @@ services:
 
   social-graph-service:
     image: social_graph_server:${SOCIALNET_IMAGE_TAG:-latest}
-    scale: 1
+    scale: ${SOCIAL_GRAPH_SERVICE_SCALE:-1}
     restart: always
     networks:
       - socialnet-network
@@ -280,6 +285,7 @@ services:
       - user-service
     volumes:
       - ${APP_CONFIG_PATH}:/usr/config.json:ro
+      - ${POLICY_PARAMS_PATH}:/usr/policy_params.json:ro
     deploy:
       resources:
         limits:
@@ -299,6 +305,7 @@ services:
       - MACHINE_ID=01
     volumes:
       - ${APP_CONFIG_PATH}:/usr/config.json:ro
+      - ${POLICY_PARAMS_PATH}:/usr/policy_params.json:ro
     deploy:
       resources:
         limits:
@@ -317,6 +324,7 @@ services:
       - BINARY_NAME=media_service
     volumes:
       - ${APP_CONFIG_PATH}:/usr/config.json:ro
+      - ${POLICY_PARAMS_PATH}:/usr/policy_params.json:ro
     deploy:
       resources:
         limits:
@@ -347,6 +355,7 @@ services:
       - URL_SHORTEN_SERVICE_REPLICAS=1
     volumes:
       - ${APP_CONFIG_PATH}:/usr/config.json:ro
+      - ${POLICY_PARAMS_PATH}:/usr/policy_params.json:ro
     deploy:
       resources:
         limits:
@@ -392,6 +401,7 @@ services:
       - user-mention-memcached
     volumes:
       - ${APP_CONFIG_PATH}:/usr/config.json:ro
+      - ${POLICY_PARAMS_PATH}:/usr/policy_params.json:ro
     deploy:
       resources:
         limits:
@@ -431,6 +441,7 @@ services:
       - url-shorten-mongo
     volumes:
       - ${APP_CONFIG_PATH}:/usr/config.json:ro
+      - ${POLICY_PARAMS_PATH}:/usr/policy_params.json:ro
     deploy:
       resources:
         limits:
@@ -469,6 +480,7 @@ services:
       - user-service
     volumes:
       - ${APP_CONFIG_PATH}:/usr/config.json:ro
+      - ${POLICY_PARAMS_PATH}:/usr/policy_params.json:ro
     deploy:
       resources:
         limits:
@@ -496,6 +508,7 @@ services:
       - register-user-service
     volumes:
       - ${APP_CONFIG_PATH}:/usr/config.json:ro
+      - ${POLICY_PARAMS_PATH}:/usr/policy_params.json:ro
     deploy:
       resources:
         limits:
@@ -515,7 +528,7 @@ services:
 
       - POST_STORAGE_IP=${PROJECT_NAME}-post-storage-service
       - POST_STORAGE_PORT=8080
-      - POST_STORAGE_REPLICAS=1
+      - POST_STORAGE_REPLICAS=${POST_STORAGE_SERVICE_SCALE:-1}
 
       - USER_TIMELINE_IP=${PROJECT_NAME}-user-timeline-service
       - USER_TIMELINE_PORT=8080
@@ -560,6 +573,7 @@ services:
       - url-shorten-service
     volumes:
       - ${APP_CONFIG_PATH}:/usr/config.json:ro
+      - ${POLICY_PARAMS_PATH}:/usr/policy_params.json:ro
     deploy:
       resources:
         limits:

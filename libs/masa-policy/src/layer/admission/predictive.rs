@@ -23,6 +23,7 @@ use crate::layer::est::estimator::DefaultLatencyEstimator;
 use crate::layer::est::state::{
     is_early_return_response, EstChildState, EstRequestState, EstServerState,
 };
+use crate::policy_params::PolicyParams;
 use crate::MethodRegistry;
 
 /// Result of the two-layer admission check.
@@ -245,11 +246,6 @@ impl LayerChild for PredAdmissionChild {
 
 // ── Bottleneck Tracker ──────────────────────────────────────────────────
 
-#[cfg(feature = "ac_pred")]
-const STALENESS_SECS: f64 = 2.0;
-#[cfg(feature = "ac_pred")]
-const STALENESS_DEFAULT: f32 = 0.5;
-
 /// Tracks max_downstream_util per API with staleness decay.
 #[cfg(feature = "ac_pred")]
 #[derive(Debug)]
@@ -274,20 +270,22 @@ impl BottleneckTracker {
     /// bucket merging).
     #[allow(dead_code)]
     pub(crate) fn get(&self, api: &str) -> f32 {
+        let p = &PolicyParams::global().pred;
         let map = self.inner.lock().unwrap();
         if let Some((util, last_update)) = map.get(api) {
             Self::decayed_util(*util, last_update)
         } else {
-            STALENESS_DEFAULT
+            p.staleness_default
         }
     }
 
     /// Returns the maximum utilization across all tracked APIs, with
     /// staleness decay applied. Returns `STALENESS_DEFAULT` when empty.
     pub(crate) fn get_max(&self) -> f32 {
+        let p = &PolicyParams::global().pred;
         let map = self.inner.lock().unwrap();
         if map.is_empty() {
-            return STALENESS_DEFAULT;
+            return p.staleness_default;
         }
         map.values()
             .map(|(util, last_update)| Self::decayed_util(*util, last_update))
@@ -295,10 +293,11 @@ impl BottleneckTracker {
     }
 
     fn decayed_util(util: f32, last_update: &Instant) -> f32 {
+        let p = &PolicyParams::global().pred;
         let age = last_update.elapsed().as_secs_f64();
-        if age > STALENESS_SECS {
-            let decay = (-(age - STALENESS_SECS) / STALENESS_SECS).exp() as f32;
-            util * decay + STALENESS_DEFAULT * (1.0 - decay)
+        if age > p.staleness_secs {
+            let decay = (-(age - p.staleness_secs) / p.staleness_secs).exp() as f32;
+            util * decay + p.staleness_default * (1.0 - decay)
         } else {
             util
         }
@@ -328,39 +327,27 @@ impl ErTracker {
     }
 
     fn record_er(&self) {
+        let p = &PolicyParams::global().pred;
         let mut ema = self.ema.lock().unwrap();
-        *ema = *ema * (1.0 - ER_ALPHA) + ER_ALPHA;
+        *ema = *ema * (1.0 - p.er_alpha) + p.er_alpha;
     }
 
     fn record_success(&self) {
+        let p = &PolicyParams::global().pred;
         let mut ema = self.ema.lock().unwrap();
-        *ema *= 1.0 - ER_ALPHA;
+        *ema *= 1.0 - p.er_alpha;
     }
 
     /// Pseudo-utilization derived from ER fraction.
-    /// Saturates at 1.0 when `er_fraction >= ER_THRESHOLD`.
+    /// Saturates at 1.0 when `er_fraction >= er_threshold`.
     fn pseudo_util(&self) -> f64 {
+        let p = &PolicyParams::global().pred;
         let ema = *self.ema.lock().unwrap();
-        (ema / ER_THRESHOLD).min(1.0)
+        (ema / p.er_threshold).min(1.0)
     }
 }
 
 // ── Admission Controller ────────────────────────────────────────────────
-
-#[cfg(feature = "ac_pred")]
-const UTIL_TARGET: f64 = 0.80;
-#[cfg(feature = "ac_pred")]
-const ADJUST_RATE: f64 = 2.0;
-#[cfg(feature = "ac_pred")]
-const MAX_BURST_SECS: f64 = 0.005; // 5ms — minimal burst to prevent accumulation-driven oscillation
-#[cfg(feature = "ac_pred")]
-const INITIAL_BUDGET_RATE: f64 = 5_000_000.0; // us/s — start generous
-#[cfg(feature = "ac_pred")]
-const PROB_SMOOTH: f64 = 1.0; // 1.0=linear probabilistic, high=binary, 0.0=disabled
-#[cfg(feature = "ac_pred")]
-const ER_THRESHOLD: f64 = 0.2; // ER fraction at which pseudo-util saturates to 1.0
-#[cfg(feature = "ac_pred")]
-const ER_ALPHA: f64 = 0.05; // Slow EMA to average over oscillation cycles
 
 #[cfg(feature = "ac_pred")]
 struct BudgetState {
@@ -391,12 +378,13 @@ pub(crate) struct AdmissionController {
 #[cfg(feature = "ac_pred")]
 impl AdmissionController {
     pub(crate) fn new() -> Self {
+        let p = &PolicyParams::global().pred;
         Self {
             bottleneck: BottleneckTracker::new(),
             er_tracker: ErTracker::new(),
             state: Mutex::new(BudgetState {
-                budget_us: INITIAL_BUDGET_RATE * MAX_BURST_SECS,
-                budget_rate: INITIAL_BUDGET_RATE,
+                budget_us: p.initial_budget_rate * p.max_burst_secs,
+                budget_rate: p.initial_budget_rate,
                 last_refill: Instant::now(),
             }),
         }
@@ -418,6 +406,7 @@ impl AdmissionController {
         est_compute: u64,
         _est_total_mean: u64,
     ) -> bool {
+        let p = &PolicyParams::global().pred;
         // Rate signal: max utilization across all APIs + ER pseudo-util backstop.
         // Using max across APIs because all APIs share one bucket — if any
         // path is stressed, the rate should decrease. The cost metric ensures
@@ -437,16 +426,16 @@ impl AdmissionController {
         // regardless of how large est_child is (e.g., I/O-heavy Hotel calls).
         state.budget_us += state.budget_rate * elapsed;
         let cost = est_compute as f64;
-        let max_budget = (state.budget_rate * MAX_BURST_SECS).max(cost * 2.0);
+        let max_budget = (state.budget_rate * p.max_burst_secs).max(cost * 2.0);
         if state.budget_us > max_budget {
             state.budget_us = max_budget;
         }
 
         // Adjust rate based on effective utilization
-        if effective_util > UTIL_TARGET {
-            state.budget_rate *= 1.0 - ADJUST_RATE * elapsed;
+        if effective_util > p.util_target {
+            state.budget_rate *= 1.0 - p.adjust_rate * elapsed;
         } else {
-            state.budget_rate *= 1.0 + ADJUST_RATE * elapsed;
+            state.budget_rate *= 1.0 + p.adjust_rate * elapsed;
         }
         // Don't let rate go negative or explode.
         // The cap must be high enough to support max throughput × max cost.
@@ -454,13 +443,13 @@ impl AdmissionController {
         // only affects the rate (not the burst size), so a high cap is safe.
         state.budget_rate = state
             .budget_rate
-            .clamp(INITIAL_BUDGET_RATE / 10.0, INITIAL_BUDGET_RATE * 20.0);
+            .clamp(p.initial_budget_rate / 10.0, p.initial_budget_rate * 20.0);
 
         // Admit if we have enough budget
         if state.budget_us >= cost {
             state.budget_us -= cost;
             true
-        } else if PROB_SMOOTH == 0.0 {
+        } else if p.prob_smooth == 0.0 {
             // Disabled: always admit (opt-out for experiments)
             state.budget_us -= cost;
             true
@@ -472,8 +461,8 @@ impl AdmissionController {
             if state.budget_us <= 0.0 {
                 return false;
             }
-            let p = (state.budget_us / cost).powf(PROB_SMOOTH);
-            if rand::random::<f64>() < p {
+            let prob = (state.budget_us / cost).powf(p.prob_smooth);
+            if rand::random::<f64>() < prob {
                 state.budget_us -= cost;
                 true
             } else {
@@ -629,6 +618,9 @@ impl PredictiveAdmission {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // Default parameter value matching PolicyParams default.
+    const STALENESS_DEFAULT: f32 = 0.5;
 
     #[test]
     fn test_bottleneck_tracker_default() {

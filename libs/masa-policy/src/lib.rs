@@ -9,6 +9,8 @@
 pub mod context_ext;
 mod hooks;
 pub(crate) mod layer;
+/// Runtime-configurable policy parameters loaded from policy_param.json.
+pub mod policy_params;
 /// Method registry for mapping service/method strings to IDs.
 pub mod registry;
 
@@ -19,8 +21,16 @@ pub use context_ext::{
 pub use hooks::{ChildContext, ParentContext, PolicyHooks, ServerContext};
 pub use registry::MethodRegistry;
 
+pub use policy_params::PolicyParams;
+
 // Re-export Rajomon public items when the feature is enabled.
 #[cfg(feature = "ac_rajomon")]
 pub use layer::admission::rajomon::{
-    ClientTokenBucket, RajomonSharedState, CLIENT_TOKEN_BUCKET, MAX_TOKEN, RAJOMON_STATE,
+    ClientTokenBucket, RajomonSharedState, CLIENT_TOKEN_BUCKET, RAJOMON_STATE,
 };
+
+/// The maximum token value for Rajomon admission control (runtime-configurable).
+#[cfg(feature = "ac_rajomon")]
+pub fn max_token() -> u64 {
+    PolicyParams::global().rajomon.max_token
+}

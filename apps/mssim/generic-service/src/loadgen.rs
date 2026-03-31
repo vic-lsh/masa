@@ -302,14 +302,13 @@ async fn run_root_load(
                         #[cfg(feature = "ac_rajomon")]
                         {
                             use rand::Rng;
-                            use masa::MAX_TOKEN;
-                            // Bid is a uniform random value in [0, MAX_TOKEN]. The server
+                            // Bid is a uniform random value in [0, max_token]. The server
                             // admits requests whose bid >= its current price, giving a
-                            // (MAX_TOKEN - price) / MAX_TOKEN admission fraction. Drawing
+                            // (max_token - price) / max_token admission fraction. Drawing
                             // from the full fixed range avoids the balance-depletion problem
                             // where bucket drains to 0 in a single-process loadgen, causing
                             // permanent zero-bid and complete admission collapse.
-                            let tok = rand::rng().random_range(0..=MAX_TOKEN);
+                            let tok = rand::rng().random_range(0..=masa::max_token());
                             builder = builder.tokens(tok);
                         }
                         builder.build()
