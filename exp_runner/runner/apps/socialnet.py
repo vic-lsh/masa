@@ -419,6 +419,13 @@ class SocialnetApp(AppPlugin):
             if candidate.exists():
                 env_vars["APP_CONFIG_PATH"] = str(candidate.resolve())
 
+        # Write policy_param.json (empty dict = use all built-in defaults)
+        project_policy_params_path = output_dir / "policy_param.json"
+        project_policy_params_path.parent.mkdir(parents=True, exist_ok=True)
+        with project_policy_params_path.open("w") as f:
+            json.dump(config.policy_params or {}, f, indent=2)
+        env_vars["POLICY_PARAMS_PATH"] = str(project_policy_params_path.resolve())
+
         return env_vars
 
     def get_deployment_location(
@@ -456,9 +463,12 @@ class SocialnetApp(AppPlugin):
         task_env.update(env_vars)
 
         gen_config_path = output_dir / "gen_config.json"
+        policy_params_path = output_dir / "policy_param.json"
         volumes = {}
         if gen_config_path.exists():
             volumes[str(gen_config_path)] = "/usr/gen_config.json"
+        if policy_params_path.exists():
+            volumes[str(policy_params_path)] = "/usr/policy_params.json"
 
         return TaskSpec(
             name=f"{project_name}-loadgen" if project_name else "socialnet-loadgen",
