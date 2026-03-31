@@ -382,7 +382,7 @@ impl PredictiveAdmission {
     /// - Layer 1 (every hop): floor-based deadline feasibility — reject if
     ///   estimated remaining wall-clock time exceeds deadline.
     /// - Layer 2 (ingress only, hop_count==0): compute-capacity admission via
-    ///   token-bucket, using the child's reported compute time as cost.
+    ///   token-bucket, using the child's wall-clock latency as cost.
     #[inline]
     pub(crate) fn admission_check(
         &self,
@@ -406,21 +406,17 @@ impl PredictiveAdmission {
         }
 
         // Layer 2: compute-capacity admission (ingress only)
-        // Uses the child's reported compute time (from ResponseMeta, keyed by
-        // parent→child pair) as cost. This correctly excludes I/O wait, making
-        // cost comparable to the rate's units (compute-µs/s).
+        // Uses the child's wall-clock latency (from ResponseMeta, keyed by
+        // parent→child pair) as cost.
         if ctx.hop_count() == 0 {
-            let est_compute_cost = est_server
-                .est_compute_latency
-                .get_estimate(key)
-                .unwrap_or(0);
+            let est_child_cost = est_server.est_child_latency.get_estimate(key).unwrap_or(0);
             let est_total_mean = est_server
                 .est_after_child_latency
                 .get_mean_estimate(key)
                 .unwrap_or(0);
             if !self
                 .controller
-                .should_admit(ctx.api(), time_left, est_compute_cost, est_total_mean)
+                .should_admit(ctx.api(), time_left, est_child_cost, est_total_mean)
             {
                 return true;
             }
