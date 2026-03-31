@@ -510,3 +510,123 @@ Nearly 3x tailclipper at 2000 RPS. Smooth degradation from 100% to 76% fraction.
 2. The admission controller's feedback loop amplifies run-to-run variance,
    making absolute performance comparisons across sessions unreliable.
    Within-session comparisons (ac_pred vs tailclipper in same run) are reliable.
+
+---
+
+## Key lessons
+
+### 1. Feedback loops in admission control are the hardest problem
+
+Every feature we added (ER backstop, probabilistic smoothing, rate adjustment) creates
+a feedback loop. The interactions between loops are non-obvious and produce emergent
+behavior that can't be predicted from analyzing each loop in isolation. The death spiral
+at 3000 RPS was caused by three loops reinforcing each other: ER backstop drives
+effective_util up → rate decreases → budget depletes → more rejections → more
+abort_slo ERs at downstream hops → ER backstop stays high → rate can't recover.
+The fix (rate floor) works by breaking the loop at one point, not by tuning any
+individual loop's parameters.
+
+### 2. Cost-aware shedding is the core mechanism, not the rate signal
+
+The rate signal (utilization-driven token bucket refill) controls *how many* requests
+are admitted. But the real win comes from the cost metric (`est_child_latency`)
+controlling *which* requests get shed. Under bottleneck conditions, requests
+traversing the bottleneck see inflated wall-clock cost and get shed first, while
+requests on uncongested paths have low cost and pass through. This natural triage
+is what produces 2-4x improvement over tailclipper — not the rate control itself.
+
+### 3. Probabilistic smoothing helps, but budget debt is dangerous
+
+Linear probabilistic admission (PROB_SMOOTH=1.0) outperforms binary admit/reject
+because it avoids sharp phase transitions that drive boom-bust oscillation. However,
+probabilistic admits debit the full cost, creating budget debt (negative budget).
+Debt blocks all subsequent requests until refill recovers. At extreme overload,
+this debt can grow faster than refill, creating permanent lockout. The rate floor
+prevents this by guaranteeing minimum refill, but a more principled solution would
+limit debt directly (e.g., don't debit more than budget when doing probabilistic
+admits — treat the fractional admission as a partial cost).
+
+### 4. The ER backstop is essential but fragile
+
+Without the ER backstop, the controller misses overload when requests are shed
+before consuming CPU (Layer 1 or abort_slo shed requests, keeping CPU idle-looking).
+The backstop detects this hidden overload via ER rate. But its slow EMA (α=0.05)
+creates a lag that prevents rate recovery during oscillation lulls. At moderate
+overload this is fine (the lag provides damping). At extreme overload the lag
+sustains the death spiral. The rate floor masks this fragility, but a better
+design would have the backstop decay faster when it detects rate recovery
+(asymmetric EMA: slow to rise, fast to fall).
+
+### 5. Run-to-run variance is massive for feedback-loop controllers
+
+The admission controller's bistable feedback loop amplifies small perturbations
+into 200-400 goodput differences between runs. This made debugging extremely
+difficult — we spent iterations 1-5 chasing a "regression" that turned out to
+be system drift. The definitive test (geyser_6, exact pre-FLARE revert) was
+essential. Lesson: when debugging feedback-loop controllers, always re-run the
+original baseline in the same session before attributing differences to code changes.
+
+### 6. Single-API socialnet can't distinguish per-API vs max-util signals
+
+Socialnet has one API (ComposePost), so `get_max()` ≡ `get(api)`. The max-util
+rate signal (a FLARE design feature for multi-API fairness) was never actually
+tested. Hotel 2-API is the only configuration where max-util vs per-API would
+diverge, but we didn't A/B test this specific feature there.
+
+## Future improvement opportunities
+
+### 1. Sub-saturation regression on hotel (-28 to -151 goodput)
+
+ac_pred slightly underperforms tailclipper at loads below saturation. Root causes
+to investigate:
+- **Estimation cold-start:** At low load, latency estimates may be stale or
+  inaccurate, causing the token bucket to reject requests it shouldn't.
+- **ER backstop false positives:** Even at low load, a small number of abort_slo
+  ERs occur (e.g., from warmup). The backstop may interpret these as overload,
+  over-throttling the rate before the system is actually stressed.
+- **Fix direction:** Raise UTIL_TARGET closer to saturation for the first N
+  seconds (warmup phase), or suppress the ER backstop until a minimum number
+  of successful completions are observed.
+
+### 2. Per-API buckets with dynamic merging (from FLARE design doc)
+
+The shared bucket causes false coupling when APIs traverse disjoint service paths.
+Hotel 2-API is the right testbed: Search and Reservation share some services
+(profile, geo) but have distinct bottlenecks. Per-API buckets would let each
+API's rate track its own bottleneck independently, merging only when they share
+one. This requires propagating bottleneck *identity* (which service is hot),
+not just magnitude.
+
+### 3. Asymmetric ER EMA (fast decay, slow rise)
+
+The current ER_ALPHA=0.05 is symmetric. The backstop rises slowly (good for
+damping oscillation) but also falls slowly (bad for recovery after overload
+subsides). An asymmetric EMA — e.g., α_up=0.05 for rising, α_down=0.2 for
+falling — would provide the same damping during overload while enabling faster
+recovery when load drops. This could reduce or eliminate the need for the rate
+floor as a safety valve.
+
+### 4. Partial-cost probabilistic admission
+
+Currently, a probabilistic admit debits the full cost even though the request
+was only admitted with probability p. This creates disproportionate budget debt.
+An alternative: debit `cost × p` for probabilistic admits (the expected cost),
+or debit nothing and rely on rate control alone for capacity management.
+This would reduce debt accumulation and make the system more stable at the
+budget boundary.
+
+### 5. Calibration of PROB_SMOOTH
+
+PROB_SMOOTH=1.0 (linear) was used without calibration. Values of 2.0-3.0 would
+create a steeper probability curve, favoring cheaper requests more aggressively
+in the budget < cost regime. This could improve shedding quality without the
+sharp cliff of binary admission. Worth testing on socialnet where the cost
+spread between cheap and expensive requests is large.
+
+### 6. ER_THRESHOLD calibration
+
+ER_THRESHOLD=0.2 was the FLARE design doc's starting suggestion. Lower values
+(e.g., 0.1) would make the backstop more sensitive; higher values (e.g., 0.4)
+would make it less aggressive. The optimal value likely depends on the
+application's natural ER rate at saturation — it should trigger just above
+the healthy shedding baseline, not at an arbitrary fraction.
