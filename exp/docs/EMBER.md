@@ -141,3 +141,90 @@ The 2-layer refactor (commit 4fefbd98) changed the token bucket cost from `est_c
 **Fix:** Restore `est_child_latency` as the token bucket cost (commit e4eefa4c). The 2-layer structure is correct and kept.
 
 **Open question for Hotel:** `est_child_latency` includes I/O wait (MongoDB ~115K µs), which caused the original Hotel crash with MAX_BURST_SECS=0.005 (budget can never cover 115K cost). This needs a separate solution — possibly `min(est_child, MAX_BURST_BUDGET * 0.5)` clamping, or the ER-rate backstop signal.
+
+---
+
+## Admission Control Design Analysis
+
+Post-experiment design discussion exploring what the token bucket should represent and how to handle multi-API workloads.
+
+### Optimization goal
+
+Maximize goodput under overload. When shedding is necessary, preferentially reject expensive requests and admit cheap ones — serving 10 cheap requests yields more goodput than 1 expensive one.
+
+### What signal tells you to throttle?
+
+**Downstream utilization** (`max_downstream_util` propagated via ResponseMeta). This is an observation, not an estimate — it directly measures how stressed the bottleneck is.
+
+**Gap:** For I/O-bound bottlenecks (Hotel/MongoDB), CPU utilization stays low even at overload. An ER-rate backstop signal would cover this but isn't implemented yet.
+
+### What should the per-request cost be?
+
+The token bucket is fundamentally a rate limiter with adaptive rate. The utilization signal does the heavy lifting (tells you *when* to throttle). The per-request cost determines *what* to shed preferentially.
+
+| Cost metric | Pros | Cons |
+|-------------|------|------|
+| `est_child` (wall-clock child time) | Right magnitude, enables cross-API prioritization, captures both CPU and I/O occupancy | Includes queue wait (noisy under load) |
+| `est_compute` (child's local CPU) | Clean resource signal | Only one hop deep — misses fanout children. ~10-20x too small for fanout services (ember_1 proved this) |
+| Cumulative downstream compute | Theoretically principled for CPU | Resources aren't fungible across microservices. 3 services × 1 CPU ≠ 3 CPUs of shared capacity. The bottleneck is `max(per_service_util)`, not `sum(compute)`. |
+| cost=1 (count requests) | Simplest, no estimation needed | Can't differentiate expensive vs cheap APIs — critical requirement for goodput maximization |
+
+**Recommendation: `est_child` (wall-clock).** It's the right proxy for "how long does this request occupy downstream capacity." Enables cross-API prioritization (cheap requests outcompete expensive ones). The fact that it includes I/O wait is correct — an I/O-heavy request really does occupy the path for that duration.
+
+### Why compute-only tokens don't work
+
+The initial motivation for switching to `est_compute_latency` was to correctly handle I/O-heavy workloads (Hotel) where wall-clock includes MongoDB wait that doesn't consume CPU. But this reasoning has two flaws:
+
+1. **`compute_time_us` in ResponseMeta is only the immediate child's local CPU time** — it doesn't include grandchildren. For fanout services (compose-post), local compute is a tiny fraction of total downstream work. To make compute-only tokens work, you'd need cumulative `total_downstream_compute` propagated through ResponseMeta.
+
+2. **Even with cumulative compute, resources aren't fungible across services.** Each microservice has its own independent CPU. A call graph traversing 3 services has 3 independent CPU pools, not a shared pool of 3 CPUs. One service at 95% utilization bottlenecks the system regardless of whether the other two are at 10%. Summing compute across services doesn't reflect the actual constraint.
+
+### Per-API or shared bucket?
+
+| Approach | Good for | Bad for |
+|----------|----------|---------|
+| Per-API buckets | Disjoint paths (no false coupling) | Can't prioritize cheap over expensive across APIs |
+| Shared bucket | Cross-API prioritization, overlapping paths | False coupling on disjoint paths |
+
+**Recommendation: shared bucket.** The goal of preferentially admitting cheap requests requires a shared budget where cheap and expensive requests compete. Disjoint-path false coupling is a real concern but second-order.
+
+**Overlapping subgraph nuance:** Per-API buckets work well when each API traverses completely different parts of the service graph. But when APIs share bottleneck services, independent per-API rate limiters can oscillate against each other (both fighting over the same shared resource). A shared bucket naturally coordinates competing demand on shared bottlenecks.
+
+**Deferred:** dynamically discovering whether APIs share bottlenecks to choose per-API vs shared automatically.
+
+### Rate signal with multiple APIs
+
+Current code uses the calling API's util to adjust the shared rate. With two APIs at different utilization levels (e.g., Search util=0.9, Reservation util=0.3), the rate ping-pongs on every request — never converging. Using `max(util across all APIs)` avoids ping-pong but over-throttles APIs on unsaturated paths. The correct solution depends on bottleneck sharing detection (deferred).
+
+### Burst cap (MAX_BURST_SECS)
+
+**Why it exists:** Prevents accumulation-driven oscillation. Without it, budget surplus accumulates during "good" seconds, enabling a burst that overloads downstream and triggers a "bad" second. SURGE iterations 3-6 proved that rate-tuning approaches (AIMD, rate freeze, additive increase) don't fix this — the root cause is surplus accumulation, not rate dynamics.
+
+**Problem:** A fixed `MAX_BURST_SECS=0.005` doesn't generalize. For SocialNet (est_child≈45K µs), max budget=75K µs admits ~1.7 requests per burst — tight enough. For Hotel (est_child≈115K µs), max budget=75K < cost, making requests permanently inadmissible (the crash).
+
+**Recommendation: dynamic floor.** `max_budget = max(rate × MAX_BURST_SECS, largest_recent_cost × 2)`. Preserves anti-oscillation while ensuring no request is permanently inadmissible. The ×2 margin allows one expensive + one cheap request in the same burst window.
+
+### Recommended algorithm
+
+```
+Layer 1 (every hop): Deadline feasibility
+  - est_remaining_floor > time_left → shed
+  - Triage: shed doomed requests before they waste resources
+  - Uses downstream work estimation (genuinely valuable here)
+
+Layer 2 (ingress only): Token bucket admission
+  - Cost:  est_child_latency (wall-clock child time)
+  - Rate:  adjusts based on downstream utilization signal
+  - Burst: max(rate × MAX_BURST_SECS, largest_recent_cost × 2)
+  - Shared across APIs for cross-API prioritization
+```
+
+**Where estimation helps and where it doesn't:**
+- Layer 1 (deadline feasibility): estimation is critical — knowing est_remaining lets you shed doomed requests that are technically alive but can't finish in time
+- Layer 2 (token bucket): estimation provides the cost metric for cross-API prioritization, but the utilization signal does the real work of controlling the admission rate
+- Scheduling (sched_pred, outside AC): estimation drives deadline tightening and EDF reprioritization — major goodput driver
+
+### Concrete code changes needed
+
+1. **Dynamic burst floor** — fix Hotel crash without regressing SocialNet
+2. **Rate signal consolidation** — address ping-pong with multiple APIs (conservative: use max util; ideal: bottleneck-aware grouping, deferred)
