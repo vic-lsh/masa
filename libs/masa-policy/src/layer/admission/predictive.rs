@@ -358,7 +358,7 @@ const INITIAL_BUDGET_RATE: f64 = 5_000_000.0; // us/s — start generous
 #[cfg(feature = "ac_pred")]
 const PROB_SMOOTH: f64 = 100.0; // 1.0=linear probabilistic, high=binary, 0.0=disabled
 #[cfg(feature = "ac_pred")]
-const ER_THRESHOLD: f64 = 0.2;
+const ER_THRESHOLD: f64 = f64::INFINITY;
 #[cfg(feature = "ac_pred")]
 const ER_ALPHA: f64 = 0.05; // Slow EMA to average over oscillation cycles
 
