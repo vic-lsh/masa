@@ -80,6 +80,12 @@ pub struct PredParams {
     pub max_burst_secs: f64,
     /// Initial token-bucket refill rate in µs of compute budget per second.
     pub initial_budget_rate: f64,
+    /// Probabilistic smoothing exponent (1.0=linear, high=binary, 0.0=disabled).
+    pub prob_smooth: f64,
+    /// ER fraction at which pseudo-utilization saturates to 1.0.
+    pub er_threshold: f64,
+    /// Slow EMA alpha for ER tracker (averages over oscillation cycles).
+    pub er_alpha: f64,
 }
 
 impl Default for PredParams {
@@ -87,10 +93,13 @@ impl Default for PredParams {
         Self {
             staleness_secs: 2.0,
             staleness_default: 0.5,
-            util_target: 0.92,
-            adjust_rate: 0.5,
-            max_burst_secs: 0.1,
-            initial_budget_rate: 10_000_000.0,
+            util_target: 0.80,
+            adjust_rate: 2.0,
+            max_burst_secs: 0.005,
+            initial_budget_rate: 5_000_000.0,
+            prob_smooth: 1.0,
+            er_threshold: 0.2,
+            er_alpha: 0.05,
         }
     }
 }
@@ -151,7 +160,7 @@ mod tests {
         let p = PolicyParams::default();
         assert_eq!(p.rajomon.max_token, 100);
         assert!(p.rajomon.price_cap <= p.rajomon.max_token);
-        assert_eq!(p.pred.util_target, 0.92);
+        assert_eq!(p.pred.util_target, 0.80);
     }
 
     #[test]
@@ -162,7 +171,7 @@ mod tests {
         // Other rajomon fields should be defaults
         assert_eq!(p.rajomon.price_update_rate_ms, 10);
         // pred fields should be defaults
-        assert_eq!(p.pred.util_target, 0.92);
+        assert_eq!(p.pred.util_target, 0.80);
     }
 
     #[test]
