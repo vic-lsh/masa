@@ -46,6 +46,24 @@ compile_error!(
 #[cfg(all(feature = "ac_pred", feature = "ac_rajomon"))]
 compile_error!("Enable at most one admission control strategy: ac_pred | ac_rajomon");
 
+// === Abort constraints ===
+// abort_slack is a superset of abort_slo; enabling both explicitly is redundant
+// but not an error since abort_slack implies abort_slo via Cargo deps.
+// abort_slack requires estimator for predictive abort checks.
+#[cfg(all(feature = "abort_slack", not(feature = "estimator")))]
+compile_error!("'abort_slack' requires 'estimator' for predictive abort checks");
+
+#[cfg(all(feature = "abort_slack", feature = "abort_slo"))]
+compile_error!("Enabling both 'abort_slack' and 'abort_slo' is redundant since 'abort_slack' implies 'abort_slo'");
+
+// === Estimator constraints ===
+// sched_pred and ac_pred require the estimator infrastructure.
+#[cfg(all(feature = "sched_pred", not(feature = "estimator")))]
+compile_error!("'sched_pred' requires 'estimator'");
+
+#[cfg(all(feature = "ac_pred", not(feature = "estimator")))]
+compile_error!("'ac_pred' requires 'estimator'");
+
 // Admission control requires a scheduling policy to be active, otherwise
 // DefaultHooks resolves to NoopHooks and the layer is never invoked.
 #[cfg(all(
