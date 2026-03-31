@@ -462,6 +462,12 @@ class SyntheticApp(AppPlugin):
                     f"Services in call graph: {[s['id'] for s in config.app_config['call_graph']['services']]}"
                 )
 
+        # Write policy_param.json (empty dict = use all built-in defaults)
+        project_policy_params_path = output_dir / "policy_param.json"
+        with project_policy_params_path.open("w") as f:
+            json.dump(config.policy_params or {}, f, indent=2)
+        env_vars["POLICY_PARAMS_PATH"] = str(project_policy_params_path.resolve())
+
         # Generate gen_config.json
         # 1. Calculate content (Pure)
         gen_config_content = self.create_gen_config_dict(
@@ -535,11 +541,14 @@ class SyntheticApp(AppPlugin):
 
         # Config mounting
         gen_config_path = output_dir / "gen_config.json"
+        policy_params_path = output_dir / "policy_param.json"
 
         volumes = {}
         if gen_config_path.exists():
             # Host path -> Container path
             volumes[str(gen_config_path)] = "/usr/gen_config.json"
+        if policy_params_path.exists():
+            volumes[str(policy_params_path)] = "/usr/policy_params.json"
 
         return TaskSpec(
             name=f"{project_name}-loadgen" if project_name else "synthetic-loadgen",
