@@ -356,11 +356,9 @@ const MAX_BURST_SECS: f64 = 0.005; // 5ms — minimal burst to prevent accumulat
 #[cfg(feature = "ac_pred")]
 const INITIAL_BUDGET_RATE: f64 = 5_000_000.0; // us/s — start generous
 #[cfg(feature = "ac_pred")]
-const PROB_SMOOTH: f64 = 1.0; // 1.0=linear probabilistic, high=binary, 0.0=disabled
+const PROB_SMOOTH: f64 = 100.0; // 1.0=linear probabilistic, high=binary, 0.0=disabled
 #[cfg(feature = "ac_pred")]
-const ER_THRESHOLD: f64 = f64::INFINITY; // Disabled: ER backstop off (pseudo_util always 0)
-#[cfg(feature = "ac_pred")]
-const MIN_ADMIT_PROB: f64 = 0.05; // Floor: always admit at least 5% of requests
+const ER_THRESHOLD: f64 = 0.2;
 #[cfg(feature = "ac_pred")]
 const ER_ALPHA: f64 = 0.05; // Slow EMA to average over oscillation cycles
 
@@ -470,16 +468,9 @@ impl AdmissionController {
             // Budget can go negative (debt) after a probabilistic admit,
             // meaning p=0 until the debt is repaid via refill.
             if state.budget_us <= 0.0 {
-                if rand::random::<f64>() < MIN_ADMIT_PROB {
-                    state.budget_us -= cost;
-                    return true;
-                } else {
-                    return false;
-                }
+                return false;
             }
-            let p = (state.budget_us / cost)
-                .powf(PROB_SMOOTH)
-                .max(MIN_ADMIT_PROB);
+            let p = (state.budget_us / cost).powf(PROB_SMOOTH);
             if rand::random::<f64>() < p {
                 state.budget_us -= cost;
                 true
