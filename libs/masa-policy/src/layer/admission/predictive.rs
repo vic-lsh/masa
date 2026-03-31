@@ -349,8 +349,11 @@ impl AdmissionController {
         } else {
             state.budget_rate *= 1.0 + ADJUST_RATE * elapsed;
         }
-        // Don't let rate go negative or explode
-        state.budget_rate = state.budget_rate.clamp(1.0, INITIAL_BUDGET_RATE * 3.0);
+        // Don't let rate go negative or explode.
+        // The cap must be high enough to support max throughput × max cost.
+        // With MAX_BURST_SECS limiting the actual budget, warmup inflation
+        // only affects the rate (not the burst size), so a high cap is safe.
+        state.budget_rate = state.budget_rate.clamp(1.0, INITIAL_BUDGET_RATE * 20.0);
 
         // Admit if we have enough budget
         if state.budget_us >= cost {
