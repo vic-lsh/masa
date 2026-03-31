@@ -23,7 +23,7 @@ class TestParse:
     def test_slack(self):
         p = Policy.parse("sched_pred")
         assert p.prio == "slack"
-        assert p.est == "rms"  # default estimator
+        assert p.est == "mean_var"  # default estimator
 
     def test_slack_with_explicit_est(self):
         p = Policy.parse("sched_pred,est_mean_var")
@@ -62,7 +62,7 @@ class TestParse:
         """ac=slack without explicit est → default rms."""
         p = Policy.parse("sched_slo,ac_pred")
         assert p.ac == "slack"
-        assert p.est == "rms"
+        assert p.est == "mean_var"
 
 
 # ── order agnosticism ──────────────────────────────────────────────────────
@@ -139,7 +139,7 @@ class TestDisplayName:
     def test_slack_default_est(self):
         assert (
             Policy.parse("sched_pred").display_name
-            == "prio=slack, drop=none, ac=none, est=rms"
+            == "prio=slack, drop=none, ac=none, est=mean_var"
         )
 
     def test_slack_explicit_est(self):
