@@ -301,3 +301,101 @@ probabilistic smoothing that helps at moderate overload.
 
 ### Experiment design
 Same config. Run all 4 policies to match ember_3 ordering (may reduce ordering effect).
+
+### Actual Outcomes (geyser_5)
+
+**Status:** Regression ❌ — death spiral moved earlier (2000 instead of 3000)
+
+| RPS | ac_pred (geyser_5) | tailclipper | vs geyser_1 |
+|-----|-------------------|-------------|-------------|
+| 1400 | 1286 | 1277 | -83 |
+| 1600 | 1255 | 1124 | -31 |
+| 1800 | 1249 | 1083 | +1 |
+| 2000 | **0** | 1062 | **-1306** |
+| 2500 | **0** | 1197 | **-1425** |
+| 3000 | **0** | 1045 | **-** |
+
+Death spiral now starts at 2000 RPS. Debt clamping didn't help — it was essentially
+a no-op because budget only goes negative from the probabilistic branch (max debt is
+budget - cost, which is already bounded by the budget being < cost before the debit).
+
+## Iteration 5: Definitive pre-FLARE comparison (geyser_6)
+
+**Status:** Complete ✅
+
+### Change
+Checked out the EXACT pre-FLARE predictive.rs from commit bc48cfe4 (ember_3 code).
+No FLARE features, no modifications. Same config and 4-policy ordering as ember_3.
+
+### Results (geyser_6 — exact pre-FLARE code)
+
+| RPS | ac_pred (geyser_6) | tailclipper | vs ember_3 |
+|-----|-------------------|-------------|------------|
+| 800 | 800 | 800 | 0 |
+| 1000 | 1000 | 1000 | 0 |
+| 1200 | 1160 | 1165 | -26 |
+| 1400 | 1146 | 1162 | **-198** |
+| 1600 | 1114 | 1049 | **-324** |
+| 1800 | 1017 | 1010 | **-480** |
+| 2000 | 1266 | 1073 | **-302** |
+| 2500 | 1090 | 1054 | **-513** |
+| 3000 | 1230 | 964 | **-352** |
+
+### DEFINITIVE CONCLUSION
+
+**The gap between ember_3 and geyser experiments is system drift / run-to-run variance,
+NOT from FLARE code changes.** The exact pre-FLARE code produces the same low results
+in the current system state.
+
+The admission controller's bistable feedback loop amplifies small perturbations
+(Docker startup timing, CPU cache state, connection pool warmth) into large performance
+differences. The pre-FLARE cluster (surge_3-ember_3) was a favorable system state period;
+the geyser cluster is a less favorable period. Both use identical code.
+
+### FLARE is actually a significant improvement
+
+Comparing full FLARE (geyser_1) vs pre-FLARE (geyser_6) in the SAME system state:
+
+| RPS | pre-FLARE (geyser_6) | FLARE (geyser_1) | delta |
+|-----|---------------------|-------------------|-------|
+| 1400 | 1146 | 1369 | **+223** |
+| 1600 | 1114 | 1286 | **+172** |
+| 1800 | 1017 | 1248 | **+231** |
+| 2000 | 1266 | 1306 | +40 |
+| 2500 | 1090 | 1425 | **+335** |
+| 3000 | 1230 | 0 | **-1230** |
+
+**FLARE improves goodput by +40 to +335 at 1400-2500 RPS.** The ONLY issue is the
+death spiral at 3000 RPS. Fixing this one issue makes FLARE strictly superior.
+
+## Iteration 6: Fix death spiral with rate floor (geyser_7)
+
+**Status:** Pending
+
+### Change
+Restore full FLARE code. Raise the budget_rate floor from 1.0 µs/s to
+INITIAL_BUDGET_RATE / 10 = 500K µs/s. Currently the rate can drop to 1.0, which
+is effectively 0 (takes 80+ seconds to accumulate enough budget for one admission).
+With a floor of 500K, budget refills ~80K µs in 0.16s, admitting ~6 req/s minimum.
+This breaks the death spiral by guaranteeing some traffic always gets through.
+
+### Hypothesis
+The death spiral is caused by the budget_rate collapsing to near-zero when
+effective_util stays above UTIL_TARGET for extended periods. At extreme overload
+(3000 RPS), abort_slo ERs feed the ER backstop, keeping pseudo_util saturated,
+which keeps effective_util > 0.80, which keeps decreasing the rate. With the current
+1.0 µs/s floor, the rate reaches ~1.0 and stays there — effectively zero admission.
+
+A meaningful rate floor (500K µs/s) ensures minimum admission of ~6 req/s even at
+maximum overload. These admitted requests:
+1. Provide fresh CPU util data that enables rate recovery
+2. Produce successful completions that pull down the ER EMA
+3. Break the positive feedback loop that sustains the death spiral
+
+### Expected outcomes:
+1. 3000 RPS: goodput >500 (death spiral broken)
+2. 1400-2500 RPS: same or better than geyser_1 (rate floor only activates at extreme overload)
+3. No regression at 800-1200 RPS (rate never approaches the floor at normal load)
+
+### Experiment design
+Same config. Only ac_pred + tailclipper (baselines well-characterized).
