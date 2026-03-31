@@ -332,9 +332,13 @@ impl AdmissionController {
         let elapsed = now.duration_since(state.last_refill).as_secs_f64();
         state.last_refill = now;
 
-        // Refill tokens, capped at burst limit
+        // Refill tokens, capped at burst limit.
+        // Dynamic floor: ensure the budget can always hold at least one
+        // request (cost × 2), so no request is permanently inadmissible
+        // regardless of how large est_child is (e.g., I/O-heavy Hotel calls).
         state.budget_us += state.budget_rate * elapsed;
-        let max_budget = state.budget_rate * MAX_BURST_SECS;
+        let cost = est_compute as f64;
+        let max_budget = (state.budget_rate * MAX_BURST_SECS).max(cost * 2.0);
         if state.budget_us > max_budget {
             state.budget_us = max_budget;
         }
@@ -349,7 +353,6 @@ impl AdmissionController {
         state.budget_rate = state.budget_rate.clamp(1.0, INITIAL_BUDGET_RATE * 3.0);
 
         // Admit if we have enough budget
-        let cost = est_compute as f64;
         if state.budget_us >= cost {
             state.budget_us -= cost;
             true
@@ -501,9 +504,9 @@ mod tests {
     #[test]
     fn test_admission_controller_rejects_when_budget_exhausted() {
         let ac = AdmissionController::new();
-        // Exhaust the budget by admitting requests with large compute costs
-        // Initial budget = INITIAL_BUDGET_RATE * MAX_BURST_SECS = 5M * 0.1 = 500K us
-        // Each request costs 100_000 us, so ~5 requests should exhaust it
+        // Exhaust the budget by admitting requests with large compute costs.
+        // Dynamic burst floor: max_budget = max(rate * 0.005, cost * 2) = 200K us.
+        // Each request costs 100K, so ~2 requests exhaust the budget.
         let mut rejected = false;
         for _ in 0..20 {
             if !ac.should_admit("Search", 100_000, 100_000, 50_000) {
