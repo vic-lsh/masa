@@ -379,15 +379,15 @@ impl PredictiveAdmission {
 
     /// Two-layer admission check reading estimation maps from `est_server`.
     ///
-    /// - Layer 1 (every hop): compute-time feasibility — reject if estimated
-    ///   compute time exceeds remaining deadline.
-    /// - Layer 2 (ingress only, hop_count==0): efficiency-based admission via
-    ///   token-bucket `AdmissionController`.
+    /// - Layer 1 (every hop): floor-based deadline feasibility — reject if
+    ///   estimated remaining wall-clock time exceeds deadline.
+    /// - Layer 2 (ingress only, hop_count==0): compute-capacity admission via
+    ///   token-bucket, using the child's reported compute time as cost.
     #[inline]
     pub(crate) fn admission_check(
         &self,
         est_server: &EstServerState<DefaultLatencyEstimator>,
-        resolved_method_id: u64,
+        _resolved_method_id: u64,
         ctx: &Context,
         key: u64,
     ) -> bool {
@@ -405,28 +405,22 @@ impl PredictiveAdmission {
             return true;
         }
 
-        // Layer 2: compute-time feasibility (every hop)
-        let est_compute_rem = est_server
-            .est_compute_latency
-            .get_estimate(resolved_method_id)
-            .unwrap_or(0);
-        if est_compute_rem > time_left {
-            return true; // infeasible -> shed
-        }
-
-        // Layer 3: efficiency-based admission (ingress only)
+        // Layer 2: compute-capacity admission (ingress only)
+        // Uses the child's reported compute time (from ResponseMeta, keyed by
+        // parent→child pair) as cost. This correctly excludes I/O wait, making
+        // cost comparable to the rate's units (compute-µs/s).
         if ctx.hop_count() == 0 {
+            let est_compute_cost = est_server
+                .est_compute_latency
+                .get_estimate(key)
+                .unwrap_or(0);
             let est_total_mean = est_server
                 .est_after_child_latency
                 .get_mean_estimate(key)
                 .unwrap_or(0);
-            let est_child = est_server
-                .est_child_latency
-                .get_estimate(key)
-                .unwrap_or(est_compute_rem);
             if !self
                 .controller
-                .should_admit(ctx.api(), time_left, est_child, est_total_mean)
+                .should_admit(ctx.api(), time_left, est_compute_cost, est_total_mean)
             {
                 return true;
             }
