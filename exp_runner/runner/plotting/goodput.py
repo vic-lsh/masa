@@ -1388,6 +1388,7 @@ def plot_goodput_timeline(
     """
     fig, ax = plt.subplots(figsize=(14, 6))
     cmap = plt.get_cmap("tab10")
+    csv_rows: list[dict[str, object]] = []
 
     for idx, policy in enumerate(policies):
         rps_data = policy_data_by_rps.get(policy, {})
@@ -1447,6 +1448,9 @@ def plot_goodput_timeline(
         if not all_times:
             continue
 
+        for t, gp in zip(all_times, all_goodput):
+            csv_rows.append({"Time": t, "Policy": policy, "Goodput": gp})
+
         color = get_policy_color(policy)
         if color is None:
             color = cmap(idx % cmap.N)
@@ -1457,6 +1461,11 @@ def plot_goodput_timeline(
             color=color,
             linewidth=1.5,
         )
+
+    # Save timeline data to CSV
+    if csv_rows:
+        csv_path = output_path.replace(".png", ".csv")
+        pd.DataFrame(csv_rows).to_csv(csv_path, index=False)
 
     # Offered RPS as a filled step area
     effective_duration = duration_sec - warmup_sec
