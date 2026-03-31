@@ -8,6 +8,8 @@ pub const SCHED_PRED: bool = cfg!(feature = "sched_pred");
 
 pub const ABORT_SLO: bool = cfg!(feature = "abort_slo");
 
+pub const ABORT_SLACK: bool = cfg!(feature = "abort_slack");
+
 #[allow(dead_code)]
 pub const RAJOMON: bool = cfg!(feature = "ac_rajomon");
 
