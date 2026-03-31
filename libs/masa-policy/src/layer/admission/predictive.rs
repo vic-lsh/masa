@@ -19,10 +19,10 @@ use tonic_core::{Code, CowGrpcMethod, Response, Status};
 
 use super::super::{ChildRpcContext, Layer, LayerChild, LayerServer};
 use crate::layer::est::estimator::DefaultLatencyEstimator;
-use crate::policy_params::PolicyParams;
 use crate::layer::est::state::{
     is_early_return_response, EstChildState, EstRequestState, EstServerState,
 };
+use crate::policy_params::PolicyParams;
 use crate::MethodRegistry;
 
 // ── Server ──────────────────────────────────────────────────────────────

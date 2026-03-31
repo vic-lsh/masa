@@ -115,21 +115,19 @@ impl PolicyParams {
         POLICY_PARAMS.get_or_init(|| {
             if let Ok(path) = std::env::var("MASA_POLICY_PARAMS_PATH") {
                 match std::fs::File::open(&path) {
-                    Ok(file) => {
-                        match serde_json::from_reader(std::io::BufReader::new(file)) {
-                            Ok(params) => {
-                                log::info!("Loaded policy params from {}", path);
-                                return params;
-                            }
-                            Err(e) => {
-                                log::warn!(
-                                    "Failed to parse policy params from {}: {}, using defaults",
-                                    path,
-                                    e
-                                );
-                            }
+                    Ok(file) => match serde_json::from_reader(std::io::BufReader::new(file)) {
+                        Ok(params) => {
+                            log::info!("Loaded policy params from {}", path);
+                            return params;
                         }
-                    }
+                        Err(e) => {
+                            log::warn!(
+                                "Failed to parse policy params from {}: {}, using defaults",
+                                path,
+                                e
+                            );
+                        }
+                    },
                     Err(e) => {
                         log::warn!(
                             "Failed to open policy params file {}: {}, using defaults",
