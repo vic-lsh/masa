@@ -14,36 +14,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use tonic_core::{CowGrpcMethod, Response, Status};
 
 use super::super::{ChildRpcContext, Layer, LayerChild, LayerServer};
-
-// ── Rajomon Tunable Parameters ──
-// Aligned with the original Go implementation (3rd_party/rajomon/).
-// All defaults match the original unless noted.
-
-// Overload detection
-const PRICE_UPDATE_RATE_MS: u64 = 10; // original: priceUpdateRate (10ms)
-const LATENCY_THRESHOLD_US: u64 = 5_000; // 5ms — best for hotel; above idle frontend queue latency, avoids false positives
-
-// Price update (step strategy)
-// Asymmetric up/down: fast rise provides quick back-pressure; faster recovery
-// than drift_3 (down=2 vs down=1) reduces the lockout duration and improves
-// the equilibrium stability point from K=11% to K=20% congested ticks.
-const PRICE_STEP_UP: u64 = 8; // additive step up per tick: ramps to PRICE_CAP in ~75ms (8 ticks × 10ms)
-const PRICE_STEP_DOWN: u64 = 2; // additive step down per tick: recovers to 0 in ~300ms from PRICE_CAP
-/// Price ceiling at 60% of MAX_TOKEN (60). Allows shedding up to 60% of requests to protect SLO under heavy overload.
-const PRICE_CAP: u64 = MAX_TOKEN * 6 / 10; // 60 with MAX_TOKEN=100
-const INIT_PRICE: u64 = 0; // original: initprice (0)
-
-// Price propagation
-const PRICE_FREQ: u64 = 5; // original: priceFreq (5) — send price every 1/N requests
-
-// Client-side token bucket
-const TOKENS_LEFT_INIT: u64 = 10; // original: tokensLeft (10)
-const TOKEN_UPDATE_RATE_MS: u64 = 10; // original: tokenUpdateRate (10ms)
-const TOKEN_UPDATE_STEP: u64 = 5; // original: tokenUpdateStep (1)
-/// The maximum token value the loadgen can generate for a bid. Server prices are
-/// meaningful only when they are <= MAX_TOKEN; a price above MAX_TOKEN means 100%
-/// rejection. Exported so the loadgen can draw uniform random bids in [0, MAX_TOKEN].
-pub const MAX_TOKEN: u64 = 100; // original: maxToken (10)
+use crate::policy_params::PolicyParams;
 
 /// Global Rajomon state shared across all request handlers.
 pub static RAJOMON_STATE: Lazy<RajomonSharedState> = Lazy::new(|| RajomonSharedState::new());
@@ -95,7 +66,7 @@ pub struct RajomonSharedState {
 impl RajomonSharedState {
     pub(crate) fn new() -> Self {
         Self {
-            own_price: AtomicU64::new(INIT_PRICE),
+            own_price: AtomicU64::new(PolicyParams::global().rajomon.init_price),
             downstream_prices: DashMap::new(),
             max_downstream_for_method: DashMap::new(),
             queue_stats: QueueStats::new(),
@@ -130,15 +101,16 @@ impl RajomonSharedState {
     /// else if below half-threshold:            ownPrice -= PRICE_STEP_DOWN
     /// else (between half and full threshold):  hold steady
     pub(crate) fn update_prices(&self) {
+        let p = &PolicyParams::global().rajomon;
         let max_us = self.queue_stats.window_max.swap(0, Ordering::Relaxed);
         self.queue_stats
             .log_window_max
             .fetch_max(max_us, Ordering::Relaxed);
         let own = self.own_price.load(Ordering::Relaxed);
-        let new_price = if max_us > LATENCY_THRESHOLD_US {
-            (own + PRICE_STEP_UP).min(PRICE_CAP)
-        } else if own > 0 && max_us < LATENCY_THRESHOLD_US / 2 {
-            own.saturating_sub(PRICE_STEP_DOWN)
+        let new_price = if max_us > p.latency_threshold_us {
+            (own + p.price_step_up).min(p.price_cap)
+        } else if own > 0 && max_us < p.latency_threshold_us / 2 {
+            own.saturating_sub(p.price_step_down)
         } else {
             own
         };
@@ -202,8 +174,9 @@ impl RajomonSharedState {
 
         if let Ok(handle) = tokio::runtime::Handle::try_current() {
             handle.spawn(async {
-                let mut interval =
-                    tokio::time::interval(Duration::from_millis(PRICE_UPDATE_RATE_MS));
+                let mut interval = tokio::time::interval(Duration::from_millis(
+                    PolicyParams::global().rajomon.price_update_rate_ms,
+                ));
                 let mut log_tick: u32 = 0;
                 let mut cache_clear_tick: u32 = 0;
                 loop {
@@ -421,11 +394,11 @@ impl RajomonLayer {
         Status::resource_exhausted(msg)
     }
 
-    /// Deterministic price propagation: send price when inbound_tokens % PRICE_FREQ == 0.
+    /// Deterministic price propagation: send price when inbound_tokens % price_freq == 0.
     /// Original Go: tok % priceFreq == 0.
     fn should_propagate_price(&self) -> bool {
         let tokens = self.inbound_tokens.load(Ordering::Relaxed);
-        tokens % PRICE_FREQ == 0
+        tokens % PolicyParams::global().rajomon.price_freq == 0
     }
 }
 
@@ -453,7 +426,7 @@ pub struct ClientTokenBucket {
 impl ClientTokenBucket {
     fn new() -> Self {
         Self {
-            tokens_left: AtomicU64::new(TOKENS_LEFT_INIT),
+            tokens_left: AtomicU64::new(PolicyParams::global().rajomon.tokens_left_init),
             cached_prices: DashMap::new(),
         }
     }
@@ -508,12 +481,12 @@ impl ClientTokenBucket {
         self.cached_prices.insert(method.clone(), price);
     }
 
-    /// Replenish token pool by TOKEN_UPDATE_STEP, capped at MAX_TOKEN.
-    /// Cap matches the maxToken field in Go (natural bound via per-request deductions).
+    /// Replenish token pool by `token_update_step`, capped at `max_token`.
     pub fn replenish(&self) {
+        let p = &PolicyParams::global().rajomon;
         loop {
             let current = self.tokens_left.load(Ordering::Relaxed);
-            let new_val = (current + TOKEN_UPDATE_STEP).min(MAX_TOKEN);
+            let new_val = (current + p.token_update_step).min(p.max_token);
             if self
                 .tokens_left
                 .compare_exchange_weak(current, new_val, Ordering::Relaxed, Ordering::Relaxed)
@@ -538,7 +511,7 @@ impl ClientTokenBucket {
         if let Ok(handle) = tokio::runtime::Handle::try_current() {
             handle.spawn(async {
                 use rand_distr::{Distribution, Exp};
-                let rate = 1.0 / TOKEN_UPDATE_RATE_MS as f64; // events per ms
+                let rate = 1.0 / PolicyParams::global().rajomon.token_update_rate_ms as f64;
                 let dist = Exp::new(rate).expect("Exp::new failed");
                 loop {
                     let sleep_ms: f64 = dist.sample(&mut rand::thread_rng());
@@ -559,6 +532,17 @@ pub static CLIENT_TOKEN_BUCKET: Lazy<ClientTokenBucket> = Lazy::new(|| ClientTok
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // Default parameter values matching PolicyParams defaults.
+    // Tests verify algorithmic behaviour with these specific values.
+    const LATENCY_THRESHOLD_US: u64 = 5_000;
+    const INIT_PRICE: u64 = 0;
+    const PRICE_STEP_UP: u64 = 8;
+    const PRICE_STEP_DOWN: u64 = 2;
+    const PRICE_CAP: u64 = 60;
+    const TOKENS_LEFT_INIT: u64 = 10;
+    const TOKEN_UPDATE_STEP: u64 = 5;
+    const MAX_TOKEN: u64 = 100;
 
     /// Mutex to serialize tests that modify the global RAJOMON_STATE.own_price,
     /// since it's a single global value shared across all test threads.
