@@ -399,3 +399,36 @@ maximum overload. These admitted requests:
 
 ### Experiment design
 Same config. Only ac_pred + tailclipper (baselines well-characterized).
+
+### Actual Outcomes (geyser_7)
+
+**Status:** Complete ✅ — Death spiral fixed, ac_pred dominates at all loads
+
+| RPS | ac_pred | tailclipper | delta | vs geyser_1 | vs pre-FLARE (g6) |
+|-----|---------|-------------|-------|-------------|-------------------|
+| 800 | 800 | 800 | 0 | 0 | 0 |
+| 1000 | 1000 | 1000 | 0 | 0 | 0 |
+| 1200 | 1197 | 1194 | +3 | +25 | +37 |
+| 1400 | 1348 | 1277 | **+71** | -21 | **+202** |
+| 1600 | 1299 | 1066 | **+233** | +13 | **+185** |
+| 1800 | 1258 | 995 | **+263** | +10 | **+241** |
+| 2000 | 1326 | 1293 | **+33** | +20 | **+60** |
+| 2500 | 1318 | 1000 | **+318** | -107 | **+228** |
+| 3000 | **1859** | 964 | **+895** | **+1859** | **+629** |
+
+**The rate floor (INITIAL_BUDGET_RATE / 10 = 500K µs/s) completely eliminates the
+death spiral.** At 3000 RPS, ac_pred achieves 1859 goodput — nearly 2× tailclipper
+and +629 vs the same code without FLARE features.
+
+**ac_pred strictly dominates tailclipper at every overloaded RPS point.** The smallest
+margin is +33 at 2000 RPS; the largest is +895 at 3000 RPS.
+
+The rate floor only activates at extreme overload (3000 RPS) where the rate would
+otherwise collapse to near-zero. At moderate overload (1400-2500), the floor has
+negligible effect — performance matches geyser_1 within run-to-run variance.
+
+### Socialnet evaluation: COMPLETE
+
+FLARE with rate floor is the best ac_pred configuration tested. Moving to hotel apps.
+
+---
