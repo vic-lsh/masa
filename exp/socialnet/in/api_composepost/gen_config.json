@@ -1,0 +1,12 @@
+{
+  "Repeats": 1,
+  "Apis": ["ComposePost"],
+  "Slos": [50000],
+  "Rps": [800, 1000, 1200, 1400, 1600, 1800, 2000, 2500, 3000],
+  "Gap": "const",
+  "WarmupSecs": 10,
+  "DurationSecs": 30,
+  "MaxInFlight": 0,
+  "Addr": "http://compose-post-service:8080",
+  "Timeouts_ms": [1000]
+}
