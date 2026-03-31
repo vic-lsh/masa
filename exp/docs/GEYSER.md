@@ -93,3 +93,62 @@ values — even if the rate signal is maximally pessimistic, some requests alway
 ### Experiment design
 Same config as geyser_1 (surge_8 base, ComposePost, SLO=50ms, RPS 800-3000).
 Only run ac_pred and tailclipper policies to save time (fifo/pred baselines unchanged).
+
+### Actual Outcomes (geyser_2)
+
+**Status:** Regression ❌ — Hypothesis WRONG
+
+| RPS | ac_pred (geyser_2) | tailclipper | vs geyser_1 | vs ember_3 |
+|-----|-------------------|-------------|-------------|------------|
+| 800 | 800 | 800 | 0 | 0 |
+| 1000 | 1000 | 1000 | 0 | 0 |
+| 1200 | 1184 | 1154 | +12 | -2 |
+| 1400 | 1280 | 1136 | **-89** | -64 |
+| 1600 | 1097 | 1049 | **-189** | **-341** |
+| 1800 | 1019 | 1003 | **-229** | **-478** |
+| 2000 | 1260 | 1179 | -46 | **-308** |
+| 2500 | 998 | 1022 | **-427** | **-605** |
+| 3000 | 954 | 954 | +954 | **-628** |
+
+**Disabling ER backstop made things WORSE at 1400-2500 RPS.** The backstop was actually
+helping at moderate overload. The 3000 RPS death spiral is fixed (954 vs 0), but overall
+this is a catastrophic regression.
+
+**Revised root cause analysis:** The ER backstop is not the problem — it's a net positive.
+Comparing geyser_2 to pre-FLARE ember_3, the ONLY behavioral differences (since socialnet
+has 1 API, so get_max()≡get(api)) are:
+1. **Probabilistic smoothing** (PROB_SMOOTH=1.0 + MIN_ADMIT_PROB=0.05)
+2. ER backstop disabled
+
+Since disabling the backstop hurt, the probabilistic smoothing must be the primary regression
+cause. Mechanism: when budget < cost, probabilistic admits DEBIT the full cost, driving
+budget deeply negative. The debt blocks ALL subsequent requests until refill recovers,
+creating worse boom-bust than pre-FLARE binary reject (which preserves budget).
+
+---
+
+## Iteration 2: Revert to binary admission, keep ER backstop (geyser_3)
+
+**Status:** Pending
+
+### Change
+1. Set `PROB_SMOOTH = 100.0` (effectively binary: `(budget/cost)^100 ≈ 0` for any budget < cost)
+2. Restore `ER_THRESHOLD = 0.2` (re-enable ER backstop — it was helping)
+3. Remove `MIN_ADMIT_PROB` entirely (back to hard reject when budget < cost)
+
+### Hypothesis
+Probabilistic smoothing is the sole cause of the FLARE regression. Its budget-debt
+mechanism (admits drive budget negative → blocks all subsequent requests until refill) creates
+worse oscillation than binary reject (which preserves budget). Reverting to binary while
+keeping the ER backstop and max-util signal should restore ember_3-level performance.
+
+With binary reject, the 3000 RPS death spiral should also be less severe: budget never goes
+negative, so each refill cycle lets at least one request through immediately.
+
+### Expected outcomes if hypothesis is correct:
+1. 1600-2500 RPS: goodput within ±50 of ember_3 levels (1400-1600 range)
+2. 3000 RPS: positive goodput (budget never goes negative, no permanent lockout)
+3. 1200-1400 RPS: no regression
+
+### Experiment design
+Same config as geyser_1. Only ac_pred + tailclipper.
