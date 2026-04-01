@@ -66,9 +66,11 @@ impl Default for RajomonParams {
 
 /// Tunable parameters for the predictive admission control policy.
 ///
-/// Uses a Vegas-style concurrency limiter: controls the number of in-flight
+/// Uses an AIMD concurrency limiter: controls the number of in-flight
 /// requests at ingress, adapting the limit using a latency-based gradient
-/// (ratio of no-load latency to current average latency).
+/// (ratio of no-load latency to current average latency). When healthy,
+/// the limit increases additively; when congested, it decreases
+/// multiplicatively.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct PredParams {
@@ -83,6 +85,18 @@ pub struct PredParams {
     /// Multiplier for queue allowance = factor * sqrt(limit).
     /// Controls how aggressively the limiter probes above equilibrium.
     pub queue_allowance_factor: f64,
+    /// Gradient threshold: if min/avg >= this, the system is healthy (AI);
+    /// otherwise congested (MD).
+    pub gradient_threshold: f64,
+    /// Additive increase step applied each update interval when healthy.
+    pub additive_increase: f64,
+    /// Multiplicative decrease factor applied each update interval when
+    /// congested (e.g. 0.90 means reduce limit by 10%).
+    pub multiplicative_decrease: f64,
+    /// Maximum concurrency limit (caps additive increase).
+    pub max_limit: f64,
+    /// Minimum interval (ms) between AIMD limit updates.
+    pub update_interval_ms: u64,
 }
 
 impl Default for PredParams {
@@ -91,7 +105,12 @@ impl Default for PredParams {
             initial_limit: 100.0,
             min_latency_alpha: 0.001,
             avg_latency_tau: 0.5,
-            queue_allowance_factor: 5.0,
+            queue_allowance_factor: 1.0,
+            gradient_threshold: 0.70,
+            additive_increase: 5.0,
+            multiplicative_decrease: 0.90,
+            max_limit: 100.0,
+            update_interval_ms: 250,
         }
     }
 }
