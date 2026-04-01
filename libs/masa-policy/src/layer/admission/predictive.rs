@@ -93,7 +93,7 @@ impl Layer for PredAdmissionLayer {
                 return Err(Err(Status::new(
                     Code::DeadlineExceeded,
                     format!(
-                        "/EarlyReturn?src={}::{}",
+                        "/EarlyReturn?src={}::{},reason=LocalDeadlineExceeded",
                         self.rpc.service(),
                         self.rpc.method(),
                     ),
@@ -138,20 +138,34 @@ impl Layer for PredAdmissionLayer {
                 ctx,
                 result.key,
             );
-            if admission != AdmissionResult::Admit {
-                if admission == AdmissionResult::ShedLayer2 {
-                    self.shed_by_token_bucket.store(true, Ordering::Relaxed);
+            
+            match admission {
+                AdmissionResult::Admit => {}
+                AdmissionResult::ShedLayer1 => {
+                    return Err(Status::new(
+                        Code::DeadlineExceeded,
+                        format!(
+                            "/EarlyReturn?src={}::{}?last_rpc={}::{}&reason=Layer1",
+                            self.rpc.service(),
+                            self.rpc.method(),
+                            child_method_name.service(),
+                            child_method_name.method(),
+                        ),
+                    ));
                 }
-                return Err(Status::new(
-                    Code::DeadlineExceeded,
-                    format!(
-                        "/EarlyReturn?src={}::{}?last_rpc={}::{}",
-                        self.rpc.service(),
-                        self.rpc.method(),
-                        child_method_name.service(),
-                        child_method_name.method(),
-                    ),
-                ));
+                AdmissionResult::ShedLayer2 => {
+                    self.shed_by_token_bucket.store(true, Ordering::Relaxed);
+                    return Err(Status::new(
+                        Code::DeadlineExceeded,
+                        format!(
+                            "/EarlyReturn?src={}::{}?last_rpc={}::{}&reason=Layer2",
+                            self.rpc.service(),
+                            self.rpc.method(),
+                            child_method_name.service(),
+                            child_method_name.method(),
+                        ),
+                    ));
+                }
             }
 
             result.est_remaining
@@ -202,7 +216,7 @@ impl Layer for PredAdmissionLayer {
                     return Err(Err(Status::new(
                         Code::DeadlineExceeded,
                         format!(
-                            "/EarlyReturn?src={}::{}",
+                            "/EarlyReturn?src={}::{},reason=LocalDeadlineExceeded",
                             self.rpc.service(),
                             self.rpc.method(),
                         ),
@@ -553,7 +567,9 @@ impl PredictiveAdmission {
             .get_mean_floor_estimate(key)
             .unwrap_or(0)
             .min(time_left);
-        if time_now() > ctx.e2e_deadline().saturating_sub(est_remaining_floor) {
+        let est_child_cost = est_server.est_child_latency.get_mean_floor_estimate(key).unwrap_or(0).min(time_left);
+        let total_est = est_remaining_floor.saturating_add(est_child_cost);
+        if time_now() > ctx.e2e_deadline().saturating_sub(total_est) {
             return AdmissionResult::ShedLayer1;
         }
 
