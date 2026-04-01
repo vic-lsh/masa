@@ -72,7 +72,7 @@ pub struct PredParams {
     pub staleness_secs: f64,
     /// Utilization assumed when no (or stale) bottleneck data is available.
     pub staleness_default: f32,
-    /// Target bottleneck utilisation fraction for the token-bucket rate controller.
+    /// Target bottleneck utilization fraction for the token-bucket rate controller.
     pub util_target: f64,
     /// Multiplicative rate-adjustment factor per second.
     pub adjust_rate: f64,

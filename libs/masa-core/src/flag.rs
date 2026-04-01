@@ -47,14 +47,13 @@ compile_error!(
 compile_error!("Enable at most one admission control strategy: ac_pred | ac_rajomon");
 
 // === Abort constraints ===
-// abort_slack is a superset of abort_slo; enabling both explicitly is redundant
-// but not an error since abort_slack implies abort_slo via Cargo deps.
+// abort_slack and abort_slo are independent, mutually exclusive abort strategies.
 // abort_slack requires estimator for predictive abort checks.
+#[cfg(all(feature = "abort_slack", feature = "abort_slo"))]
+compile_error!("Enable at most one abort strategy: abort_slo | abort_slack");
+
 #[cfg(all(feature = "abort_slack", not(feature = "estimator")))]
 compile_error!("'abort_slack' requires 'estimator' for predictive abort checks");
-
-#[cfg(all(feature = "abort_slack", feature = "abort_slo"))]
-compile_error!("Enabling both 'abort_slack' and 'abort_slo' is redundant since 'abort_slack' implies 'abort_slo'");
 
 // === Estimator constraints ===
 // sched_pred and ac_pred require the estimator infrastructure.
