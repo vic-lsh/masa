@@ -99,7 +99,7 @@ impl Default for PredParams {
             initial_budget_rate: 5_000_000.0,
             prob_smooth: 1.0,
             er_threshold: 0.2,
-            er_alpha: 0.05,
+            er_alpha: 0.3,
         }
     }
 }
