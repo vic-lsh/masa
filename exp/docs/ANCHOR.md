@@ -1355,3 +1355,17 @@ With these fixes:
 
 ### Experiment design
 Same config as cp_simple (800, 1200, 1400, 1800, 2500 RPS, SLO=50ms, 60s each).
+
+### First run results (anchor_22a, before er_ema fix)
+
+| RPS | anchor_20 Mean(CoV) | anchor_22a Mean(CoV) | Δ Mean |
+|-----|---------------------|---------------------|--------|
+| 800 | 800 (0.1%) | 800 (0.0%) | 0 |
+| 1200 | 1182 (0.7%) | 1184 (2.0%) | +2 |
+| 1400 | 1254 (5.1%) | 1206 (14.8%) | -48 |
+| 1800 | 1451 (13.7%) | 1055 (24.5%) | -396 |
+| 2500 | 1601 (27.0%) | 927 (32.9%) | -674 |
+
+Ramp fixed (instant at 800→1200), but 1800/2500 oscillate badly. Root cause: `er_ema` used fixed per-event `rejection_alpha=0.01`. With should_admit called ~1800x/s and completions arriving one-at-a-time, each ER gives `er_rate=1.0`, causing noisy spikes that cross the threshold and trigger spurious explore↔exploit switching.
+
+**Fix:** Switch er_ema to use the same time-based alpha (from tau) as goodput_rate. This makes er_ema converge smoothly at the goodput EMA timescale. Also skip er_ema update during idle gaps (same condition as goodput_rate).
