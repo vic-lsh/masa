@@ -1231,10 +1231,34 @@ Replace utilization with goodput (completed requests within SLO per second) as t
 | 1800 | **1679 (12.6%)** | 1336 (10.6%) | 1451 (13.7%) |
 | 2500 | 1061 (25.2%) | 1345 (19.7%) | **1601 (27.0%)** ✅ best mean |
 
-### Open questions
+### Open problem: slow climb after load transitions (15-18s)
+
+After every load step transition, goodput drops to ~340-430 and takes 15-18s to reach the new target. The baseline (utilization-based AC) transitions instantly. This is a **self-limiting bootstrap loop** in the goodput EMA:
+
+**Root cause:** `initial_budget_rate = 5M µs/s` with est_child_cost ≈ 25,000 µs per ComposePost → initial budget supports only `5M / 25,000 = 200 req/s`. The goodput EMA must incrementally discover the true capacity through a positive feedback loop:
+
+1. Budget admits at rate X req/s (starting at ~200)
+2. X completions arrive → `goodput_rate` EMA moves toward `X * 25,000` µs/s
+3. `budget_rate = goodput_rate * (1 + probe_factor)`
+4. New admission rate ≈ `X * 1.05` (exploit) or `X * 2.0` (explore)
+5. Repeat — each cycle grows admission by 5% (exploit) or 2x (explore)
+
+To reach 800 req/s from 200: **exploit needs ~27 EMA cycles (~27s), explore needs ~8-10s** (EMA only partially converges per τ=1.0s). This matches the observed 15-18s ramp (explore mode is active at sub-saturation).
+
+**Note:** At cold start, est_child_cost = 0 (no data in LatencyMap), so the budget admits freely for the first ~0.5s. Once the first completions populate est_child_cost with ~25,000 µs, the budget becomes the bottleneck. The ramp also occurs at every step transition because the EMA decays toward zero during the ~2s gap between steps (completed_cost = 0 during the gap → instant_rate = 0 → EMA decays).
+
+**Why not just increase initial_budget_rate?** Tried 100M in anchor_18: eliminates the ramp at sub-saturation but at overload transitions (e.g., 1400→1800), the generous budget admits ALL 1800 requests instantly, floods the system, and goodput crashes to 820 permanently. The slow ramp accidentally acts as natural rate-limiting during overload transitions.
+
+**Why not skip EMA update on zero completions?** Tried in anchor_15: preserves goodput_rate across gaps, giving instant ramp. But the preserved (inflated) estimate causes catastrophic overshoot at overload — the controller retains a capacity estimate from the previous step that's too high for the current overloaded step.
+
+**Why not bypass budget in explore mode?** Tried in anchor_17: the `would_reject` tracking still updates rejection_ema even when not actually rejecting. The budget can't cover costs once est_child_cost populates, so `would_reject=true` → rejection_ema crosses threshold → switches to exploit mode prematurely.
+
+**The fundamental tension:** The same initial_budget_rate controls both cold-start discovery speed and overload transition behavior. High = fast ramp but floods at overload. Low = slow ramp but safe transitions. A real fix likely requires **decoupling the bootstrap mechanism from the overload control** — e.g., measuring offered cost rate from admitted-but-not-yet-completed requests, or using a separate fast-converging estimator for capacity discovery that doesn't feed back into the budget.
+
+**Current status:** Unsolved. The 15-18s ramp is within the 10s warmup period for steady-state metrics, so it doesn't affect the reported mean/CoV numbers. But it would hurt in production workloads with frequent load changes.
+
+### Other open questions
 
 1. **1800 RPS collapse:** After ~20s of stable operation at ~1600 goodput, a queuing cascade drops goodput to ~1050 and never fully recovers within the 60s step. The baseline handles this load fine (1679) without AC. The AC's cost-tracking inevitably engages at this load, causing a worse outcome than no AC at all. Can the AC detect that abort_slo alone is sufficient and stay disengaged?
 
-2. **Cold-start ramp (15-18s):** The initial_budget_rate=5M µs/s is too low for ~25ms-cost ComposePost requests (supports only ~200 req/s). Higher values flood overload. Could a smarter bootstrap (e.g., measuring offered cost rate from admitted-but-not-yet-completed requests) converge faster without flooding?
-
-3. **Cross-application generalization:** All results are on Socialnet ComposePost (SLO=50ms). Hotel has serial call graphs where the AC may behave differently. The parameters (rejection_threshold, probe_min) may need to be application-aware.
+2. **Cross-application generalization:** All results are on Socialnet ComposePost (SLO=50ms). Hotel has serial call graphs where the AC may behave differently. The parameters (rejection_threshold, probe_min) may need to be application-aware.
