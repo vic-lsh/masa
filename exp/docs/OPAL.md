@@ -765,3 +765,63 @@ Updated change: In explore mode, use `max(initial_budget_rate, goodput_rate * (1
 ### Experiment design (opal_9)
 Same config as cp_simple (800, 1200, 1400, 1800, 2500 RPS, SLO=50ms, 60s each).
 
+### Actual Outcomes (opal_9)
+
+**Status:** Regression ❌ — iterate
+
+**Code commit:** ecb9bdb6
+
+| RPS | anchor_20 Mean(CoV) | opal_9 Mean | opal_9 ER/s | Δ vs anchor_20 |
+|-----|---------------------|-------------|-------------|----------------|
+| 800 | 800 (0.1%) | 800 | 0 | 0 |
+| 1200 | 1182 (0.7%) | 956 | 244 | **-226** |
+| 1400 | 1254 (5.1%) | 1049 | 351 | **-205** |
+| 1800 | 1451 (13.7%) | 1184 | 615 | **-267** |
+| 2500 | 1601 (27.0%) | 1227 | 1270 | **-374** |
+
+**Key findings:**
+1. **Gap-freeze fix (change A) is fine.** The regression is caused entirely by the explore mode change (change B).
+2. **Explore mode with goodput_rate * 2.0 causes bang-bang oscillation.** Near saturation, `rejection_ema` oscillates around the 0.10 threshold. Budget jumps between explore (goodput * 2.0) and exploit (goodput * 1.05) — a 1.9x swing. This creates admission oscillation → rejection oscillation → mode switching oscillation.
+3. **Over-shedding at all overloaded RPS.** The oscillation means the system spends significant time in exploit mode with a depressed goodput_rate (from the over-admission burst during explore).
+4. **Root cause confirmed:** The explore/exploit budget ratio (2.0/1.05 = 1.9x) is too large. Need a smaller explore multiplier.
+
+**Decision:** Reduce probe_max to shrink the mode-switching jump.
+
+---
+
+## Iteration 10: Reduce probe_max to 0.2 — gentle explore mode (experiment opal_10)
+
+**Status:** Pending
+
+**Code commit:** TBD
+
+### Change
+In `policy_params.rs`, change `probe_max` from 1.0 to 0.2. This changes the explore mode budget from `goodput_rate * 2.0` to `goodput_rate * 1.2`.
+
+The gap-freeze fix from opal_9 is retained. The explore mode still uses `max(goodput_rate * (1 + probe_max), initial_budget_rate)`.
+
+### Hypothesis
+opal_9's oscillation was caused by the 1.9x budget jump between explore and exploit modes. With probe_max=0.2:
+- Explore budget = goodput_rate * 1.2
+- Exploit budget = goodput_rate * 1.05
+- Jump ratio = 1.2/1.05 = 1.14x — small enough that mode switching doesn't cause significant admission swings
+
+**Ramp speed from 800→1200:**
+- goodput_rate preserved at ~20M from 800 step
+- Explore budget = 20M * 1.2 = 24M → ~960 req/s initially
+- At 960 admitted: goodput converges to ~24M in ~1s (tau=1.0)
+- Next cycle: budget = 24M * 1.2 = 28.8M → ~1152 req/s
+- Next: ~1382 req/s → all 1200 admitted. Total ramp: ~2-3s vs anchor_20's 15s.
+
+**Overload behavior:** At 2500 RPS, once rejection_ema > 0.10, exploit budget = goodput_rate * 1.05. This is identical to anchor_20's exploit mode. The 1.14x jump when cycling back to explore should not cause meaningful instability.
+
+### Expected outcomes if hypothesis is correct:
+1. 800/1200: full admission, faster ramp than anchor_20
+2. 1400: near anchor_20 or better (gentle explore, no over-admission)
+3. 1800: close to anchor_20 (exploit mode dominates at overload)
+4. 2500: close to anchor_20 (same exploit behavior)
+5. No mode-switching oscillation (1.14x jump is too small to cause instability)
+
+### Experiment design (opal_10)
+Same config as cp_simple (800, 1200, 1400, 1800, 2500 RPS, SLO=50ms, 60s each).
+
