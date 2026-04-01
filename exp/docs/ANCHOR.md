@@ -967,3 +967,45 @@ The 15-18s ramp is caused by the budget being too small in explore mode. Skippin
 
 ### Experiment design
 Same config as cp_simple (800, 1200, 1400, 1800, 2500 RPS, SLO=50ms, 60s each).
+
+### Actual Outcomes (anchor_17)
+
+**Status:** Regression ❌ — reverted
+
+Ramp still present. Timeline analysis reveals the issue is NOT the budget check but the `would_reject` tracking: even in explore mode, the budget can't cover costs once est_child_cost populates (~25,000 µs), causing rejection_ema to cross the threshold before goodput_rate converges.
+
+Root cause of the entire ramp: `initial_budget_rate = 5M µs/s` supports only ~200 req/s at typical 25ms child costs. Need ~20M for 800 RPS. Baseline (utilization-based AC) has no ramp because it doesn't use a cost-based token bucket for initial admission.
+
+**Decision:** Revert. Simplest fix: increase initial_budget_rate.
+
+---
+
+## Iteration 18: Increase initial_budget_rate to 100M (experiment anchor_18)
+
+**Status:** Pending
+
+### Change
+Increase `initial_budget_rate` from 5M to 100M µs/s in policy_params.rs. This provides ~4000 req/s of initial budget at 25ms/request, far more than any expected load.
+
+Base: anchor_16 state (explore-mode uses initial_budget_rate directly in explore mode; now reverted back to anchor_13 threshold logic).
+
+Wait — anchor_16 was NOT reverted (only anchor_17 was reverted, which was on top of anchor_16). Let me check the current state.
+
+Actually, looking at the revert chain: anchor_16 (70e4fa28) was committed, then anchor_17 (540dbef4) was committed on top, then anchor_17 was reverted. So the current state IS anchor_16 + the revert of anchor_17 = effectively anchor_16's code.
+
+But anchor_16's explore mode uses `initial_budget_rate` directly as budget_rate, which at 5M is still too low. Increasing it to 100M should fix both the explore-mode budget AND the initial cold-start budget.
+
+### Hypothesis
+The 15-18s ramp is caused by the initial budget being too small for the actual per-request costs. With 100M µs/s initial budget:
+- Burst buffer = 100M * 0.005 = 500K µs = ~20 requests at 25ms/request
+- Budget supports ~4000 req/s at 25ms/request
+- Both explore mode and initial cold start have ample budget for all sub-saturation loads
+
+### Expected outcomes:
+1. Near-instant ramp (like baseline) — 800/1200 reach target within 1-2s
+2. 1400/1800/2500 goodput improves (more time at peak, less ramp waste)
+3. CoV maintains anchor_16 improvements
+4. No change to overload behavior once goodput_rate converges (100M only affects cold start)
+
+### Experiment design
+Same config as cp_simple (800, 1200, 1400, 1800, 2500 RPS, SLO=50ms, 60s each).
