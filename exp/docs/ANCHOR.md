@@ -119,3 +119,53 @@ The fast adjust_rate=2.0 is actually beneficial (it found the right level at 180
 
 ### Experiment design
 Same config as cp_simple (800, 1200, 1400, 1800, 2500 RPS, SLO=50ms, 60s each).
+
+### Actual Outcomes (anchor_2)
+
+**Status:** Regression ❌ — reverted
+
+| RPS | Baseline (CoV) | anchor_2 (CoV) | Delta vs Baseline |
+|-----|---------------|---------------|-------------------|
+| 800 | 800 (0.0%) | 800 (0.0%) | 0 |
+| 1200 | 1164 (4.1%) | 1190 (1.4%) | +26 |
+| 1400 | 1024 (9.1%) | 1086 (18.6%) | +62 |
+| 1800 | 1680 (12.7%) | **971 (19.1%)** | **-709** |
+| 2500 | 1061 (25.4%) | 1028 (31.4%) | -33 |
+
+**Key findings:**
+- Faster ER backstop (α=0.3) causes **over-shedding**, making oscillations worse at every RPS ≥1400.
+- **Catastrophic regression at 1800 RPS (-709).** Worst 1800 result across all experiments. ER sheds too aggressively during transient spikes → utilization craters → AC reopens violently → deeper boom-bust.
+- ER rates confirm over-shedding: 206/s at 1400, 641/s at 1800, 1273/s at 2500.
+- The faster ER backstop makes the control loop *more twitchy*, not less. It sheds harder during busts and creates even lower utilization readings, which cause the AC to reopen even more aggressively.
+- 1200 RPS still a bright spot (CoV 1.4%) — at moderate overload, quick ER helps. But this advantage disappears at higher loads.
+
+**Root cause insight:** Neither adjust_rate (iter 1) nor er_alpha (iter 2) can fix the oscillation because they both operate within the same flawed feedback loop. The core issue is *symmetric* adjustment: the AC opens as aggressively as it closes. After a rejection wave, low utilization triggers an equally aggressive reopen, flooding the system.
+
+**Decision:** Revert code change. Next iteration: structural fix — asymmetric adjust rates.
+
+---
+
+## Iteration 3: Asymmetric AC adjustment — slow reopen, fast close (experiment anchor_3)
+
+**Status:** Pending
+
+### Change
+Split `adjust_rate` into two rates in `policy_params.rs` and the AC logic in `predictive.rs`:
+- `adjust_rate_down = 2.0` (close fast on overload — preserves baseline 1800 behavior)
+- `adjust_rate_up = 0.5` (reopen slowly after rejection wave — prevents post-bust flood)
+
+This requires modifying the budget rate adjustment code in `predictive.rs` to use the appropriate rate depending on direction.
+
+### Hypothesis
+The boom-bust cycle has an asymmetric cause: overload detection needs to be fast (to prevent SLO violations), but recovery should be gradual (to prevent the flood that triggers the next crash). The baseline uses symmetric 2.0 for both — which is why it closes well but reopens too aggressively.
+
+With asymmetric rates (2.0 down / 0.5 up), after a rejection wave the AC ramps budget back up 4x slower than it ramps down. This prevents the "slam the door then throw it open" pattern that drives the limit cycle. The system should converge to a steady admission rate rather than oscillating between "full admit" and "full reject."
+
+### Expected outcomes if hypothesis is correct:
+1. Preserved goodput at 1800 RPS (fast close rate matches baseline behavior)
+2. Reduced oscillation amplitude at all overloaded RPS (slow reopen prevents post-bust flood)
+3. Slightly slower warmup transient at load transitions (acceptable tradeoff)
+4. Possible slight mean goodput reduction at 2500 if slow reopen undershoots optimal admission rate
+
+### Experiment design
+Same config as cp_simple (800, 1200, 1400, 1800, 2500 RPS, SLO=50ms, 60s each).
