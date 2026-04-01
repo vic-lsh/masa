@@ -801,3 +801,69 @@ The risk: slower response to genuine load changes (e.g., 800→2500 transition).
 
 ### Experiment design
 Same config as cp_simple (800, 1200, 1400, 1800, 2500 RPS, SLO=50ms, 60s each).
+
+### Actual Outcomes (anchor_14)
+
+**Status:** Regression ❌ — reverted
+
+| RPS | anchor_13 Mean(CoV) | anchor_14 Mean(CoV) | Δ Mean |
+|-----|----------------------|----------------------|--------|
+| 800 | 800 (0.0%) | 637 (29.2%) | **-163** |
+| 1200 | 1195 (2.1%) | 919 (33.8%) | **-276** |
+| 1400 | 1341 (9.3%) | 1020 (37.4%) | **-321** |
+| 1800 | 1509 (20.2%) | 1142 (39.0%) | **-367** |
+| 2500 | 1593 (30.3%) | 1233 (35.7%) | **-360** |
+
+Catastrophic regression at every RPS. tau=2.0 is far too slow — the EMA can't discover capacity and the threshold probe mode-switches chaotically.
+
+**Decision:** Revert immediately.
+
+### Timeline analysis (anchor_13)
+
+Visual inspection of `goodput_timeline.csv` reveals two distinct problems:
+
+**Problem 1: Slow ramp (~15-18s per load transition)**
+At every RPS step boundary, goodput drops to ~340-430 and takes 15-18s to climb back to capacity. Root cause: the ~2s gap between steps causes `completed_cost=0`, which drives `goodput_rate` EMA toward zero. Even with `probe_max=1.0`, `budget_rate = near_zero * 2.0` is still near zero. The EMA must rebuild from scratch each time.
+
+Example: 1200→1400 transition at t=101: goodput=334 → takes until t=115 to reach 1400. That's 14s of reduced throughput.
+
+**Problem 2: Overload oscillation at 1800 RPS (t=186+)**
+After reaching 1800 at t=170 and holding steady for ~6s, a crash at t=186 drops goodput from 1785→1142. Oscillates between 1000-1200 for the remaining ~12s. This is the same AC feedback oscillation — goodput dip → budget_rate drops → more rejection → deeper dip.
+
+**Key insight:** Problem 1 is the larger contributor to low mean goodput. At 1800 RPS, 18s of ramp + 6s of steady + 12s of oscillation means only ~20% of the 50s measurement window is at peak throughput.
+
+---
+
+## Iteration 15: Skip EMA update on zero completions (experiment anchor_15)
+
+**Status:** Pending
+
+### Change
+In `should_admit()`, skip the goodput_rate EMA update when `drained == 0` (no completions since last check). This preserves the controller's capacity estimate across load transition gaps.
+
+```rust
+if elapsed > 0.0 && drained > 0.0 {
+    let instant_rate = drained / elapsed;
+    let alpha = 1.0 - (-elapsed / p.tau).exp();
+    state.goodput_rate += alpha * (instant_rate - state.goodput_rate);
+}
+```
+
+Previously, when `drained == 0`, `instant_rate = 0` drives goodput_rate toward zero — exactly the wrong behavior during a load gap where the system is idle, not overloaded.
+
+### Hypothesis
+The 15-18s ramp at each load transition is caused by the goodput_rate EMA decaying toward zero during the ~2s gap between RPS steps. By skipping the update when there are no completions, the EMA retains its previous value. After the gap:
+- If new load ≤ previous capacity: the preserved goodput_rate admits freely (probe mode handles discovery)
+- If new load > previous capacity: the preserved goodput_rate is a reasonable starting point for the higher load, much better than zero
+
+This should eliminate the slow ramp without affecting steady-state behavior (where `drained > 0` always).
+
+### Expected outcomes if hypothesis is correct:
+1. Dramatic reduction in ramp time at load transitions (from 15-18s to ~2-3s)
+2. Mean goodput improvement at all RPS levels (more time at peak throughput)
+3. 800/1200 remain perfect (no change to sub-saturation behavior)
+4. CoV may improve at 1800/2500 (less time in ramp = less variance)
+5. Overload oscillation at 1800 still present (this fix doesn't address it)
+
+### Experiment design
+Same config as cp_simple (800, 1200, 1400, 1800, 2500 RPS, SLO=50ms, 60s each).
