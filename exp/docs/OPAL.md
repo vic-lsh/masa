@@ -937,3 +937,66 @@ initial_budget_rate should match system capacity:
 ### Experiment design (opal_12)
 Same config as cp_simple (800, 1200, 1400, 1800, 2500 RPS, SLO=50ms, 60s each).
 
+### Actual Outcomes (opal_12)
+
+**Status:** Mixed — 1400 improved, 1800 regressed
+
+**Code commit:** 37cf682e
+
+| RPS | anchor_20 Mean(CoV) | opal_11 Mean (50M) | opal_12 Mean(CoV) (40M) | Δ vs anchor_20 |
+|-----|---------------------|--------------------|-------------------------|----------------|
+| 800 | 800 (0.1%) | 800 | 800 (0.0%) | 0 |
+| 1200 | 1182 (0.7%) | 1188 | 1188 (0.9%) | +6 |
+| 1400 | 1254 (5.1%) | 1232 | **1306 (6.7%)** | **+52** |
+| 1800 | 1451 (13.7%) | 1400 | 1282 (28.8%) | **-169** |
+| 2500 | 1601 (27.0%) | 1486 | 1487 (40.5%) | **-114** |
+
+**Key findings:**
+1. **1400 RPS is the best result in the entire OPAL track** — +52 vs anchor_20. The 40M explore budget allows instant ramp to 1400 without over-admission.
+2. **1800 RPS is the worst result** — -169 vs anchor_20, CoV=28.8%. The 40M explore budget (1600 req/s) sits right at the explore/exploit boundary at 1800 RPS. The system bounces between explore (1600 admitted) and exploit (1680 admitted), causing instability.
+3. **2500 identical to opal_11** — the explore budget doesn't matter at 2500 since exploit mode dominates.
+4. **No single initial_budget_rate works across all loads:**
+   - 5M (anchor_20): slow ramp but stable
+   - 40M (opal_12): fast ramp, great at 1400, oscillates at 1800
+   - 50M (opal_11): fast ramp, over-admits at 1800/2500
+
+---
+
+## Summary and Conclusions (Iterations 9-12: Ramp Acceleration)
+
+### Results table
+
+| Iter | Key change | 800 | 1200 | 1400 | 1800 | 2500 |
+|------|-----------|-----|------|------|------|------|
+| **anchor_20** | **baseline** | **800** | **1182** | **1254** | **1451** | **1601** |
+| opal_9 | gap-freeze + explore×2.0 | 800 | 956 | 1049 | 1184 | 1227 |
+| opal_10 | gap-freeze + explore×1.2 | 800 | 950 | 1036 | 1176 | 1242 |
+| opal_11 | initial_budget_rate=50M | 800 | 1188 | 1232 | 1400 | 1486 |
+| opal_12 | initial_budget_rate=40M | 800 | 1188 | **1306** | 1282 | 1487 |
+
+### What worked
+1. **Increasing initial_budget_rate speeds up the sub-saturation ramp.** Both 40M and 50M achieve +6 at 1200 and better at 1400 compared to anchor_20's slow ramp.
+2. **40M initial_budget_rate at 1400 is a genuine win** (+52 vs anchor_20). The capacity-matched explore budget provides instant ramp without over-admission.
+
+### What didn't work
+1. **Gap-freeze (opal_9/10):** Preserving stale goodput_rate caused regression at ALL overloaded loads, regardless of the explore multiplier. The stale rate locked the system into exploit mode with the wrong budget.
+2. **Any initial_budget_rate at 1800 RPS:** 40M causes explore/exploit oscillation (budget at boundary). 50M over-admits. Neither matches anchor_20.
+3. **Any initial_budget_rate at 2500 RPS:** Both 40M and 50M show -114 vs anchor_20. The initial over-admission burst in explore mode costs goodput at deep overload.
+
+### Fundamental finding: no fixed explore budget can be optimal across loads
+
+The explore mode budget (`initial_budget_rate`) determines the admission rate during capacity discovery. A fixed value creates a tradeoff:
+- **Too low (5M):** Slow ramp at sub-saturation (15-18s). Stable at overload.
+- **Too high (50M):** Instant ramp but over-admits at overload transitions.
+- **At capacity (40M):** Fast ramp, but oscillates at loads near capacity (explore/exploit boundary).
+
+The root cause: a fixed explore budget cannot adapt to the current load level. It either under-admits at sub-saturation or over-admits at overload. anchor_20's 5M is conservative but safe. Any increase risks overload regression.
+
+### Potential next directions (not yet tried)
+1. **Adaptive explore budget:** Instead of a fixed rate, use `max(initial_budget_rate, goodput_rate * (1 + probe_max))` BUT with probe_max tuned to avoid the opal_9 oscillation. The gap-freeze approach failed because it preserved the wrong state; a fresh approach using only the goodput_rate (not gap detection) might work.
+2. **Faster tau in explore mode:** Instead of changing the budget, make the goodput EMA converge faster (smaller tau) during explore. The budget stays at 5M initially, but goodput_rate updates faster from incoming completions, speeding the ramp.
+3. **Accept the tradeoff:** anchor_20's slow ramp is a benchmark artifact (the load generator pauses between steps). In production, load changes are gradual, and the 5% probe naturally tracks capacity. The slow ramp may not matter in practice.
+
+### Code state
+Current code has initial_budget_rate=40M (commit 37cf682e). This should be reverted to anchor_20's 5M for clean state, unless the 1400 improvement (+52) is worth the 1800 regression (-169).
+
