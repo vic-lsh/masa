@@ -74,8 +74,10 @@ pub struct PredParams {
     pub staleness_default: f32,
     /// Target bottleneck utilisation fraction for the token-bucket rate controller.
     pub util_target: f64,
-    /// Multiplicative rate-adjustment factor per second.
-    pub adjust_rate: f64,
+    /// Multiplicative rate-adjustment factor per second (budget decrease when util > target).
+    pub adjust_rate_down: f64,
+    /// Multiplicative rate-adjustment factor per second (budget increase when util < target).
+    pub adjust_rate_up: f64,
     /// Maximum burst window in seconds (token-bucket capacity = initial_budget_rate × max_burst_secs).
     pub max_burst_secs: f64,
     /// Initial token-bucket refill rate in µs of compute budget per second.
@@ -94,7 +96,8 @@ impl Default for PredParams {
             staleness_secs: 2.0,
             staleness_default: 0.5,
             util_target: 0.80,
-            adjust_rate: 2.0,
+            adjust_rate_down: 2.0,
+            adjust_rate_up: 0.5,
             max_burst_secs: 0.005,
             initial_budget_rate: 5_000_000.0,
             prob_smooth: 1.0,
