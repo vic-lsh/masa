@@ -327,15 +327,8 @@ impl AdmissionController {
             state.goodput_rate += alpha * (instant_rate - state.goodput_rate);
         }
 
-        // Exploit vs explore: when rejections are happening, track observed
-        // goodput tightly; otherwise admit freely at the generous initial rate.
-        let budget_rate = if state.rejection_ema > p.rejection_threshold {
-            // Exploit mode: tight tracking of observed goodput
-            state.goodput_rate * (1.0 + p.probe_min)
-        } else {
-            // Explore mode: admit freely using generous initial budget
-            p.initial_budget_rate
-        };
+        // Budget rate: always track observed goodput tightly.
+        let budget_rate = state.goodput_rate * (1.0 + p.probe_min);
 
         // Refill tokens, capped at burst limit.
         // Dynamic floor: ensure the budget can always hold at least one
@@ -347,16 +340,27 @@ impl AdmissionController {
             state.budget_us = max_budget;
         }
 
-        // Admission decision + rejection EMA update.
-        let rejected = if state.budget_us >= cost {
+        // Check if budget would reject.
+        let would_reject = state.budget_us < cost;
+
+        if !would_reject {
             state.budget_us -= cost;
-            false
-        } else {
-            true
-        };
-        state.rejection_ema +=
-            p.rejection_alpha * ((if rejected { 1.0 } else { 0.0 }) - state.rejection_ema);
-        !rejected
+        }
+
+        // Update rejection EMA based on what the budget *would* do.
+        let rejected_value = if would_reject { 1.0 } else { 0.0 };
+        state.rejection_ema += p.rejection_alpha * (rejected_value - state.rejection_ema);
+
+        // Explore mode: always admit, but deduct cost to keep budget accurate.
+        if state.rejection_ema <= p.rejection_threshold {
+            if would_reject {
+                state.budget_us -= cost; // May go negative — tracks debt
+            }
+            return true;
+        }
+
+        // Exploit mode: respect the budget decision.
+        !would_reject
     }
 }
 
