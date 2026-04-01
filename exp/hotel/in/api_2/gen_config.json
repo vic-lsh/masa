@@ -2,9 +2,9 @@
   "Repeats": 1,
   "Apis": ["Search", "Reservation"],
   "Slos": [200000, 1000000],
-  "Rps": [100, 400, 800, 1000, 1200, 1400, 1600, 1800, 2000],
+  "Rps": [100, 1000, 1600, 1800, 2000],
   "Gap": "exp",
-  "WarmupSecs": 20,
+  "WarmupSecs": 25,
   "DurationSecs": 40,
   "Addr": "http://hotel_frontend:8660",
   "Timeouts_ms": [5000, 5000]

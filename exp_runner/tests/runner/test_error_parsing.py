@@ -60,6 +60,53 @@ class TestErrorParsing:
 
         assert df.iloc[2]["error_type"] == "Generic"
 
+    def test_early_return_with_reason_layer1(self):
+        df = pd.DataFrame(
+            {
+                "error": [
+                    "/EarlyReturn?src=frontend.Frontend::HandleSearch?last_rpc=reservation.Reservation::CheckAvailability&reason=Layer1"
+                ]
+            }
+        )
+        df = _parse_error_columns(df)
+
+        assert df.iloc[0]["error_type"] == "EarlyReturn"
+        assert df.iloc[0]["er_service"] == "frontend.Frontend"
+        assert df.iloc[0]["er_method"] == "HandleSearch"
+        assert (
+            df.iloc[0]["er_last_child"]
+            == "reservation.Reservation::CheckAvailability"
+        )
+        assert df.iloc[0]["er_reason"] == "Layer1"
+
+    def test_early_return_with_reason_local_deadline(self):
+        df = pd.DataFrame(
+            {
+                "error": [
+                    "/EarlyReturn?src=frontend.Frontend::HandleSearch,reason=LocalDeadlineExceeded"
+                ]
+            }
+        )
+        df = _parse_error_columns(df)
+
+        assert df.iloc[0]["error_type"] == "EarlyReturn"
+        assert df.iloc[0]["er_service"] == "frontend.Frontend"
+        assert df.iloc[0]["er_method"] == "HandleSearch"
+        assert df.iloc[0]["er_reason"] == "LocalDeadlineExceeded"
+
+    def test_early_return_without_reason(self):
+        """Old-style abort_slo errors without reason= should have er_reason=None."""
+        df = pd.DataFrame(
+            {
+                "error": [
+                    "/EarlyReturn?src=frontend::Login?last_rpc=user.Service::GetUser"
+                ]
+            }
+        )
+        df = _parse_error_columns(df)
+
+        assert df.iloc[0]["er_reason"] is None or pd.isna(df.iloc[0]["er_reason"])
+
     def test_no_error_column(self):
         df = pd.DataFrame({"other": [1, 2, 3]})
         df = _parse_error_columns(df)
