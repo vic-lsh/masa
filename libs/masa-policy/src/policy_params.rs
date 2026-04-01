@@ -88,6 +88,8 @@ pub struct PredParams {
     pub er_threshold: f64,
     /// Slow EMA alpha for ER tracker (averages over oscillation cycles).
     pub er_alpha: f64,
+    /// Hold budget_rate steady for this long (seconds) after transitioning from reducing to increasing.
+    pub cooldown_secs: f64,
 }
 
 impl Default for PredParams {
@@ -103,6 +105,7 @@ impl Default for PredParams {
             prob_smooth: 1.0,
             er_threshold: 0.2,
             er_alpha: 0.05,
+            cooldown_secs: 1.0,
         }
     }
 }
