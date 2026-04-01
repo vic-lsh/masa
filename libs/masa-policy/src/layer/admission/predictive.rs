@@ -353,16 +353,12 @@ impl AdmissionController {
         if elapsed > 0.0 && elapsed < p.idle_threshold {
             let instant_rate = drained / elapsed;
 
-            // Asymmetric alpha: fast rise (tau), slow fall scaled by ER rate.
-            // Low ER (healthy system) → slow decay → dips don't amplify.
-            // High ER (deep overload) → fast decay → budget tracks crash.
-            // The scaling is continuous, avoiding binary mode-switch coupling.
+            // Asymmetric alpha: fast rise (tau), slow fall (tau * factor).
+            // Prevents transient goodput crashes from depressing the budget.
             let tau_eff = if instant_rate >= state.goodput_rate {
                 p.tau
             } else {
-                // Scale tau_down: at er_ema=0 → tau*factor, at er_ema≥0.20 → tau*1.0.
-                let er_scale = (1.0 - state.er_ema / 0.20).clamp(0.0, 1.0);
-                p.tau * (1.0 + (p.tau_down_factor - 1.0) * er_scale)
+                p.tau * p.tau_down_factor
             };
             let alpha = 1.0 - (-elapsed / tau_eff).exp();
             state.goodput_rate += alpha * (instant_rate - state.goodput_rate);
