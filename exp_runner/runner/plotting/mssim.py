@@ -525,6 +525,118 @@ def _plot_goodput_timeline(
     plt.close(fig)
 
 
+def _plot_early_return_timeline(
+    output_path: Path,
+    rps_sequence: List[float],
+    policy_data_by_rps: Dict[str, Dict[float, pd.DataFrame]],
+    *,
+    duration_sec: float,
+    window_sec: float = 2.0,
+) -> None:
+    """Plot early-return rate over time, stitching RPS periods in their original run order."""
+    fig, ax = plt.subplots(figsize=(14, 6))
+    cmap = plt.get_cmap("tab10")
+    csv_rows: List[Dict[str, object]] = []
+
+    for idx, (policy, rps_data) in enumerate(policy_data_by_rps.items()):
+        all_times: List[float] = []
+        all_er_rate: List[float] = []
+
+        for period_idx, rps in enumerate(rps_sequence):
+            df = rps_data.get(rps, pd.DataFrame())
+            if df.empty:
+                continue
+
+            start_at = pd.to_numeric(df["start_at"], errors="coerce")
+            if start_at.dropna().empty:
+                continue
+
+            t_min = start_at.min()
+            rel_sec = (start_at - t_min) / 1_000_000.0
+            abs_sec = rel_sec + period_idx * duration_sec
+
+            # Early-return mask
+            if "error_type" in df.columns:
+                is_er = (df["error_type"] == "EarlyReturn").values
+            elif "error" in df.columns:
+                is_er = df["error"].astype(str).str.startswith("/EarlyReturn").values
+            else:
+                is_er = np.zeros(len(df), dtype=bool)
+
+            order = np.argsort(abs_sec.values)
+            t_arr = abs_sec.values[order]
+            er_arr = is_er[order]
+
+            step = 0.5
+            t_centers = np.arange(
+                period_idx * duration_sec + window_sec / 2,
+                (period_idx + 1) * duration_sec - window_sec / 2 + step,
+                step,
+            )
+            for tc in t_centers:
+                lo, hi = tc - window_sec / 2, tc + window_sec / 2
+                mask = (t_arr >= lo) & (t_arr < hi)
+                all_times.append(tc)
+                all_er_rate.append(float(er_arr[mask].sum()) / window_sec)
+
+        if not all_times:
+            continue
+
+        for t, er in zip(all_times, all_er_rate):
+            csv_rows.append({"Time": t, "Policy": policy, "EarlyReturnRate": er})
+
+        color = get_policy_color(policy)
+        if color is None:
+            color = cmap(idx % cmap.N)
+        ax.plot(
+            all_times,
+            all_er_rate,
+            label=get_policy_display_name(policy),
+            color=color,
+            linewidth=1.5,
+        )
+
+    if csv_rows:
+        csv_path = output_path.with_suffix(".csv")
+        pd.DataFrame(csv_rows).to_csv(csv_path, index=False)
+
+    # Offered RPS as a filled step area
+    step_t = [0.0]
+    step_rps = [rps_sequence[0]]
+    for i, rps in enumerate(rps_sequence):
+        t_start = i * duration_sec
+        if i > 0:
+            step_t.append(t_start)
+            step_rps.append(rps)
+            ax.axvline(t_start, linestyle="--", color="grey", alpha=0.4, linewidth=1)
+        step_t.append(t_start + duration_sec)
+        step_rps.append(rps)
+    ax.fill_between(
+        step_t, step_rps, step=None, color="grey", alpha=0.12, label="Offered RPS"
+    )
+    ax.step(
+        step_t,
+        step_rps,
+        where="post",
+        color="grey",
+        linewidth=1.5,
+        linestyle="-",
+        alpha=0.5,
+    )
+
+    ax.set_xlabel("Time (s)")
+    ax.set_ylabel("RPS")
+    ax.set_title(f"Early-return timeline ({window_sec:g}s window)")
+    ax.set_xlim(left=0, right=len(rps_sequence) * duration_sec)
+    ax.set_ylim(bottom=0)
+    ax.grid(True, which="both", linestyle="--", alpha=0.4)
+    ax.legend()
+    fig.tight_layout()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_path, dpi=300)
+    plt.close(fig)
+
+
 def _resolve_iteration_ids(data_dir: Path, repeats: int) -> List[int]:
     iteration_dirs = [p for p in data_dir.iterdir() if p.is_dir() and p.name.isdigit()]
     iteration_ids = sorted([int(p.name) for p in iteration_dirs])
@@ -706,6 +818,12 @@ def generate_plots(args) -> None:
             policy_data,
             duration_sec=duration_sec,
             slo_ms=slo_ms,
+        )
+        _plot_early_return_timeline(
+            iteration_output / "early_return_timeline.png",
+            rps_sequence,
+            policy_data,
+            duration_sec=duration_sec,
         )
 
         # Plot early return breakdowns
