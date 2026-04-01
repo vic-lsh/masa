@@ -72,3 +72,50 @@ At 0.5/s, the same 500ms spike only cuts the budget by ~22% — a gentler correc
 
 ### Experiment design
 Same config as cp_simple (800, 1200, 1400, 1800, 2500 RPS, SLO=50ms, 60s each). This directly tests whether the oscillation amplitude decreases at each load point.
+
+### Actual Outcomes (anchor_1)
+
+**Status:** Regression ❌ — reverted
+
+| RPS | Baseline Goodput (CoV) | anchor_1 Goodput (CoV) | Delta |
+|-----|----------------------|----------------------|-------|
+| 800 | 800 (0.0%) | 800 (0.0%) | 0 |
+| 1200 | 1164 (4.1%) | 1195 (1.4%) | +31 |
+| 1400 | 1024 (9.1%) | 1188 (18.2%) | +164 |
+| 1800 | 1680 (12.7%) | **1178 (18.3%)** | **-502** |
+| 2500 | 1061 (25.4%) | 1331 (22.7%) | +270 |
+
+**Key findings:**
+- Reducing adjust_rate from 2.0 to 0.5 slowed oscillation *frequency* but not *amplitude*. The system still boom-busts; it just does it more slowly.
+- **Catastrophic regression at 1800 RPS (-502, -30%).** The slower controller oscillates around a worse operating point. The baseline's fast adjust_rate was actually good at finding the right admission level at this load.
+- Improved 1200 (+31, CoV 1.4%) and 2500 (+270, CoV 22.7%), but the 1800 regression makes this a net loss.
+- The oscillation is a **limit cycle**, not a damping problem — simply reducing controller gain does not eliminate it.
+
+**Root cause insight:** The AC doesn't know its own rejections cause the utilization drop. It sees low util → admits more → overload → rejects → low util → cycle repeats. The ER backstop (α=0.05) is too slow to signal "we're actively shedding" before the budget reopens.
+
+**Decision:** Revert code change, keep insight.
+
+---
+
+## Iteration 2: Speed up ER backstop (experiment anchor_2)
+
+**Status:** Pending
+
+### Change
+Revert `adjust_rate` back to 2.0. Increase `er_alpha` from 0.05 to 0.3 in `policy_params.rs`. This makes the ER tracker respond 6x faster to early return events.
+
+### Hypothesis
+The limit cycle is driven by the AC reopening admission after a rejection wave because the ER tracker (α=0.05) is too slow to maintain high pseudo_util during the "queue drain" phase. By the time the ER signal rises, the AC has already re-admitted a burst.
+
+At α=0.3, the ER tracker reaches pseudo_util saturation (ema ≥ er_threshold=0.2) after ~2-3 ER events instead of ~5-6. This should keep the AC constrained during rejection-induced low-utilization periods, preventing the premature reopening that triggers the next boom cycle.
+
+The fast adjust_rate=2.0 is actually beneficial (it found the right level at 1800 RPS in baseline), so we keep it — we just need the ER backstop to be fast enough to prevent overshoot on the rebound.
+
+### Expected outcomes if hypothesis is correct:
+1. Preserved goodput at 1800 RPS (near baseline ~1680)
+2. Reduced oscillation amplitude at all overloaded RPS levels
+3. Faster convergence after load transitions (ER signal catches up to AC decisions)
+4. Possible slight reduction in mean goodput at moderate overload (1200-1400) if ER backstop is too aggressive
+
+### Experiment design
+Same config as cp_simple (800, 1200, 1400, 1800, 2500 RPS, SLO=50ms, 60s each).
