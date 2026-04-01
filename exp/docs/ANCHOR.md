@@ -774,3 +774,30 @@ Same config as cp_simple (800, 1200, 1400, 1800, 2500 RPS, SLO=50ms, 60s each).
 4. **CoV still elevated at 1800 (20.2%) and 2500 (30.3%)** — the remaining problem is oscillation during sustained overload, not the probe mechanism.
 
 **Decision:** Keep. anchor_13 is the new best. Next: tackle CoV at high load.
+
+---
+
+## Iteration 14: Increase EMA time constant (experiment anchor_14)
+
+**Status:** Pending
+
+### Change
+Increase `tau` from 1.0 to 2.0 in `policy_params.rs`. This doubles the smoothing window for the goodput rate EMA.
+
+### Hypothesis
+The overload oscillation (CoV 20-30% at 1800/2500) is driven by the goodput EMA (tau=1.0s) being reactive enough to create feedback oscillations. A transient goodput dip (say, a burst of SLO misses) causes goodput_rate to drop within ~1s, which reduces budget_rate, which reduces admission, which can cause further goodput drops.
+
+At tau=2.0, the EMA needs ~4s (2τ) to respond to a sustained change, smoothing out transient dips. The budget_rate becomes a slower-moving average of goodput, reducing oscillation amplitude.
+
+The sub-saturation behavior is unaffected — the threshold probe (probe_max=1.0 when rejection_ema < 0.02) dominates at sub-saturation regardless of tau.
+
+The risk: slower response to genuine load changes (e.g., 800→2500 transition). But with 10s warmup excluded from analysis and 60s per step, there's ample time for convergence.
+
+### Expected outcomes if hypothesis is correct:
+1. Reduced CoV at 1800 and 2500 (smoother budget_rate = less oscillation)
+2. Maintained mean goodput (or slight improvement from fewer wasted oscillation troughs)
+3. 800/1200/1400 unchanged (threshold probe handles sub-saturation)
+4. Possible slightly slower warmup at load transitions
+
+### Experiment design
+Same config as cp_simple (800, 1200, 1400, 1800, 2500 RPS, SLO=50ms, 60s each).
