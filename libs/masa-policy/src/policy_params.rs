@@ -95,7 +95,7 @@ impl Default for PredParams {
         Self {
             staleness_secs: 2.0,
             staleness_default: 0.5,
-            util_target: 0.80,
+            util_target: 0.90,
             adjust_rate_down: 2.0,
             adjust_rate_up: 0.5,
             max_burst_secs: 0.005,
@@ -163,7 +163,7 @@ mod tests {
         let p = PolicyParams::default();
         assert_eq!(p.rajomon.max_token, 100);
         assert!(p.rajomon.price_cap <= p.rajomon.max_token);
-        assert_eq!(p.pred.util_target, 0.80);
+        assert_eq!(p.pred.util_target, 0.90);
     }
 
     #[test]
@@ -174,7 +174,7 @@ mod tests {
         // Other rajomon fields should be defaults
         assert_eq!(p.rajomon.price_update_rate_ms, 10);
         // pred fields should be defaults
-        assert_eq!(p.pred.util_target, 0.80);
+        assert_eq!(p.pred.util_target, 0.90);
     }
 
     #[test]
