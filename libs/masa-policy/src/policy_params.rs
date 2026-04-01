@@ -66,47 +66,32 @@ impl Default for RajomonParams {
 
 /// Tunable parameters for the predictive admission control policy.
 ///
-/// Uses a goodput-tracking rate controller: the token-bucket refill rate
-/// tracks observed successful completion throughput (in µs/s) plus a
-/// probe margin, replacing the previous utilization-based feedback loop.
-///
-/// The probe margin switches between two modes based on the rejection rate:
-/// - **Explore** (`probe_max`): used when rejection rate is below
-///   `rejection_threshold`, allowing aggressive capacity discovery.
-/// - **Exploit** (`probe_min`): used when rejection rate exceeds the
-///   threshold, locking to tight goodput tracking during overload.
+/// Uses a Vegas-style concurrency limiter: controls the number of in-flight
+/// requests at ingress, adapting the limit using a latency-based gradient
+/// (ratio of no-load latency to current average latency).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct PredParams {
-    /// Maximum burst window in seconds (token-bucket capacity = budget_rate × max_burst_secs).
-    pub max_burst_secs: f64,
-    /// Initial token-bucket refill rate in µs of compute budget per second.
-    /// Used as bootstrap value before real completions arrive.
-    pub initial_budget_rate: f64,
-    /// Minimum probe factor — tight tracking during overload (exploit mode).
-    /// E.g., 0.05 means budget_rate = goodput_rate * 1.05.
-    pub probe_min: f64,
-    /// Maximum probe factor — aggressive exploration at sub-saturation (explore mode).
-    /// E.g., 1.0 means budget_rate = goodput_rate * 2.0.
-    pub probe_max: f64,
-    /// Per-decision EMA coefficient for the rejection rate tracker.
-    pub rejection_alpha: f64,
-    /// Rejection rate threshold for switching from explore to exploit mode.
-    pub rejection_threshold: f64,
-    /// EMA time constant in seconds for the goodput rate estimator.
-    pub tau: f64,
+    /// Initial concurrency limit. Generous start avoids slow ramp.
+    /// At 25ms avg latency, 100 concurrent ≈ 4000 req/s theoretical.
+    pub initial_limit: f64,
+    /// EMA alpha for min_latency upward decay. New lows are adopted instantly;
+    /// this alpha controls how quickly the floor drifts up when latencies rise.
+    pub min_latency_alpha: f64,
+    /// EMA time constant (seconds) for smoothed average latency.
+    pub avg_latency_tau: f64,
+    /// Multiplier for queue allowance = factor * sqrt(limit).
+    /// Controls how aggressively the limiter probes above equilibrium.
+    pub queue_allowance_factor: f64,
 }
 
 impl Default for PredParams {
     fn default() -> Self {
         Self {
-            max_burst_secs: 0.005,
-            initial_budget_rate: 5_000_000.0,
-            probe_min: 0.05,
-            probe_max: 1.0,
-            rejection_alpha: 0.01,
-            rejection_threshold: 0.10,
-            tau: 1.0,
+            initial_limit: 100.0,
+            min_latency_alpha: 0.001,
+            avg_latency_tau: 0.5,
+            queue_allowance_factor: 1.0,
         }
     }
 }
@@ -167,8 +152,8 @@ mod tests {
         let p = PolicyParams::default();
         assert_eq!(p.rajomon.max_token, 100);
         assert!(p.rajomon.price_cap <= p.rajomon.max_token);
-        assert_eq!(p.pred.probe_min, 0.05);
-        assert_eq!(p.pred.tau, 1.0);
+        assert_eq!(p.pred.initial_limit, 100.0);
+        assert_eq!(p.pred.avg_latency_tau, 0.5);
     }
 
     #[test]
@@ -179,7 +164,7 @@ mod tests {
         // Other rajomon fields should be defaults
         assert_eq!(p.rajomon.price_update_rate_ms, 10);
         // pred fields should be defaults
-        assert_eq!(p.pred.probe_min, 0.05);
+        assert_eq!(p.pred.initial_limit, 100.0);
     }
 
     #[test]
@@ -187,6 +172,6 @@ mod tests {
         let p: PolicyParams = serde_json::from_str("{}").unwrap();
         let d = PolicyParams::default();
         assert_eq!(p.rajomon.max_token, d.rajomon.max_token);
-        assert_eq!(p.pred.probe_min, d.pred.probe_min);
+        assert_eq!(p.pred.initial_limit, d.pred.initial_limit);
     }
 }
