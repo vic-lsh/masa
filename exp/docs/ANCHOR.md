@@ -644,3 +644,30 @@ The goodput-tracking controller measures *output* (completed requests within SLO
 
 ### Experiment design
 Same config as cp_simple (800, 1200, 1400, 1800, 2500 RPS, SLO=50ms, 60s each). Direct comparison to anchor_3 (best parameter-tuned result) and baseline (no AC changes).
+
+### Actual Outcomes (anchor_11)
+
+**Status:** Mixed — keep, iterate
+
+| RPS | Baseline Mean(CoV) | anchor_3 Mean(CoV) | anchor_11 Mean(CoV) | Δ vs Baseline | Δ vs anchor_3 |
+|-----|---------------------|---------------------|----------------------|---------------|---------------|
+| 800 | 800 (0.0%) | 800 (0.0%) | 770 (1.7%) | -30 | -30 |
+| 1200 | 1164 (4.0%) | 1180 (3.2%) | 1158 (4.7%) | -6 | -22 |
+| 1400 | 1024 (9.1%) | 1246 (5.5%) | 1327 (9.3%) | **+303** | **+81** |
+| 1800 | 1679 (12.6%) | 1336 (10.6%) | 1524 (18.3%) | -155 | **+188** |
+| 2500 | 1061 (25.2%) | 1345 (19.7%) | 1618 (29.4%) | **+557** | **+273** |
+
+(Analysis via `exp/scripts/analyze_timeline.py` — per-0.5s timeline, 10s warmup excluded per step.)
+
+**Key findings:**
+1. **Best mean goodput at 1400 and 2500 RPS** across all experiments — +303 and +557 vs baseline. The goodput-tracking approach finds a higher operating point at deep overload.
+2. **1800 RPS partially recovered** — +188 vs anchor_3 (which was -343 vs baseline). Still -155 vs baseline but best AC result at 1800.
+3. **800 RPS regression (-30)** — mild cold-start shedding. probe_factor=0.05 is too conservative to discover capacity from cold start. The controller converges to ~770 instead of 800.
+4. **CoV is worse** at all overloaded RPS — the controller oscillates at a higher operating point but doesn't dampen swings. Median at 1800 is 1704 (vs mean 1524), indicating periodic deep dips.
+5. **Monotonic mean goodput** — 770 < 1158 < 1327 < 1524 < 1618. The 1400 < 1800 anomaly is eliminated.
+
+**Two problems to fix:**
+1. Sub-saturation shedding (800 RPS: -30, should be 0)
+2. High CoV (oscillation not eliminated, just shifted to higher operating point)
+
+**Decision:** Keep goodput-tracking approach, iterate on convergence and stability.
