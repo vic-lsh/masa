@@ -254,3 +254,64 @@ Combined with 4:1 asymmetry (down=2.0, up=0.5), this should let 1800 run without
 
 ### Experiment design
 Same config as cp_simple (800, 1200, 1400, 1800, 2500 RPS, SLO=50ms, 60s each).
+
+### Actual Outcomes (anchor_5)
+
+**Status:** Regression ❌ — reverted
+
+| RPS | anchor_3 (CoV) | anchor_5 (CoV) | Delta vs anchor_3 |
+|-----|---------------|---------------|-------------------|
+| 800 | 800 (0.0%) | 800 (0.0%) | 0 |
+| 1200 | 1187 (3.2%) | 1190 (1.2%) | +3 |
+| 1400 | 1300 (5.5%) | 1219 (6.6%) | **-81** |
+| 1800 | 1440 (10.6%) | 1269 (11.9%) | **-171** |
+| 2500 | 1503 (19.6%) | 1311 (18.3%) | **-192** |
+
+**Key findings:**
+- util_target=0.90 is too high. AC engages too late → overload builds → deep crashes (min 992 at 1800). The system's saturation is ~1400-1500 RPS; 0.90 leaves no headroom.
+- 1800 got WORSE, not better (-171 vs anchor_3, -411 vs baseline). The hypothesis was wrong — baseline doesn't achieve 1680 because AC doesn't engage; baseline achieves 1680 because without AC, there's no oscillation feedback loop to create boom-bust cycles.
+- All overloaded RPS regressed from anchor_3.
+
+**Root cause insight:** The problem isn't WHEN the AC engages (threshold) but HOW HARD it corrects (gain). At 1800, util hovers ~0.82-0.85, barely above target=0.80. But the AC applies the same correction rate (adjust_rate_down=2.0) as it would at util=0.95. It over-corrects at moderate overload.
+
+**Decision:** Revert. util_target=0.80 is correct. Next: proportional control.
+
+---
+
+## Iteration 6: Proportional AC control (experiment anchor_6)
+
+**Status:** Pending
+
+### Change
+Revert `util_target` back to 0.80. Modify the budget rate adjustment in `predictive.rs` to scale the adjustment rate proportionally to the distance from `util_target`:
+
+```rust
+if effective_util > util_target {
+    let excess = (effective_util - util_target) / (1.0 - util_target);  // 0 at target, 1 at util=1.0
+    budget_rate *= 1.0 - adjust_rate_down * excess * elapsed;
+} else {
+    let slack = (util_target - effective_util) / util_target;  // 0 at target, 1 at util=0
+    budget_rate *= 1.0 + adjust_rate_up * slack * elapsed;
+}
+```
+
+At util=0.82, target=0.80: excess = 0.02/0.20 = 0.10 → reduce at 10% of max rate
+At util=0.95, target=0.80: excess = 0.15/0.20 = 0.75 → reduce at 75% of max rate
+At util=0.60, target=0.80: slack = 0.20/0.80 = 0.25 → increase at 25% of max rate
+
+### Hypothesis
+The boom-bust cycle at 1800 RPS is driven by the AC applying the same correction strength at util=0.82 as at util=0.95. At 1800 (moderate overload), util barely exceeds the target, but the AC slams the budget down at full rate (2.0/s), over-shedding before the signal can self-correct.
+
+With proportional control, moderate overload (util=0.82) gets a gentle correction (10% of max), while deep overload (util=0.95) gets a strong correction (75% of max). This should:
+- Let 1800 RPS self-regulate with minimal AC interference (gentle nudges instead of slams)
+- Still aggressively protect at 2500 RPS where util is far above target
+- Maintain the 4:1 asymmetry for reopen damping
+
+### Expected outcomes if hypothesis is correct:
+1. 1800 RPS significantly recovers toward baseline (1600+), as proportional control avoids over-correction
+2. 1400 and 2500 maintain or improve from anchor_3 (proportional is gentler overall but still responsive at deep overload)
+3. Reduced CoV at 1800 (less violent swings from gentler corrections)
+4. Possible slight regression at 2500 if proportional response is too gentle at high util
+
+### Experiment design
+Same config as cp_simple (800, 1200, 1400, 1800, 2500 RPS, SLO=50ms, 60s each).
