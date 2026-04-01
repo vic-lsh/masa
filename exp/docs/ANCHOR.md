@@ -448,3 +448,173 @@ With symmetric alpha=0.1: deflation is 2x slower (0.1 vs 0.2) and inflation is 2
 
 ### Experiment design
 Same config as cp_simple (800, 1200, 1400, 1800, 2500 RPS, SLO=50ms, 60s each).
+
+### Actual Outcomes (anchor_9)
+
+**Status:** Regression ❌ — reverted
+
+| RPS | anchor_3 Mean(CoV) | anchor_9 Mean(CoV) | Δ Mean | Δ CoV |
+|-----|---------------------|---------------------|--------|-------|
+| 1200 | 1180 (3.2%) | 1173 (3.5%) | -7 | +0.3pp |
+| 1400 | 1246 (5.5%) | 1178 (8.3%) | -68 | +2.8pp |
+| 1800 | 1336 (10.6%) | 1253 (10.9%) | -83 | +0.3pp |
+| 2500 | 1345 (19.7%) | 1294 (20.5%) | -51 | +0.8pp |
+
+**Decision:** Revert. Faster inflation hurts scheduling; asymmetric alpha is correct for the estimator.
+
+---
+
+## Iteration 10: Proportional-down-only AC control (experiment anchor_10)
+
+**Status:** Keep (comparable to anchor_3, different tradeoff)
+
+### Change
+Proportional scaling only on the down branch of budget rate adjustment. Up branch stays fixed at 0.5.
+
+| RPS | anchor_3 Mean(CoV) | anchor_10 Mean(CoV) | Δ Mean | Δ CoV |
+|-----|---------------------|----------------------|--------|-------|
+| 1200 | 1180 (3.2%) | 1178 (2.5%) | -2 | -0.7pp |
+| 1400 | 1246 (5.5%) | 1267 (5.4%) | +21 | -0.1pp |
+| 1800 | 1336 (10.6%) | 1298 (11.2%) | -38 | +0.6pp |
+| 2500 | 1345 (19.7%) | 1331 (19.1%) | -14 | -0.6pp |
+
+Better CoV at 3/4 RPS levels, better mean at 1400. Slightly worse at 1800. Neither anchor_3 nor anchor_10 clearly dominates.
+
+---
+
+## Summary of parameter tuning (Iterations 1-10)
+
+| Iter | Change | 1200 Mean(CoV) | 1400 Mean(CoV) | 1800 Mean(CoV) | 2500 Mean(CoV) | Verdict |
+|------|--------|----------------|----------------|----------------|----------------|---------|
+| base | cp_simple defaults | 1164 (4.0%) | 1024 (9.1%) | **1679 (12.6%)** | 1061 (25.2%) | — |
+| **3** | **4:1 asymmetry** | **1180 (3.2%)** | **1246 (5.5%)** | 1336 (10.6%) | **1345 (19.7%)** | **Best mean** |
+| **10** | **prop-down-only** | 1178 **(2.5%)** | **1267 (5.4%)** | 1298 (11.2%) | 1331 **(19.1%)** | **Best CoV** |
+| 1 | adjust_rate=0.5 | 1195 (1.4%) | 1188 (18.2%) | 1178 (18.3%) | 1331 (22.7%) | ❌ |
+| 2 | er_alpha=0.3 | 1190 (1.4%) | 1086 (18.6%) | 971 (19.1%) | 1028 (31.4%) | ❌ |
+| 4 | 2:1 asymmetry | 1188 (2.0%) | 1173 (9.5%) | 1199 (12.6%) | 1246 (19.7%) | ❌ |
+| 5 | util_target=0.90 | 1190 (1.2%) | 1219 (6.6%) | 1269 (11.9%) | 1311 (18.3%) | ❌ |
+| 6 | proportional both | 1185 (1.8%) | 1223 (7.9%) | 1276 (11.8%) | 1330 (21.6%) | ❌ |
+| 7 | cooldown hold | 1186 (1.8%) | 1287 (6.7%) | 1331 (11.1%) | 1333 (20.9%) | Neutral |
+| 8 | burst buffer 0.1 | 1171 (3.5%) | 1223 (7.6%) | 1258 (12.5%) | 1312 (18.6%) | ❌ |
+| 9 | symmetric α=0.1 | 1173 (3.5%) | 1178 (8.3%) | 1253 (10.9%) | 1294 (20.5%) | ❌ |
+
+**Conclusion from parameter tuning:** 10 iterations of tuning the utilization-based AC improved stability (CoV) by 2-6pp and mean by +150-280 at 1400/2500, but could not recover 1800 RPS (always -240 to -400 vs baseline). The oscillation is structural: the utilization-based controller removes the signal that justifies its own restrictions.
+
+---
+
+## Root cause analysis
+
+### Why the current AC oscillates
+
+The current `ac_pred` is a **utilization-targeting feedback controller**. It adjusts a budget rate to keep CPU utilization below a target (0.80). The instability is a classic **observer effect** in control theory: the act of controlling the system changes the observations that drive the control.
+
+The feedback loop:
+
+```
+High load → queuing → requests pass e2e deadline → abort_slo kills them
+  → ac_pred sees high utilization + high ER rate → restricts admission
+  → fewer requests in system → less queuing → fewer ERs → utilization drops
+  → ac_pred sees low utilization + low ER → reopens admission
+  → flood of requests → back to start
+```
+
+The controlled variable (utilization) is a *consequence* of the controller's action, not an independent signal. When the AC restricts, utilization drops — not because the system has spare capacity, but because the AC itself removed the load. The controller interprets this as "system is healthy, admit more" and reopens, restarting the cycle.
+
+This is analogous to a thermostat measuring the temperature of its own exhaust rather than the room. No amount of gain tuning, asymmetry, or smoothing can fix this — the sensor is measuring the wrong thing.
+
+### What the controlled variable should be
+
+The AC should target **goodput** (requests completing within SLO per second), not utilization. Goodput is:
+
+1. **The actual quantity we care about** — the whole point of the AC is to maximize goodput.
+2. **Observable independently of the AC's action** — goodput measures what comes *out* of the system, not what the AC lets *in*. If the AC restricts to exactly the right rate, goodput stays high and the rate holds. No phantom recovery signal.
+3. **Monotonically related to the correct action** — more admission → more goodput (below saturation) or less goodput (above saturation). The feedback is inherently negative and stable.
+
+---
+
+## Proposed design: Goodput-tracking admission control
+
+### Overview
+
+Replace the utilization-based rate controller with a **goodput-tracking rate controller**. The AC sets its admission budget rate to slightly above observed goodput (in cost-weighted µs/s), constantly probing for headroom. The token bucket mechanism (cost-based metering) is preserved for multi-API cost awareness.
+
+### Algorithm
+
+**State variables:**
+```
+goodput_rate: f64       // EMA of cost-weighted goodput (µs/s)
+budget_us: f64          // token bucket balance (µs)
+last_update: Instant    // last admission check timestamp
+completed_cost: f64     // accumulator: total est_child_cost of successful completions since last update
+```
+
+**Parameters:**
+```
+probe_factor: 0.05      // admit 5% above observed goodput
+tau: 1.0                // EMA time constant (seconds)
+max_burst_secs: 0.005   // burst buffer (keep current value)
+initial_budget_rate: 5_000_000.0  // bootstrap value (µs/s)
+```
+
+**On each successful completion** (`after_child_rpc`, ingress only, not early-returned):
+```
+completed_cost += est_child_cost(api)
+```
+
+**On each admission check** (`should_admit`, called per incoming request):
+```
+now = Instant::now()
+elapsed = now - last_update
+last_update = now
+
+// Compute instantaneous goodput rate from completions since last check
+if elapsed > 0:
+    instant_rate = completed_cost / elapsed
+    alpha = 1.0 - exp(-elapsed / tau)
+    goodput_rate += alpha * (instant_rate - goodput_rate)
+    completed_cost = 0
+
+// Set budget rate to track goodput with probe margin
+budget_rate = goodput_rate * (1.0 + probe_factor)
+
+// Standard token bucket admission
+budget_us += budget_rate * elapsed
+budget_us = min(budget_us, budget_rate * max_burst_secs)
+
+cost = est_child_cost(request_api)
+if budget_us >= cost:
+    budget_us -= cost
+    return ADMIT
+else:
+    return REJECT
+```
+
+**Bootstrap:** `goodput_rate` initializes to `initial_budget_rate`. On startup, the AC admits freely. As real completions arrive, the EMA converges toward actual goodput within ~2-3τ (2-3 seconds).
+
+### Why this is stable
+
+**Negative feedback, no observer effect:**
+- Below saturation: goodput = offered load. AC admits everything (budget_rate > offered load). No restriction.
+- At saturation: goodput plateaus at system capacity. budget_rate = capacity * 1.05. AC admits slightly above capacity; ~5% of excess gets early-returned. Stable equilibrium.
+- Perturbation (goodput dips): budget_rate drops → less admission → system recovers → goodput rises → budget_rate rises → stable again.
+- Load decrease (2500 → 800): goodput tracks down to 800 via EMA (τ=1s). budget_rate = 840. Offered load is 800 < 840 → no restriction. Correct.
+
+**No observer effect:** When the AC restricts admission, goodput reflects only successfully completed requests — it does not drop just because fewer requests were admitted (as utilization does). If the AC restricts to the right rate, goodput stays high and the rate holds. The controller does not remove its own justification.
+
+**Cost cancellation:** Both the refill side (goodput_rate, sum of est_child_cost of completions) and the consumption side (est_child_cost of incoming requests) use the same estimator. If the estimator inflates during overload, both sides inflate proportionally — the admission rate in requests/sec stays stable. Estimator fluctuations affect which API's requests drain the budget faster (cost-aware shedding), not the overall admission throughput.
+
+### Relationship to Layer 1 (deadline feasibility)
+
+The Layer 1 check (`now > e2e_deadline - est_remaining_floor`) is kept unchanged. It serves a different purpose: rejecting individual requests that are already too late to meet their deadline, regardless of the admission rate. The goodput-tracking controller replaces only the Layer 2 token bucket rate logic.
+
+### What changes vs current implementation
+
+| Aspect | Current (utilization-based) | Proposed (goodput-based) |
+|--------|---------------------------|------------------------|
+| Controlled variable | CPU utilization + ER pseudo-util | Cost-weighted goodput rate |
+| Rate adjustment | Binary threshold (util > 0.80 → decrease) | Track observed output + 5% probe |
+| Feedback stability | Observer effect → limit cycle | Monotonic negative feedback → convergent |
+| Cost awareness | est_child_cost per request (same) | est_child_cost per request (same) |
+| Estimator coupling | Rate depends on utilization signal | Rate depends on completion signal; estimator affects only per-request cost |
+| Bottleneck tracker | Required (feeds utilization signal) | Not needed for rate control |
+| ER tracker | Required (feeds pseudo-util) | Not needed for rate control |
