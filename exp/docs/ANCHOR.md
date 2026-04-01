@@ -618,3 +618,29 @@ The Layer 1 check (`now > e2e_deadline - est_remaining_floor`) is kept unchanged
 | Estimator coupling | Rate depends on utilization signal | Rate depends on completion signal; estimator affects only per-request cost |
 | Bottleneck tracker | Required (feeds utilization signal) | Not needed for rate control |
 | ER tracker | Required (feeds pseudo-util) | Not needed for rate control |
+
+---
+
+## Iteration 11: Goodput-tracking AC (experiment anchor_11)
+
+**Status:** Pending
+
+**Code commit:** 6c0e6b4c
+
+### Change
+Replace the utilization-based rate controller with a goodput-tracking rate controller. The AC sets its admission budget rate to slightly above observed goodput (in cost-weighted µs/s), constantly probing for headroom. The token bucket mechanism is preserved for multi-API cost awareness. See "Proposed design" section above for full algorithm.
+
+### Hypothesis
+The utilization-based AC oscillates because the controlled variable (utilization) drops when the controller restricts — creating an observer effect that drives limit cycles. No amount of gain tuning fixed this in 10 iterations.
+
+The goodput-tracking controller measures *output* (completed requests within SLO) rather than *input consequences* (utilization). When the AC restricts admission, goodput doesn't artificially drop — it reflects actual system capacity. This makes the feedback loop inherently stable: budget_rate tracks goodput + 5% probe margin, converging to the system's true throughput capacity.
+
+### Expected outcomes if hypothesis is correct:
+1. Dramatically reduced CoV at all overloaded RPS (no more boom-bust oscillation)
+2. 1800 RPS recovers to near-baseline (~1600+) — the AC should barely engage at this load since goodput ≈ offered load
+3. 1400 and 2500 RPS maintain or exceed anchor_3 gains
+4. Monotonic goodput fraction (1400 no longer worse than 1800)
+5. Possible slow bootstrap transient (~2-3s) as EMA converges from initial_budget_rate
+
+### Experiment design
+Same config as cp_simple (800, 1200, 1400, 1800, 2500 RPS, SLO=50ms, 60s each). Direct comparison to anchor_3 (best parameter-tuned result) and baseline (no AC changes).
