@@ -321,9 +321,7 @@ impl AdmissionController {
         state.last_update = now;
 
         // Update goodput EMA from accumulated completions.
-        // Skip update during idle gaps (>0.5s) to preserve goodput_rate
-        // across load transitions instead of decaying toward zero.
-        if elapsed > 0.0 && elapsed <= 0.5 {
+        if elapsed > 0.0 {
             let instant_rate = drained / elapsed;
             let alpha = 1.0 - (-elapsed / p.tau).exp();
             state.goodput_rate += alpha * (instant_rate - state.goodput_rate);
@@ -335,9 +333,8 @@ impl AdmissionController {
             // Exploit mode: tight tracking of observed goodput
             state.goodput_rate * (1.0 + p.probe_min)
         } else {
-            // Explore mode: use preserved goodput_rate if available,
-            // fall back to initial_budget_rate for cold start.
-            (state.goodput_rate * (1.0 + p.probe_max)).max(p.initial_budget_rate)
+            // Explore mode: admit freely using generous initial budget
+            p.initial_budget_rate
         };
 
         // Refill tokens, capped at burst limit.
