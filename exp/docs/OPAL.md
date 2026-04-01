@@ -660,3 +660,61 @@ The Vegas proportional formula fails because its equilibrium is quadratically se
 ### Experiment design (opal_8)
 Same config as cp_simple (800, 1200, 1400, 1800, 2500 RPS, SLO=50ms, 60s each).
 
+### Actual Outcomes (opal_8)
+
+**Status:** Regression ❌
+
+**Code commit:** b2e5b115
+
+| RPS | anchor_20 Mean(CoV) | opal_6 Mean | opal_8 Mean | opal_8 ER/s | Δ vs anchor_20 |
+|-----|---------------------|-------------|-------------|-------------|----------------|
+| 800 | 800 (0.1%) | 785 | 799 | 0.8 | -1 |
+| 1200 | 1182 (0.7%) | 1003 | 1158 | 42 | -24 |
+| 1400 | 1254 (5.1%) | 985 | 984 | 416 | **-270** |
+| 1800 | 1451 (13.7%) | 982 | **0** | 1800 | **-1451** |
+| 2500 | 1601 (27.0%) | 90 | **0** | 2500 | **-1601** |
+
+**Key findings:**
+1. **Sub-saturation improved** — 1200 RPS: 1158 vs opal_6's 1003 (+155). AIMD keeps limit at cap (100) when gradient > 0.70, allowing full admission.
+2. **Complete collapse at 1800 and 2500** — 0 goodput, 100% ER. When load jumps above capacity, initial_limit=100 admits everything. The multiplicative decrease (×0.9 per 250ms) is far too slow — takes 1.75s to halve the limit. By then, queued requests have inflated latencies to catastrophic levels. All requests miss SLO.
+3. **Irrecoverable death spiral:** Once latency is catastrophically high, gradient stays near 0, limit shrinks to floor (10). But floor=10 is too low to generate enough completions for recovery — the few admitted requests see artificially low latency (no contention) but the limit is stuck at floor because the additive increase (+5 per 250ms = 20/s) starting from 10 is too slow relative to the load.
+4. **Root cause: "start high, shrink down" is fundamentally wrong at overload transitions.** The initial burst of over-admission at transition (e.g., 1400→1800) floods the system before AIMD can react. This is the same problem as opal_1/2's "admit freely" approach but in concurrency form.
+
+---
+
+## Summary and Conclusions (Iterations 6-8: Concurrency-Based AC)
+
+### Results table
+
+| Iter | Key change | 800 | 1200 | 1400 | 1800 | 2500 |
+|------|-----------|-----|------|------|------|------|
+| **anchor_20** | **baseline (rate-based)** | **800** | **1182** | **1254** | **1451** | **1601** |
+| opal_6 | Vegas concurrency, factor=1.0 | 785 | 1003 | 985 | 982 | 90 |
+| opal_7 | Vegas, factor=5.0, floor=10 | 800 | 476 | 0 | 0 | 0 |
+| opal_8 | AIMD, periodic updates | 799 | 1158 | 984 | 0 | 0 |
+
+### What worked
+1. **Concurrency gating concept is sound at sub-saturation.** All three iterations perform well at 800 RPS. opal_8 achieves 1158 at 1200 (vs anchor_20's 1182) — close to optimal.
+2. **No slow ramp at sub-saturation transitions.** The initial_limit=100 provides instant full admission at loads below capacity.
+
+### What didn't work
+1. **Vegas proportional formula (opal_6, opal_7):** Equilibrium = (factor / (1-gradient))^2 is quadratically sensitive to gradient. factor=1.0 → limit too low (~25, capping at 985 req/s). factor=5.0 → limit too high (~278, no shedding). No factor value works across load regimes.
+2. **AIMD periodic updates (opal_8):** "Start high, shrink down" causes irrecoverable over-admission at overload transitions. The multiplicative decrease (×0.9/250ms) cannot react fast enough — the system floods before the limit drops.
+3. **All three iterations fail at 1800+ RPS.** The concurrency limiter either restricts too much (opal_6: 982) or too little (opal_7/8: 0).
+
+### Fundamental findings
+
+**1. Latency-based concurrency limiting has a structural cold-start/transition problem.** When load suddenly exceeds capacity, the limiter must admit excess traffic before it can observe the latency inflation that signals congestion. By the time the signal arrives, the queue catastrophe has already begun. Rate-based approaches (anchor_20) don't have this problem because the budget immediately constrains admission rate.
+
+**2. The gradient signal (min_latency / avg_latency) conflates processing variance with congestion.** In Socialnet, natural per-request latency variation means avg >> min even at zero load. The gradient is structurally biased below 1.0, making it unreliable as a congestion signal. TCP Vegas works because network propagation delay is nearly constant; microservice processing time is not.
+
+**3. Concurrency limiting doesn't directly control throughput.** A concurrency limit of L admits L/avg_latency req/s, but avg_latency changes with the number admitted. This creates a coupled feedback loop: admitting more → higher latency → lower apparent throughput → but the LIMIT hasn't changed. Rate-based limiting directly controls throughput, making it more predictable.
+
+### Remaining directions (not yet tested)
+1. **Start low, grow up:** initial_limit=10 instead of 100. Avoids over-admission at transitions. Risk: slow ramp (the original problem we were trying to solve).
+2. **Hybrid: rate-based budget for overload + concurrency gate for discovery.** Use anchor_20's goodput-tracking budget when ER is high, concurrency gate when ER is low. Combines fast overload response with instant ramp.
+3. **Per-API concurrency limits:** Instead of one global limit, per-downstream-service limits based on observed per-service latency. Would give cleaner signals.
+
+### Code state
+Current code has AIMD concurrency limiter (commit b2e5b115). Should be reverted to anchor_20 baseline for clean state if pursuing other directions.
+
