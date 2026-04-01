@@ -671,3 +671,41 @@ Same config as cp_simple (800, 1200, 1400, 1800, 2500 RPS, SLO=50ms, 60s each). 
 2. High CoV (oscillation not eliminated, just shifted to higher operating point)
 
 **Decision:** Keep goodput-tracking approach, iterate on convergence and stability.
+
+---
+
+## Iteration 12: Adaptive probe factor (experiment anchor_12)
+
+**Status:** Pending
+
+### Change
+Replace fixed `probe_factor=0.05` with an adaptive probe factor that scales inversely with rejection rate. Track an EMA of the rejection fraction. When rejection rate is near zero (sub-saturation), probe factor ramps up to `probe_max=1.0` (admit 2x observed goodput — aggressive exploration). When rejection rate is high (overload), probe factor drops to `probe_min=0.05` (tight tracking).
+
+New parameters:
+- `probe_min: 0.05` — floor probe factor (tight tracking during overload)
+- `probe_max: 1.0` — ceiling probe factor (aggressive discovery at sub-saturation)
+- `rejection_alpha: 0.01` — EMA coefficient for rejection rate tracking (per-decision)
+
+New state:
+- `rejection_ema: f64` — EMA of rejection fraction (0.0 = no rejections, 1.0 = all rejected)
+
+Formula: `probe_factor = probe_max - rejection_ema * (probe_max - probe_min)`
+
+At 800 RPS (no rejections): rejection_ema ≈ 0 → probe_factor ≈ 1.0 → budget_rate = goodput_rate * 2.0. Even if goodput_rate converges to 700, budget_rate = 1400 >> 800. No restriction.
+
+At 2500 RPS (high rejection): rejection_ema ≈ 0.4 → probe_factor ≈ 0.62 → still probing above goodput. This might be too high — but the rejection EMA will naturally increase if the probe is too aggressive, pulling probe_factor back down.
+
+### Hypothesis
+The 800 RPS regression is caused by the fixed 5% probe margin being too small to discover capacity from cold start or after any transient dip. With adaptive probing, the controller aggressively explores when it has no evidence of overload, and tightens when it does. This should:
+- Eliminate sub-saturation shedding (800: 770 → 800)
+- Maintain or improve overload behavior (the rejection signal naturally constrains the probe)
+
+### Expected outcomes if hypothesis is correct:
+1. 800 RPS recovers to ~800 (zero rejection at sub-saturation)
+2. 1200 RPS recovers to ~1180+ (near anchor_3)
+3. 1400/2500 maintain or improve (adaptive probe finds optimal admission rate)
+4. 1800 maintains or improves (more aggressive probing finds the right level faster)
+5. CoV may improve if the adaptive probe reduces oscillation amplitude
+
+### Experiment design
+Same config as cp_simple (800, 1200, 1400, 1800, 2500 RPS, SLO=50ms, 60s each).
