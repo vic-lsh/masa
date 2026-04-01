@@ -2,7 +2,8 @@ use chrono::Utc;
 use log::{error, info, warn};
 use mongodb::{
     bson::{doc, document::Document},
-    Client as MongoClient, Collection,
+    options::IndexOptions,
+    Client as MongoClient, Collection, IndexModel,
 };
 use std::env;
 
@@ -84,7 +85,15 @@ impl SocialGraphService {
             .await
             .expect("mongo failed");
         let db = mongo_client.database("social-graph");
-        let mongo_collection = db.collection("social-graph");
+        let mongo_collection: Collection<Document> = db.collection("social-graph");
+
+        // Create unique index on user_id for O(log n) lookups
+        let index = IndexModel::builder()
+            .keys(doc! { "user_id": 1 })
+            .options(IndexOptions::builder().unique(true).build())
+            .build();
+        mongo_collection.create_index(index, None).await.expect("failed to create user_id index");
+        info!("Created unique index on user_id field for social-graph collection.");
 
         // Initialize User Service Client
         let user_service_channel = LoadBalancedChannel::new(
