@@ -101,12 +101,12 @@ impl Default for PredParams {
     fn default() -> Self {
         Self {
             max_burst_secs: 0.005,
-            initial_budget_rate: 40_000_000.0,
+            initial_budget_rate: 5_000_000.0,
             probe_min: 0.05,
             probe_max: 1.0,
             rejection_alpha: 0.01,
             rejection_threshold: 0.10,
-            tau: 1.0,
+            tau: 0.3,
         }
     }
 }
@@ -168,7 +168,7 @@ mod tests {
         assert_eq!(p.rajomon.max_token, 100);
         assert!(p.rajomon.price_cap <= p.rajomon.max_token);
         assert_eq!(p.pred.probe_min, 0.05);
-        assert_eq!(p.pred.tau, 1.0);
+        assert_eq!(p.pred.tau, 0.3);
     }
 
     #[test]
