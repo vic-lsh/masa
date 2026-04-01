@@ -882,3 +882,58 @@ The token bucket's max_burst (50M * 0.005 = 250K µs ≈ 10 requests) naturally 
 ### Experiment design (opal_11)
 Same config as cp_simple (800, 1200, 1400, 1800, 2500 RPS, SLO=50ms, 60s each).
 
+### Actual Outcomes (opal_11)
+
+**Status:** Regression ❌ — iterate
+
+**Code commit:** 3df2281c
+
+| RPS | anchor_20 Mean(CoV) | opal_11 Mean | opal_11 ER/s | Δ vs anchor_20 |
+|-----|---------------------|--------------|--------------|----------------|
+| 800 | 800 (0.1%) | 800 | 0 | 0 |
+| 1200 | 1182 (0.7%) | 1188 | 12 | +6 |
+| 1400 | 1254 (5.1%) | 1232 | 167 | **-22** |
+| 1800 | 1451 (13.7%) | 1400 | 400 | **-51** |
+| 2500 | 1601 (27.0%) | 1486 | 1012 | **-115** |
+
+**Key findings:**
+1. **50M over-admits at overload.** 50M µs/s → ~2000 req/s in explore. At 2500 RPS, the system floods with 2000 req/s (capacity ~1600) during the first seconds before exploit mode kicks in. The excess 400 req/s causes queue buildup and SLO misses, costing 115 goodput.
+2. **Marginal ramp improvement at 1200** (+6). The slow ramp costs ~65 goodput at 1200 (from anchor_20's timeline: drops to 423, takes 10s to reach 1200). Fixing the ramp is worth ~65 at most — not a huge gain.
+3. **Regression grows with overload severity.** -22 at 1400, -51 at 1800, -115 at 2500. The over-admission burst is more damaging at higher loads.
+4. **The optimal initial_budget_rate should match capacity** (~1600 req/s = ~40M µs/s). Below capacity: instant ramp. At capacity: natural admission limit, no flooding.
+
+**Decision:** Revert. Try initial_budget_rate = 40M (capacity-matched).
+
+---
+
+## Iteration 12: initial_budget_rate = 40M — capacity-matched explore budget (experiment opal_12)
+
+**Status:** Pending
+
+**Code commit:** TBD
+
+### Change
+Revert to pure anchor_20 code. Change `initial_budget_rate` from 5_000_000 to 40_000_000.
+
+40M µs/s ÷ 25000 µs/req ≈ 1600 req/s — matching Socialnet ComposePost capacity.
+
+### Hypothesis
+initial_budget_rate should match system capacity:
+- **Below 40M (anchor_20 at 5M):** Explore budget bottlenecks admission at ~200 req/s → 15s slow ramp.
+- **Above 40M (opal_11 at 50M):** Explore budget admits above capacity → initial over-admission burst → SLO misses → goodput loss.
+- **At 40M:** Explore budget admits up to ~1600 req/s (capacity). All sub-saturation loads get instant ramp. At overload, the budget naturally limits admission to ~capacity, preventing flooding. Token bucket max_burst (40M * 0.005 = 200K µs ≈ 8 requests) limits instantaneous burst.
+
+**Expected dynamics at each load:**
+- 800/1200/1400 RPS: all < 1600, instant admission, stays in explore. No ramp needed.
+- 1800 RPS: 1600 admitted in explore, ~200 excess rejected. rejection_ema rises → exploit mode within 1-2s. exploit budget = goodput * 1.05 ≈ 1680 → slightly above capacity. Mild over-admission handled by abort_slo.
+- 2500 RPS: 1600 admitted in explore → right at capacity → no flooding (unlike 50M). Exploit kicks in quickly.
+
+### Expected outcomes if hypothesis is correct:
+1. 800/1200/1400: instant ramp, matching or exceeding anchor_20
+2. 1800: similar to anchor_20 (no flooding from explore, exploit takes over quickly)
+3. 2500: similar to anchor_20 (explore budget at capacity → no over-admission)
+4. Net: significant improvement at 1200-1400, no regression at 1800-2500
+
+### Experiment design (opal_12)
+Same config as cp_simple (800, 1200, 1400, 1800, 2500 RPS, SLO=50ms, 60s each).
+
