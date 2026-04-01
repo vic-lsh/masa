@@ -315,3 +315,43 @@ With proportional control, moderate overload (util=0.82) gets a gentle correctio
 
 ### Experiment design
 Same config as cp_simple (800, 1200, 1400, 1800, 2500 RPS, SLO=50ms, 60s each).
+
+### Actual Outcomes (anchor_6)
+
+**Status:** Regression ❌ — reverted
+
+| RPS | anchor_3 Mean (CoV) | anchor_6 Mean (CoV) | Delta Mean | Delta CoV |
+|-----|---------------------|---------------------|------------|-----------|
+| 800 | 800 (0.0%) | 800 (0.0%) | 0 | 0 |
+| 1200 | 1187 (3.2%) | 1185 (1.8%) | -2 | **-1.4pp** |
+| 1400 | 1300 (5.5%) | 1223 (7.9%) | **-77** | +2.4pp |
+| 1800 | 1440 (10.6%) | 1276 (11.8%) | **-164** | +1.2pp |
+| 2500 | 1503 (19.6%) | 1330 (21.6%) | **-173** | +2.0pp |
+
+**Key findings:**
+- Proportional control improved 1200 CoV (1.8%) but regressed mean+CoV at 1400-2500.
+- Too gentle near threshold allows queue buildup before correcting.
+
+**Decision:** Revert. Next: cooldown hold.
+
+---
+
+## Iteration 7: Cooldown hold after AC correction (experiment anchor_7)
+
+**Status:** Pending
+
+### Change
+Add a 1-second cooldown hold. When AC transitions from reducing (util > target) to would-increase (util < target), hold budget_rate steady for 1s before increasing. New fields in BudgetState: `was_reducing`, `cooldown_until`. New param: `cooldown_secs: 1.0`.
+
+Base: anchor_3 state (adjust_rate_down=2.0, adjust_rate_up=0.5, util_target=0.80).
+
+### Hypothesis
+The limit cycle's critical moment is the transition from "correcting" to "recovering." The AC immediately starts ramping up when util drops below 0.80, but the system hasn't settled yet. A 1s hold gives in-flight requests time to complete and queues to drain before admission increases.
+
+### Expected outcomes if hypothesis is correct:
+1. Reduced CoV at all overloaded RPS (the hold breaks the oscillation cycle)
+2. Maintained or slightly reduced mean goodput (conservative hold time)
+3. Favorable variance-mean tradeoff
+
+### Experiment design
+Same config as cp_simple (800, 1200, 1400, 1800, 2500 RPS, SLO=50ms, 60s each).
