@@ -709,3 +709,48 @@ The 800 RPS regression is caused by the fixed 5% probe margin being too small to
 
 ### Experiment design
 Same config as cp_simple (800, 1200, 1400, 1800, 2500 RPS, SLO=50ms, 60s each).
+
+### Actual Outcomes (anchor_12)
+
+**Status:** Mixed — revert, revise approach
+
+| RPS | Baseline Mean(CoV) | anchor_11 Mean(CoV) | anchor_12 Mean(CoV) | Δ vs anchor_11 |
+|-----|---------------------|----------------------|----------------------|----------------|
+| 800 | 800 (0.0%) | 770 (1.7%) | **800 (0.0%)** | **+30** ✅ |
+| 1200 | 1164 (4.0%) | 1158 (4.7%) | **1188 (1.5%)** | **+30** ✅ |
+| 1400 | 1024 (9.1%) | 1327 (9.3%) | 1184 (17.9%) | **-143** ❌ |
+| 1800 | 1679 (12.6%) | 1524 (18.3%) | 1077 (33.7%) | **-447** ❌ |
+| 2500 | 1061 (25.2%) | 1618 (29.4%) | 971 (36.4%) | **-647** ❌ |
+
+**Key findings:**
+1. **Sub-saturation shedding eliminated** — 800 and 1200 are now best-in-class.
+2. **Catastrophic regression at overload** — linear interpolation too gradual. Even rejection_ema=0.1 yields probe_factor=0.91.
+3. **CoV explodes at overload** — 33.7% at 1800, 36.4% at 2500.
+
+**Root cause:** Linear interpolation between probe_min and probe_max is wrong. The transition needs to be sharp.
+
+**Decision:** Revert code. Next: threshold-based probe switching.
+
+---
+
+## Iteration 13: Threshold-based probe switching (experiment anchor_13)
+
+**Status:** Pending
+
+### Change
+Replace linear interpolation with a sharp threshold. If `rejection_ema > rejection_threshold` (default 0.02), use `probe_min=0.05`. Otherwise, use `probe_max=1.0`. Binary mode:
+- **Explore mode** (rejection_ema ≤ 0.02): probe_factor=1.0 — admit 2x observed goodput
+- **Exploit mode** (rejection_ema > 0.02): probe_factor=0.05 — tight tracking
+
+New parameter: `rejection_threshold: f64` (default 0.02)
+
+### Hypothesis
+The overload regression in anchor_12 was caused by probe_factor staying too high during moderate overload. A sharp threshold correctly captures the binary nature: either at sub-saturation (probe should be max) or in overload (probe should be min).
+
+### Expected outcomes if hypothesis is correct:
+1. 800/1200 maintain anchor_12 gains (no shedding at sub-saturation)
+2. 1400/1800/2500 recover to anchor_11 levels or better (tight tracking during overload)
+3. Combines best of anchor_11 (overload) and anchor_12 (sub-saturation)
+
+### Experiment design
+Same config as cp_simple (800, 1200, 1400, 1800, 2500 RPS, SLO=50ms, 60s each).
