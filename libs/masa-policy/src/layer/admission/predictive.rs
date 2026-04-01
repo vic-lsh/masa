@@ -327,14 +327,15 @@ impl AdmissionController {
             state.goodput_rate += alpha * (instant_rate - state.goodput_rate);
         }
 
-        // Binary probe: explore aggressively when no rejections,
-        // lock to tight tracking otherwise.
-        let probe_factor = if state.rejection_ema > p.rejection_threshold {
-            p.probe_min // tight tracking (exploit)
+        // Exploit vs explore: when rejections are happening, track observed
+        // goodput tightly; otherwise admit freely at the generous initial rate.
+        let budget_rate = if state.rejection_ema > p.rejection_threshold {
+            // Exploit mode: tight tracking of observed goodput
+            state.goodput_rate * (1.0 + p.probe_min)
         } else {
-            p.probe_max // aggressive exploration (explore)
+            // Explore mode: admit freely using generous initial budget
+            p.initial_budget_rate
         };
-        let budget_rate = state.goodput_rate * (1.0 + probe_factor);
 
         // Refill tokens, capped at burst limit.
         // Dynamic floor: ensure the budget can always hold at least one
