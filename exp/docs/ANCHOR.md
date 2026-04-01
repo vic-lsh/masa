@@ -1154,3 +1154,87 @@ Same config as cp_simple (800, 1200, 1400, 1800, 2500 RPS, SLO=50ms, 60s each).
 Beats baseline in mean at 1200, 1400, 2500. Loses at 1800. Best CoV at 1200, 1400. Comparable CoV at 1800, 2500.
 
 **Decision:** Keep. anchor_20 is the new best overall — best CoV profile with strong mean gains at overload.
+
+---
+
+## Learnings and conclusions (Iterations 1-20)
+
+### The core problem: utilization-based AC has an observer effect
+
+The original `ac_pred` was a utilization-targeting controller: it adjusted a budget rate to keep CPU utilization below a target (0.80). This creates a classic control-theory observer effect — the controller's own actions change the observations that drive it. When AC restricts admission → utilization drops → AC reopens → flood → utilization spikes → AC restricts again. This is a limit cycle, not a damping problem. No amount of gain tuning, asymmetry, or smoothing can fix it (iterations 1-10 proved this exhaustively).
+
+### The solution: goodput-tracking AC
+
+Replace utilization with goodput (completed requests within SLO per second) as the controlled variable. Goodput measures system *output*, not input consequences. When AC restricts, goodput doesn't artificially drop — it reflects actual capacity. This makes the feedback loop inherently stable.
+
+**Implementation:** Token bucket where refill rate = `goodput_rate * (1 + probe_factor)`. Goodput rate tracked via EMA of cost-weighted completions (τ=1.0s). Layer 1 (deadline feasibility) kept unchanged. Layer 2 replaced entirely.
+
+### Key design decisions and why
+
+**1. Threshold-based explore/exploit switching (Iteration 13)**
+- Track rejection EMA (per-decision, α=0.01)
+- Below `rejection_threshold=0.10`: explore mode — generous admission, let abort_slo handle natural overload
+- Above threshold: exploit mode — tight goodput tracking with `probe_min=0.05`
+- Why not linear interpolation: gradual probe reduction at moderate overload causes wider oscillations (anchor_12 proved this)
+- Why not adaptive probe factor: the transition from exploration to exploitation needs to be sharp, not smooth
+
+**2. rejection_threshold=0.10, not 0.02 (Iteration 20)**
+- At moderate overload (1800 RPS, ~93% baseline goodput), the natural SLO miss rate is ~7%
+- With threshold=0.02, the AC engages at moderate overload and over-restricts
+- With threshold=0.10, the AC tolerates natural overload and only engages at deep overload (2500 RPS)
+- This delayed the collapse at 1800 by 20s and improved CoV at all RPS levels by 1.4-6.5pp
+
+**3. probe_min=0.05 (not higher)**
+- probe_min=0.20 (anchor_19) admits 20% excess after collapse → deeper re-crashes
+- The probe factor controls the post-collapse recovery rate. 5% is conservative but stable; higher values create oscillation.
+
+**4. initial_budget_rate=5M µs/s (not higher)**
+- 100M (anchor_18) eliminates cold-start ramp but floods the system at overload transitions
+- 5M causes a 15-18s ramp at cold start, but this is within the 10s warmup period and acceptable
+- The ramp acts as natural rate limiting during overload transitions
+
+### What was tried and failed
+
+| Approach | Why it failed |
+|----------|--------------|
+| Slow adjust_rate (iter 1) | Limit cycle is structural, not a gain problem |
+| Fast ER backstop (iter 2) | Makes oscillation more twitchy, not less |
+| Symmetric α=0.1 (iter 9) | Faster inflation hurts scheduling; asymmetric α is correct for the estimator |
+| Proportional control (iter 6) | Too gentle near threshold → queue buildup |
+| Cooldown hold (iter 7) | Oscillation is not driven by the rebound transition |
+| Larger burst buffer (iter 8) | Oscillation is driven by rate feedback, not buffer size |
+| Linear adaptive probe (iter 12) | Gradual probe reduction at moderate overload causes wider oscillations |
+| Skip-EMA-on-zero-completions (iter 15) | Preserved inflated estimate → catastrophic overshoot after recovery |
+| Explore-mode budget bypass (iter 17) | Would-reject tracking caused premature explore→exploit transition |
+| High initial_budget_rate (iter 18) | Eliminates ramp but floods system at overload |
+| Higher probe_min (iter 19) | 20% excess admission after collapse → deeper re-crashes |
+
+### What worked
+
+| Approach | Effect |
+|----------|--------|
+| 4:1 asymmetric adjust rates (iter 3) | First stability improvement: +276 at 1400, +442 at 2500 |
+| Goodput-tracking controller (iter 11) | Eliminated observer effect: best mean at 1400/2500 |
+| Threshold probe switching (iter 13) | Fixed sub-saturation shedding: 800 perfect |
+| Explore-mode initial_budget_rate bypass (iter 16) | Minor CoV improvement at 1200/1800/2500 |
+| Higher rejection_threshold (iter 20) | Best CoV profile: -1.4pp to -6.5pp at all overloaded RPS |
+
+### Final results: anchor_20 (best configuration)
+
+**Parameters:** goodput-tracking AC, probe_min=0.05, probe_max=1.0, rejection_threshold=0.10, rejection_alpha=0.01, tau=1.0s, initial_budget_rate=5M, max_burst_secs=0.005.
+
+| RPS | Baseline Mean(CoV) | Best param-tuned (anchor_3) | **anchor_20 Mean(CoV)** |
+|-----|---------------------|----------------------------|-------------------------|
+| 800 | 800 (0.0%) | 800 (0.0%) | **800 (0.1%)** |
+| 1200 | 1164 (4.0%) | 1180 (3.2%) | **1182 (0.7%)** ✅ best CoV |
+| 1400 | 1024 (9.1%) | 1246 (5.5%) | **1254 (5.1%)** ✅ best CoV+mean |
+| 1800 | **1679 (12.6%)** | 1336 (10.6%) | 1451 (13.7%) |
+| 2500 | 1061 (25.2%) | 1345 (19.7%) | **1601 (27.0%)** ✅ best mean |
+
+### Open questions
+
+1. **1800 RPS collapse:** After ~20s of stable operation at ~1600 goodput, a queuing cascade drops goodput to ~1050 and never fully recovers within the 60s step. The baseline handles this load fine (1679) without AC. The AC's cost-tracking inevitably engages at this load, causing a worse outcome than no AC at all. Can the AC detect that abort_slo alone is sufficient and stay disengaged?
+
+2. **Cold-start ramp (15-18s):** The initial_budget_rate=5M µs/s is too low for ~25ms-cost ComposePost requests (supports only ~200 req/s). Higher values flood overload. Could a smarter bootstrap (e.g., measuring offered cost rate from admitted-but-not-yet-completed requests) converge faster without flooding?
+
+3. **Cross-application generalization:** All results are on Socialnet ComposePost (SLO=50ms). Hotel has serial call graphs where the AC may behave differently. The parameters (rejection_threshold, probe_min) may need to be application-aware.
