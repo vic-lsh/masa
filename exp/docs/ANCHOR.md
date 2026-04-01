@@ -1077,3 +1077,47 @@ The risk: at 2500 RPS (deep overload, true capacity ~1600), `budget_rate = 1600 
 
 ### Experiment design
 Same config as cp_simple (800, 1200, 1400, 1800, 2500 RPS, SLO=50ms, 60s each).
+
+### Actual Outcomes (anchor_19)
+
+**Status:** Regression ❌ — reverted
+
+| RPS | anchor_13 Mean(CoV) | anchor_19 Mean(CoV) | Δ Mean |
+|-----|----------------------|----------------------|--------|
+| 1200 | 1195 (2.1%) | 1134 (4.6%) | -61 |
+| 1400 | 1341 (9.3%) | 1245 (8.7%) | -96 |
+| 1800 | 1509 (20.2%) | 1227 (25.2%) | -282 |
+| 2500 | 1593 (30.3%) | 1076 (33.7%) | -517 |
+
+20% probe too aggressive. Admits too many excess requests, causing deeper post-collapse oscillations.
+
+**Decision:** Revert. probe_min=0.05 is correct.
+
+**Key insight from timeline analysis:** At 1800 RPS, the baseline (no AC) achieves 1679 by letting abort_slo handle the ~7% SLO misses. The AC shouldn't engage at 1800 at all — the system self-regulates via abort_slo. The AC should only engage at deep overload (2500+).
+
+The rejection_threshold controls when explore → exploit transition happens. Currently at 0.02 — any rejections trigger exploit mode. Raising the threshold would keep the AC in explore mode (admit freely) at moderate overload where the system self-regulates.
+
+---
+
+## Iteration 20: Raise rejection_threshold from 0.02 to 0.10 (experiment anchor_20)
+
+**Status:** Pending
+
+### Change
+Increase `rejection_threshold` from 0.02 to 0.10 in `policy_params.rs`.
+
+### Hypothesis
+The collapse at 1800 RPS is triggered by the AC switching to exploit mode too eagerly. At 1800, ~7% of requests naturally miss SLO (baseline achieves 93% goodput). These SLO misses cause budget rejections, rejection_ema crosses 0.02, exploit mode engages, and the over-restriction cascades.
+
+At threshold=0.10, the AC tolerates up to ~10% rejection rate before engaging. At 1800, the natural ~7% SLO miss rate stays below the threshold → AC stays in explore mode → admits freely → system self-regulates like baseline.
+
+At 2500, the rejection rate exceeds 10% (system can only handle ~60-65% of load) → AC engages → restricts to goodput-tracking level → controls overload.
+
+### Expected outcomes:
+1. 1800 RPS recovers to near-baseline (~1650-1700) — AC stays in explore mode
+2. 2500 RPS maintains anchor_13 gains — AC still engages at deep overload
+3. 800/1200 unchanged
+4. 1400: may slightly improve (more tolerance for natural variance)
+
+### Experiment design
+Same config as cp_simple (800, 1200, 1400, 1800, 2500 RPS, SLO=50ms, 60s each).
