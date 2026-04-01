@@ -347,18 +347,22 @@ impl AdmissionController {
         let elapsed = now.duration_since(state.last_update).as_secs_f64();
         state.last_update = now;
 
-        // Update goodput EMA — skip during idle gaps to preserve the rate
-        // estimate across load transition pauses.
+        // Update goodput and ER EMAs — skip during idle gaps to preserve
+        // estimates across load transition pauses.
         if elapsed > 0.0 && elapsed < p.idle_threshold {
-            let instant_rate = drained / elapsed;
             let alpha = 1.0 - (-elapsed / p.tau).exp();
-            state.goodput_rate += alpha * (instant_rate - state.goodput_rate);
-        }
 
-        // Update ER EMA from accumulated ER events.
-        if total_drained > 0.0 {
-            let er_rate = er_drained / total_drained;
-            state.er_ema += p.rejection_alpha * (er_rate - state.er_ema);
+            let instant_rate = drained / elapsed;
+            state.goodput_rate += alpha * (instant_rate - state.goodput_rate);
+
+            // ER fraction: use time-based alpha (same as goodput) for smooth,
+            // time-consistent convergence.  Per-event alpha was too noisy —
+            // a single ER out of 1 completion gives er_rate=1.0, causing
+            // spurious mode switches.
+            if total_drained > 0.0 {
+                let er_fraction = er_drained / total_drained;
+                state.er_ema += alpha * (er_fraction - state.er_ema);
+            }
         }
 
         // Explore vs exploit: ER rate determines probe margin.
