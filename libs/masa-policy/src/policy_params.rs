@@ -70,12 +70,11 @@ impl Default for RajomonParams {
 /// tracks observed successful completion throughput (in µs/s) plus a
 /// probe margin, replacing the previous utilization-based feedback loop.
 ///
-/// The controller switches between two modes based on the early-return (ER)
-/// rate observed from downstream child RPCs:
-/// - **Explore** (er_ema <= `rejection_threshold`): goodput-tracking token
-///   bucket with generous `probe_max` margin.
-/// - **Exploit** (er_ema > `rejection_threshold`): goodput-tracking token
-///   bucket with tight `probe_min` margin.
+/// The probe margin switches between two modes based on the rejection rate:
+/// - **Explore** (`probe_max`): used when rejection rate is below
+///   `rejection_threshold`, allowing aggressive capacity discovery.
+/// - **Exploit** (`probe_min`): used when rejection rate exceeds the
+///   threshold, locking to tight goodput tracking during overload.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct PredParams {
@@ -96,15 +95,6 @@ pub struct PredParams {
     pub rejection_threshold: f64,
     /// EMA time constant in seconds for the goodput rate estimator.
     pub tau: f64,
-    /// Multiplier for the downward EMA time constant.  The goodput EMA
-    /// uses `tau` for upward convergence and `tau * tau_down_factor` for
-    /// downward decay, preventing transient goodput crashes from
-    /// depressing the budget.
-    pub tau_down_factor: f64,
-    /// Idle gap threshold in seconds.  When `should_admit` sees
-    /// `elapsed > idle_threshold`, the goodput EMA update is skipped so
-    /// that the rate estimate is preserved across inter-step gaps.
-    pub idle_threshold: f64,
 }
 
 impl Default for PredParams {
@@ -113,12 +103,10 @@ impl Default for PredParams {
             max_burst_secs: 0.005,
             initial_budget_rate: 5_000_000.0,
             probe_min: 0.05,
-            probe_max: 0.5,
+            probe_max: 1.0,
             rejection_alpha: 0.01,
             rejection_threshold: 0.10,
             tau: 1.0,
-            tau_down_factor: 4.0,
-            idle_threshold: 0.5,
         }
     }
 }
