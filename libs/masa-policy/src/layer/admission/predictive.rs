@@ -254,6 +254,8 @@ struct BudgetState {
     budget_us: f64,
     /// Timestamp of last admission check.
     last_update: Instant,
+    /// EMA of per-decision rejection rate (0.0 = no rejections, 1.0 = all rejected).
+    rejection_ema: f64,
 }
 
 #[cfg(feature = "ac_pred")]
@@ -290,6 +292,7 @@ impl AdmissionController {
                 goodput_rate: p.initial_budget_rate,
                 budget_us: p.initial_budget_rate * p.max_burst_secs,
                 last_update: Instant::now(),
+                rejection_ema: 0.0,
             }),
             completed_cost_us: AtomicU64::new(0),
         }
@@ -324,8 +327,14 @@ impl AdmissionController {
             state.goodput_rate += alpha * (instant_rate - state.goodput_rate);
         }
 
-        // Set budget rate to track goodput with probe margin.
-        let budget_rate = state.goodput_rate * (1.0 + p.probe_factor);
+        // Binary probe: explore aggressively when no rejections,
+        // lock to tight tracking otherwise.
+        let probe_factor = if state.rejection_ema > p.rejection_threshold {
+            p.probe_min // tight tracking (exploit)
+        } else {
+            p.probe_max // aggressive exploration (explore)
+        };
+        let budget_rate = state.goodput_rate * (1.0 + probe_factor);
 
         // Refill tokens, capped at burst limit.
         // Dynamic floor: ensure the budget can always hold at least one
@@ -337,12 +346,16 @@ impl AdmissionController {
             state.budget_us = max_budget;
         }
 
-        if state.budget_us >= cost {
+        // Admission decision + rejection EMA update.
+        let rejected = if state.budget_us >= cost {
             state.budget_us -= cost;
-            true
-        } else {
             false
-        }
+        } else {
+            true
+        };
+        state.rejection_ema +=
+            p.rejection_alpha * ((if rejected { 1.0 } else { 0.0 }) - state.rejection_ema);
+        !rejected
     }
 }
 
