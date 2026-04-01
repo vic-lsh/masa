@@ -70,11 +70,12 @@ impl Default for RajomonParams {
 /// tracks observed successful completion throughput (in µs/s) plus a
 /// probe margin, replacing the previous utilization-based feedback loop.
 ///
-/// The probe margin switches between two modes based on the rejection rate:
-/// - **Explore** (`probe_max`): used when rejection rate is below
-///   `rejection_threshold`, allowing aggressive capacity discovery.
-/// - **Exploit** (`probe_min`): used when rejection rate exceeds the
-///   threshold, locking to tight goodput tracking during overload.
+/// The controller switches between two modes based on the early-return (ER)
+/// rate observed from downstream child RPCs:
+/// - **Explore** (er_ema <= `rejection_threshold`): admit freely, skip
+///   budget check entirely.
+/// - **Exploit** (er_ema > `rejection_threshold`): goodput-tracking token
+///   bucket with `probe_min` margin.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct PredParams {

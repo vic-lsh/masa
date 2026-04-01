@@ -153,17 +153,21 @@ impl Layer for PredAdmissionLayer {
         child_ctx.est.finalize(response);
         let _ = self.est.after_child_rpc(response, &child_ctx.est);
 
-        // Accumulate completed cost for goodput tracking (ingress only, success only).
+        // Accumulate completed cost for goodput tracking (ingress only).
         #[cfg(feature = "ac_pred")]
-        if ctx.hop_count() == 0 && response.is_ok() {
-            if let Some(id) = &child_ctx.est.parent_to_child_id {
-                let cost = self
-                    .est
-                    .server
-                    .est_child_latency
-                    .get_estimate(id.to_key())
-                    .unwrap_or(0);
-                self.pred_admission.record_completion(cost);
+        if ctx.hop_count() == 0 {
+            if response.is_ok() {
+                if let Some(id) = &child_ctx.est.parent_to_child_id {
+                    let cost = self
+                        .est
+                        .server
+                        .est_child_latency
+                        .get_estimate(id.to_key())
+                        .unwrap_or(0);
+                    self.pred_admission.record_completion(cost);
+                }
+            } else {
+                self.pred_admission.record_early_return();
             }
         }
 
@@ -254,8 +258,8 @@ struct BudgetState {
     budget_us: f64,
     /// Timestamp of last admission check.
     last_update: Instant,
-    /// EMA of per-decision rejection rate (0.0 = no rejections, 1.0 = all rejected).
-    rejection_ema: f64,
+    /// EMA of early return rate (0.0 = no ERs, 1.0 = all ER).
+    er_ema: f64,
 }
 
 #[cfg(feature = "ac_pred")]
@@ -264,6 +268,7 @@ impl std::fmt::Debug for BudgetState {
         f.debug_struct("BudgetState")
             .field("goodput_rate", &self.goodput_rate)
             .field("budget_us", &self.budget_us)
+            .field("er_ema", &self.er_ema)
             .finish()
     }
 }
@@ -281,6 +286,10 @@ pub(crate) struct AdmissionController {
     /// Lock-free accumulator for completed child RPC costs (µs).
     /// Drained by `should_admit` to compute the instantaneous goodput rate.
     completed_cost_us: AtomicU64,
+    /// Lock-free accumulator: count of early-returned completions.
+    er_count: AtomicU64,
+    /// Lock-free accumulator: count of all completions (success + ER).
+    total_count: AtomicU64,
 }
 
 #[cfg(feature = "ac_pred")]
@@ -292,9 +301,11 @@ impl AdmissionController {
                 goodput_rate: p.initial_budget_rate,
                 budget_us: p.initial_budget_rate * p.max_burst_secs,
                 last_update: Instant::now(),
-                rejection_ema: 0.0,
+                er_ema: 0.0,
             }),
             completed_cost_us: AtomicU64::new(0),
+            er_count: AtomicU64::new(0),
+            total_count: AtomicU64::new(0),
         }
     }
 
@@ -302,18 +313,28 @@ impl AdmissionController {
     pub(crate) fn record_completion(&self, est_child_cost: u64) {
         self.completed_cost_us
             .fetch_add(est_child_cost, Ordering::Relaxed);
+        self.total_count.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// Record an early-returned child RPC (lock-free).
+    pub(crate) fn record_early_return(&self) {
+        self.er_count.fetch_add(1, Ordering::Relaxed);
+        self.total_count.fetch_add(1, Ordering::Relaxed);
     }
 
     /// Returns true if the request should be admitted.
     ///
-    /// Uses a token-bucket where tokens are microseconds of compute budget.
-    /// The refill rate tracks observed goodput plus a probe margin.
+    /// Uses ER (early return) rate as the explore/exploit signal:
+    /// - Explore mode (er_ema <= threshold): admit freely, skip budget check.
+    /// - Exploit mode (er_ema > threshold): goodput-tracking token bucket.
     pub(crate) fn should_admit(&self, est_child_cost: u64) -> bool {
         let p = &PolicyParams::global().pred;
         let cost = est_child_cost as f64;
 
-        // Drain the completion accumulator (lock-free swap).
+        // Drain accumulators (lock-free swap).
         let drained = self.completed_cost_us.swap(0, Ordering::Relaxed) as f64;
+        let er_drained = self.er_count.swap(0, Ordering::Relaxed) as f64;
+        let total_drained = self.total_count.swap(0, Ordering::Relaxed) as f64;
 
         let mut state = self.state.lock().unwrap();
         let now = Instant::now();
@@ -327,36 +348,32 @@ impl AdmissionController {
             state.goodput_rate += alpha * (instant_rate - state.goodput_rate);
         }
 
-        // Exploit vs explore: when rejections are happening, track observed
-        // goodput tightly; otherwise admit freely at the generous initial rate.
-        let budget_rate = if state.rejection_ema > p.rejection_threshold {
-            // Exploit mode: tight tracking of observed goodput
-            state.goodput_rate * (1.0 + p.probe_min)
-        } else {
-            // Explore mode: admit freely using generous initial budget
-            p.initial_budget_rate
-        };
+        // Update ER EMA from accumulated ER events.
+        if total_drained > 0.0 {
+            let er_rate = er_drained / total_drained;
+            state.er_ema += p.rejection_alpha * (er_rate - state.er_ema);
+        }
 
-        // Refill tokens, capped at burst limit.
-        // Dynamic floor: ensure the budget can always hold at least one
-        // request (cost × 2), so no request is permanently inadmissible
-        // regardless of how large est_child is (e.g., I/O-heavy Hotel calls).
+        // Explore mode: ER rate below threshold — admit freely, skip budget.
+        if state.er_ema <= p.rejection_threshold {
+            return true;
+        }
+
+        // Exploit mode: goodput-tracking budget.
+        let budget_rate = state.goodput_rate * (1.0 + p.probe_min);
+
         state.budget_us += budget_rate * elapsed;
         let max_budget = (budget_rate * p.max_burst_secs).max(cost * 2.0);
         if state.budget_us > max_budget {
             state.budget_us = max_budget;
         }
 
-        // Admission decision + rejection EMA update.
-        let rejected = if state.budget_us >= cost {
+        if state.budget_us >= cost {
             state.budget_us -= cost;
-            false
-        } else {
             true
-        };
-        state.rejection_ema +=
-            p.rejection_alpha * ((if rejected { 1.0 } else { 0.0 }) - state.rejection_ema);
-        !rejected
+        } else {
+            false
+        }
     }
 }
 
@@ -424,6 +441,12 @@ impl PredictiveAdmission {
     pub(crate) fn record_completion(&self, est_child_cost: u64) {
         self.controller.record_completion(est_child_cost);
     }
+
+    /// Record an early-returned child RPC for ER rate tracking.
+    #[inline]
+    pub(crate) fn record_early_return(&self) {
+        self.controller.record_early_return();
+    }
 }
 
 // ac_pred DISABLED
@@ -468,26 +491,47 @@ impl PredictiveAdmission {
 
     #[inline]
     pub(crate) fn record_completion(&self, _est_child_cost: u64) {}
+
+    #[inline]
+    pub(crate) fn record_early_return(&self) {}
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    /// Push the admission controller into exploit mode by recording many ERs
+    /// and draining the accumulators via `should_admit` calls.
+    fn push_into_exploit_mode(ac: &AdmissionController) {
+        // Record enough early returns to push er_ema above the threshold.
+        // Each drain+update: er_ema += alpha * (1.0 - er_ema).
+        // With rejection_alpha=0.01 and threshold=0.10, we need many rounds.
+        for _ in 0..200 {
+            ac.record_early_return();
+            ac.should_admit(0);
+        }
+        // Verify we're in exploit mode by checking that the controller
+        // can now reject (er_ema > threshold).
+    }
+
     #[test]
-    fn test_admission_controller_admits_with_budget() {
+    fn test_admission_controller_admits_in_explore_mode() {
         let ac = AdmissionController::new();
-        // With initial budget (goodput_rate = 5M, budget = 25K µs),
-        // a small compute cost should be admitted.
-        assert!(ac.should_admit(1000));
+        // In explore mode (er_ema = 0.0 <= threshold), all requests admitted.
+        for _ in 0..50 {
+            assert!(ac.should_admit(100_000), "explore mode should always admit");
+        }
     }
 
     #[test]
     fn test_admission_controller_rejects_when_budget_exhausted() {
         let ac = AdmissionController::new();
-        // Exhaust the budget by admitting requests with large compute costs.
-        // Initial budget = 5M * 0.005 = 25K µs. With no completions,
-        // goodput_rate decays toward 0 and budget won't refill meaningfully.
+        // First, push into exploit mode so budget checking is active.
+        push_into_exploit_mode(&ac);
+
+        // Now exhaust the budget by admitting requests with large compute costs.
+        // In exploit mode, budget_rate = goodput_rate * 1.05. With no real
+        // completions (only ER records), goodput_rate has decayed toward 0.
         // Dynamic burst floor: max(budget_rate * 0.005, cost * 2) = 200K us.
         // Each request costs 100K, so ~2 requests exhaust the budget.
         let mut rejected = false;
@@ -506,10 +550,13 @@ mod tests {
     #[test]
     fn test_goodput_tracking_refills_budget() {
         let ac = AdmissionController::new();
+        // Push into exploit mode so budget checking is active.
+        push_into_exploit_mode(&ac);
+
         // Exhaust budget
         while ac.should_admit(100_000) {}
 
-        // Simulate completions
+        // Simulate completions (these also count as total_count successes)
         ac.record_completion(100_000);
         ac.record_completion(100_000);
 
