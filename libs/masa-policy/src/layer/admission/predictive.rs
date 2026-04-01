@@ -355,10 +355,9 @@ impl AdmissionController {
         }
 
         // Continuous ER-proportional probe: scales from probe_max (no ER)
-        // down to probe_min (at er_saturate). No binary mode switching.
-        let er_saturate = 0.50_f64;
-        let er_frac = (state.er_ema / er_saturate).clamp(0.0, 1.0);
-        let probe = p.probe_min + (p.probe_max - p.probe_min) * (1.0 - er_frac);
+        // down to 0 (at er_saturate). No binary mode switching.
+        let er_saturate = 0.20_f64;
+        let probe = p.probe_max * (1.0 - state.er_ema / er_saturate).clamp(0.0, 1.0);
         let budget_rate = state.goodput_rate * (1.0 + probe);
 
         // Refill tokens, capped at burst limit.
