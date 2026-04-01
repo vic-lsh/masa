@@ -260,5 +260,65 @@ opal_3's regression was caused by probe going to 0 at moderate ER rates (>20%). 
 4. 2500: significant recovery from opal_3
 5. Lower CoV at all overloaded RPS
 
-### Experiment design
+### Experiment design (opal_4)
+Same config as cp_simple (800, 1200, 1400, 1800, 2500 RPS, SLO=50ms, 60s each).
+
+### Actual Outcomes (opal_4)
+
+**Status:** Mixed — 2500 improved, 1800 worse
+
+**Code commit:** 1ad4dd67
+
+| RPS | anchor_20 Mean(CoV) | opal_3 Mean(CoV) | opal_4 Mean(CoV) | Δ vs anchor_20 |
+|-----|---------------------|-------------------|-------------------|----------------|
+| 800 | 800 (0.1%) | 800 (0.0%) | 800 (0.0%) | 0 |
+| 1200 | 1182 (0.7%) | 1183 (1.9%) | 1175 (3.0%) | -7 |
+| 1400 | 1254 (5.1%) | 1187 (18.6%) | 1127 (19.7%) | **-127** |
+| 1800 | 1451 (13.7%) | 1006 (24.8%) | 974 (28.2%) | **-477** |
+| 2500 | 1601 (27.0%) | 905 (30.8%) | **1320 (20.4%)** | -281 |
+
+**Key findings:**
+1. **2500 dramatically improved** (+415 vs opal_3, CoV 30.8%→20.4%). Wider er_saturate and probe floor prevent feedback death spiral.
+2. **1800 slightly worse** (-31 vs opal_3). Higher probe at 1800 causes repeated over-admission floods: starts at 1800 for 3.5s, drops to 1200 range, crashes to 572-700 periodically.
+3. **Core tension:** Higher er_saturate helps 2500 (probe stays positive) but hurts 1800 (probe stays too high, causing over-admission).
+4. The goodput-tracking feedback loop is the remaining problem: goodput dip → budget drops → less admission → deeper dip. The ER probe can't fix this because ER responds to overload, not to the AC's own feedback.
+
+**Decision:** Keep opal_4 code, add asymmetric goodput tau to break feedback loop.
+
+---
+
+## Iteration 5: Asymmetric goodput EMA — slow decay breaks feedback loop (experiment opal_5)
+
+**Status:** Pending
+
+### Change
+Make the goodput_rate EMA asymmetric: fast rise (tau=1.0s), slow decay (tau=5.0s). When instantaneous goodput drops below the EMA, the EMA decays 5x slower, preventing transient dips from crashing the budget.
+
+```rust
+let tau = if instant_rate >= state.goodput_rate {
+    p.tau        // 1.0s — fast discovery
+} else {
+    p.tau * 5.0  // 5.0s — slow decay
+};
+```
+
+Combined with opal_4's ER-proportional probe (er_saturate=0.50, probe floor=0.05).
+
+### Hypothesis
+The remaining oscillation at 1800/2500 is driven by the goodput-tracking feedback loop: a transient goodput dip causes budget_rate to drop, restricting admission, causing further goodput drops. The ER probe modulates the margin but can't fix the underlying budget instability.
+
+Asymmetric tau addresses this directly: the slow downward decay prevents transient dips from cascading. When goodput dips briefly (e.g., burst of SLO misses), goodput_rate holds steady, budget holds steady, admission stays stable, and goodput recovers.
+
+ANCHOR iteration 24 proved this works: asymmetric tau achieved 1725 at 1800 RPS (4.7% CoV) — better than baseline. It failed at 2500 because the slow decay prevented tracking genuine overload. But with the ER-proportional probe, the probe factor handles overload tightening independently of goodput_rate: at high ER, probe drops, reducing the budget even if goodput_rate stays inflated.
+
+**The synergy:** Asymmetric tau stabilizes the budget at moderate overload (breaks feedback loop). ER-proportional probe tightens at deep overload (compensates for inflated goodput_rate).
+
+### Expected outcomes:
+1. 800/1200: unchanged (probe ~1.0, no ER)
+2. 1400: improved stability (slow decay absorbs dips)
+3. 1800: significantly better than opal_4 — slow decay prevents post-flood crashes
+4. 2500: maintained or improved from opal_4 — ER probe handles overload, slow decay stabilizes between oscillation peaks
+5. CoV should improve at all overloaded RPS
+
+### Experiment design (opal_5)
 Same config as cp_simple (800, 1200, 1400, 1800, 2500 RPS, SLO=50ms, 60s each).
