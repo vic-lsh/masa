@@ -254,6 +254,8 @@ struct BudgetState {
     budget_us: f64,
     /// Timestamp of last admission check.
     last_update: Instant,
+    /// Per-decision EMA of the rejection rate (0.0 = all admitted, 1.0 = all rejected).
+    rejection_ema: f64,
 }
 
 #[cfg(feature = "ac_pred")]
@@ -262,6 +264,7 @@ impl std::fmt::Debug for BudgetState {
         f.debug_struct("BudgetState")
             .field("goodput_rate", &self.goodput_rate)
             .field("budget_us", &self.budget_us)
+            .field("rejection_ema", &self.rejection_ema)
             .finish()
     }
 }
@@ -290,6 +293,7 @@ impl AdmissionController {
                 goodput_rate: p.initial_budget_rate,
                 budget_us: p.initial_budget_rate * p.max_burst_secs,
                 last_update: Instant::now(),
+                rejection_ema: 0.0,
             }),
             completed_cost_us: AtomicU64::new(0),
         }
@@ -324,8 +328,10 @@ impl AdmissionController {
             state.goodput_rate += alpha * (instant_rate - state.goodput_rate);
         }
 
-        // Set budget rate to track goodput with probe margin.
-        let budget_rate = state.goodput_rate * (1.0 + p.probe_factor);
+        // Adaptive probe factor: shrinks from probe_max toward probe_min
+        // as the rejection rate (tracked by rejection_ema) increases.
+        let probe_factor = p.probe_max - state.rejection_ema * (p.probe_max - p.probe_min);
+        let budget_rate = state.goodput_rate * (1.0 + probe_factor);
 
         // Refill tokens, capped at burst limit.
         // Dynamic floor: ensure the budget can always hold at least one
@@ -337,12 +343,16 @@ impl AdmissionController {
             state.budget_us = max_budget;
         }
 
-        if state.budget_us >= cost {
+        let rejected = state.budget_us < cost;
+        if !rejected {
             state.budget_us -= cost;
-            true
-        } else {
-            false
         }
+
+        // Update rejection EMA after the admit/reject decision.
+        let sample = if rejected { 1.0 } else { 0.0 };
+        state.rejection_ema += p.rejection_alpha * (sample - state.rejection_ema);
+
+        !rejected
     }
 }
 
