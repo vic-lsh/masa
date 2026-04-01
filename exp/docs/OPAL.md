@@ -1093,3 +1093,51 @@ opal_13 showed that symmetric fast tau (0.3s) hurts because transient goodput di
 ### Experiment design (opal_14)
 Same config as cp_simple (800, 1200, 1400, 1800, 2500 RPS, SLO=50ms, 60s each).
 
+### Actual Outcomes (opal_14)
+
+**Status:** Regression ❌
+
+**Code commit:** 369d2220
+
+| RPS | anchor_20 Mean(CoV) | opal_13 Mean | opal_14 Mean | opal_14 ER/s | Δ vs anchor_20 |
+|-----|---------------------|--------------|--------------|--------------|----------------|
+| 800 | 800 (0.1%) | 800 | 800 | 0.2 | 0 |
+| 1200 | 1182 (0.7%) | 1122 | 1154 | 46 | -28 |
+| 1400 | 1254 (5.1%) | 1209 | **1255** | 145 | **+1** |
+| 1800 | 1451 (13.7%) | 1372 | 1107 | 691 | **-344** |
+| 2500 | 1601 (27.0%) | 1483 | 1067 | 1429 | **-534** |
+
+**Key findings:**
+1. **1400 matches anchor_20** (+1, +46 vs opal_13). Slow decay absorbs near-saturation transient dips effectively.
+2. **Catastrophic collapse at overload.** -344 at 1800, -534 at 2500. Same failure mechanism as opal_5: slow decay keeps goodput_rate inflated → budget stays high → persistent over-admission → queue catastrophe → mass SLO misses.
+3. **Confirms opal_5's fundamental finding in the token-bucket context.** Budget exhaustion does NOT compensate for inflated goodput_rate — the inflated rate causes the budget to refill faster than it exhausts, perpetuating over-admission.
+4. **Asymmetric tau is incompatible with goodput-tracking budget.** The slow decay directly inflates the budget via `budget_rate = goodput_rate * 1.05`. Any mechanism that slows goodput_rate decay will cause over-admission at sustained overload, regardless of the feedback mechanism (ER-based or budget-based).
+
+---
+
+## Summary and Conclusions (Iterations 13-14: Tau Tuning)
+
+### Results table
+
+| Iter | Key change | 800 | 1200 | 1400 | 1800 | 2500 |
+|------|-----------|-----|------|------|------|------|
+| **anchor_20** | **baseline (tau=1.0)** | **800** | **1182** | **1254** | **1451** | **1601** |
+| opal_13 | tau=0.3 (symmetric) | 800 | 1122 | 1209 | 1372 | 1483 |
+| opal_14 | tau_up=0.3, tau_down=2.0 | 800 | 1154 | **1255** | 1107 | 1067 |
+
+### What we learned
+1. **Symmetric fast tau (opal_13) hurts everywhere.** The more volatile goodput_rate over-reacts to transient dips, triggering premature budget contraction.
+2. **Asymmetric tau (opal_14) helps near-saturation but collapses at overload.** Slow decay prevents dip-triggered contraction (good) but also prevents overload-triggered contraction (catastrophic).
+3. **tau=1.0 is a Goldilocks value.** Fast enough to track load changes, slow enough to smooth transient noise, and symmetric enough to tighten during overload. anchor_20 found the right balance.
+
+### Final finding: the slow ramp is an irreducible cost of goodput-tracking AC
+
+Across 14 iterations, every attempt to speed up the ramp either:
+- Degraded overload performance (opal_1-5: ER-based probe, opal_6-8: concurrency limiter, opal_11-12: initial_budget_rate, opal_13-14: tau tuning)
+- Had no effect (opal_9-10: gap-freeze)
+
+The fundamental tension: the goodput-tracking token bucket's stability at overload comes from its conservative, slow-moving goodput_rate EMA. Any change that makes the EMA faster, more generous, or less responsive to downward signals also makes it less effective at overload. **The slow ramp and overload stability are two sides of the same coin.**
+
+### Code state
+Current code has asymmetric tau (commit 369d2220). Should be reverted to anchor_20 baseline (tau=1.0, initial_budget_rate=5M).
+
