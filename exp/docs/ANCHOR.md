@@ -1051,3 +1051,29 @@ The goodput-tracking AC (anchor_13 = best variant) achieves:
 **Weakness:** 1800 still -170 vs baseline, CoV elevated at overload (20-30%).
 
 The cold-start ramp (15s) is a cosmetic issue excluded by warmup. The overload CoV is the remaining real problem.
+
+---
+
+## Iteration 19: Increase probe_min from 0.05 to 0.20 (experiment anchor_19)
+
+**Status:** Pending
+
+### Change
+Increase `probe_min` from 0.05 to 0.20 in `policy_params.rs`.
+
+### Hypothesis
+The 1800 RPS collapse (1800 → 1100 at t=186, never recovers) happens because `probe_min=0.05` makes the post-collapse budget too conservative. After collapsing to ~1200 goodput, `budget_rate = 1200 * 1.05 = 1260` — far below the system's actual capacity (~1700). The controller can't discover that it can admit more.
+
+At `probe_min=0.20`, post-collapse: `budget_rate = 1200 * 1.20 = 1440`. This is closer to the true capacity, allowing the system to recover. As it recovers, goodput rises, budget rises further, approaching equilibrium at the real capacity.
+
+The risk: at 2500 RPS (deep overload, true capacity ~1600), `budget_rate = 1600 * 1.20 = 1920` — admits 20% excess. But most excess gets killed by abort_slo cheaply.
+
+### Expected outcomes:
+1. 1800 RPS: faster recovery after collapse, higher steady-state (closer to 1700)
+2. Reduced CoV at 1800/2500 (higher post-collapse operating point = less range)
+3. 800/1200 unchanged (threshold probe handles sub-saturation)
+4. 1400 might slightly improve (more aggressive probing at the saturation boundary)
+5. Possible slight mean reduction at 2500 if the extra 20% probe causes queueing
+
+### Experiment design
+Same config as cp_simple (800, 1200, 1400, 1800, 2500 RPS, SLO=50ms, 60s each).
