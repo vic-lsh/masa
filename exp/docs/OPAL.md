@@ -384,3 +384,108 @@ A potential hybrid: use anchor_20's budget-based rejection_ema for exploit/explo
 ### Code state
 Reverted to opal_4 code (commit 1ad4dd67) then reverted opal_5. Current code has the ER-proportional probe with er_saturate=0.50 and probe floor. This should be reverted to anchor_20 baseline for clean state.
 
+---
+
+## Next direction: Concurrency-based admission control
+
+### Why concurrency limiting instead of rate limiting
+
+All OPAL iterations (and ANCHOR iterations 11-27) used a **rate-based** admission controller: a token bucket where the refill rate tracks observed goodput. This architecture has two structural problems:
+
+1. **Feedback death spiral:** `budget_rate = goodput_rate * (1 + probe)`. When goodput dips transiently, budget_rate drops, restricting admission, causing goodput to drop further. Every OPAL iteration suffered from this at overload.
+
+2. **Slow discovery:** The budget can only admit as fast as goodput_rate allows, and goodput_rate can only grow as fast as the budget admits. This circular dependency is why the ramp takes 15-18s — each cycle increases admission by ~5%.
+
+A **concurrency-based** admission controller avoids both problems by controlling a fundamentally different variable: not the *rate* of admission but the *number of requests in flight simultaneously*.
+
+### How it works
+
+Replace the token bucket with a concurrency limiter:
+
+```
+state:
+    inflight: AtomicU32      // current in-flight request count
+    limit: f64               // adaptive concurrency limit
+    min_latency: f64         // observed no-load latency (floor)
+
+on admission check (ingress only):
+    if inflight >= limit:
+        return REJECT
+    inflight += 1
+    return ADMIT
+
+on completion (ingress only):
+    inflight -= 1
+    update latency estimate from this request's observed latency
+    gradient = min_latency / current_avg_latency
+    // gradient ≈ 1.0 when no queueing, < 1.0 when overloaded
+    limit = limit * gradient + headroom
+```
+
+### Why this solves both problems
+
+**No feedback death spiral.** The concurrency limit is a structural property ("how many requests can the system handle simultaneously"), not a derivative of output. When the controller restricts admission, the limit doesn't shrink — it holds at whatever the latency signal says is right. Contrast with rate-based: restricting admission reduces goodput, which reduces the budget, which restricts further.
+
+**Fast discovery via latency signal.** Latency is immediate: admit one request too many → latency increases → you know instantly. No need to wait for the request to miss SLO (ER delay) or for a goodput EMA to converge (rate delay). AIMD-style discovery (increase limit by 1 per successful completion) reaches optimal concurrency in ~1 second:
+- At 1600 req/s capacity, 25ms avg latency: optimal concurrency ≈ 40
+- Starting from limit=10, +1 per completion at 25ms: reaches 40 in ~30 completions = **0.75s**
+
+**Overload rejection is instant and prevents queue buildup.** At 2500 RPS with limit=40: 40 requests in flight, 1600 completions/s, excess **rejected immediately at the gate** before entering the processing pipeline. No queue catastrophe, no wasted processing. The token bucket also rejects at the gate, but its rate calculation is coupled to a slow-moving EMA.
+
+### Latency-based limit adaptation (Vegas-style)
+
+The limit adapts using the ratio of no-load latency to current latency, similar to TCP Vegas:
+
+```
+gradient = min_latency / smoothed_avg_latency
+new_limit = current_limit * gradient + queue_allowance
+```
+
+- `gradient ≈ 1.0` (latency ≈ min): system has headroom → limit can grow
+- `gradient < 1.0` (latency inflated by queueing): system overloaded → limit shrinks proportionally
+- `min_latency`: the observed floor latency when the system is not congested. Can be tracked as a running minimum with periodic decay to avoid stale floors.
+- `queue_allowance`: small additive term (~sqrt(limit)) that allows gradual probing above the current equilibrium.
+
+The proportional response (`limit * gradient`) is inherently stable: if you overshoot, latency increases, gradient drops, limit drops. If you undershoot, latency stays at floor, gradient stays at 1, limit grows. Small perturbations cause small corrections — no cliff edges, no oscillation.
+
+### Cost heterogeneity
+
+The main tradeoff vs. the token bucket: concurrency limits don't naturally account for per-API cost differences (a cheap 5ms API and an expensive 50ms API both consume one concurrency slot). Options:
+
+1. **Weighted concurrency:** Each request consumes `est_child_cost / baseline_cost` slots. Expensive APIs consume more of the limit. This preserves cost-awareness while using concurrency as the control variable.
+2. **Per-API limits:** Separate concurrency limits per downstream API. More complex but precise.
+3. **Ignore for now:** Socialnet's ComposePost is the only API under test. Add cost-awareness later if needed for Hotel (which has diverse API costs).
+
+### What to keep from anchor_20
+
+- **Layer 1 (deadline feasibility check):** Unchanged. Independent of the admission mechanism.
+- **Latency estimator infrastructure:** The `est_child_latency` map provides per-API latency estimates that feed the concurrency limiter's min_latency and cost weighting.
+- **Goodput tracking:** Can still track goodput_rate for observability/logging, just don't use it to set the admission rate.
+
+### Implementation sketch
+
+In `predictive.rs`, replace `AdmissionController` (token bucket) with `ConcurrencyLimiter`:
+
+```rust
+struct ConcurrencyLimiter {
+    inflight: AtomicU32,
+    state: Mutex<LimiterState>,
+}
+
+struct LimiterState {
+    limit: f64,                    // current concurrency limit
+    min_latency_us: f64,           // observed no-load latency floor
+    avg_latency_us: f64,           // EMA of recent latencies
+    last_update: Instant,
+}
+```
+
+The `should_admit` check becomes: `inflight.load() < limit`. On admission: `inflight.fetch_add(1)`. On completion (after_child_rpc): `inflight.fetch_sub(1)` + update latency + adjust limit.
+
+### Expected advantages over OPAL/ANCHOR approaches
+
+1. **Sub-second discovery** (vs 15s ramp): AIMD grows limit by 1 per completion
+2. **No feedback death spiral** at overload: limit based on latency ratio, not output rate
+3. **Instant overload rejection**: concurrent count exceeds limit → reject before processing
+4. **Inherently stable**: proportional control via latency gradient, no mode switching needed
+
