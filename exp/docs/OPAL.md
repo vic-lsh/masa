@@ -133,7 +133,7 @@ The goodput_rate preservation across gaps is critical: when entering a new highe
 5. 2500: budget engages after ~0.5s → stabilizes at capacity → no oscillation
 6. No collapses — the one-way latch prevents the disengagement that caused opal_1's crashes
 
-### Experiment design
+### Experiment design (opal_2)
 Same config as cp_simple (800, 1200, 1400, 1800, 2500 RPS, SLO=50ms, 60s each).
 
 ### Actual Outcomes (opal_2)
@@ -205,6 +205,60 @@ ANCHOR iteration 12 tried linear interpolation but it failed because the transit
 4. 1800: probe ~0.65, budget admits most of 1800, closer to baseline than anchor_20
 5. 2500: probe ~0, tight tracking, anchor_20-level goodput or better
 6. Cold-start ramp improved but not eliminated (~4-5s vs 15s)
+
+### Experiment design (opal_3)
+Same config as cp_simple (800, 1200, 1400, 1800, 2500 RPS, SLO=50ms, 60s each).
+
+### Actual Outcomes (opal_3)
+
+**Status:** Mixed — partial success, iterate
+
+**Code commit:** 91f1632e
+
+| RPS | anchor_20 Mean(CoV) | opal_3 Mean(CoV) | Δ Mean | Δ CoV |
+|-----|---------------------|-------------------|--------|-------|
+| 800 | 800 (0.1%) | 800 (0.0%) | 0 | -0.1pp |
+| 1200 | 1182 (0.7%) | 1183 (1.9%) | +1 | +1.2pp |
+| 1400 | 1254 (5.1%) | 1187 (18.6%) | **-67** | +13.5pp |
+| 1800 | 1451 (13.7%) | 1006 (24.8%) | **-445** | +11.1pp |
+| 2500 | 1601 (27.0%) | 905 (30.8%) | **-696** | +3.8pp |
+
+**Key findings:**
+1. **Ramp eliminated at sub-saturation** — 800→1200 instant, 1200→1400 instant. Validates the user's core hypothesis.
+2. **No mode-switching oscillation** — continuous probe eliminates bang-bang cycling. Remaining oscillation is from goodput-tracking feedback.
+3. **er_saturate=0.20 is too low** — at 1800, ER rate quickly exceeds 20%, clamping probe to 0 → budget = goodput_rate * 1.0 → positive feedback death spiral.
+
+**Decision:** Keep opal_3 code, tune er_saturate higher.
+
+---
+
+## Iteration 4: Increase er_saturate to 0.50 + add probe floor (experiment opal_4)
+
+**Status:** Pending
+
+### Change
+Two changes in should_admit:
+1. `er_saturate`: 0.20 → 0.50. Probe reaches 0 only at 50% ER rate.
+2. Probe formula with floor: `probe = probe_min + (probe_max - probe_min) * max(0, 1 - er_ema / er_saturate)`. Budget always has ≥5% margin.
+
+Updated probe curve:
+- er_ema = 0: probe = 1.0
+- er_ema = 0.10: probe = 0.86
+- er_ema = 0.25: probe = 0.53
+- er_ema = 0.50+: probe = 0.05 (floor)
+
+### Hypothesis
+opal_3's regression was caused by probe going to 0 at moderate ER rates (>20%). With er_saturate=0.50 and probe_min=0.05:
+- At 1800 RPS: with budget restricting admission, the actual ER rate should be much lower than opal_3's uncontrolled 33%. Budget stays generous → system self-regulates.
+- At 2500 RPS: higher ER → probe ~0.30-0.53 → budget admits 1.30-1.53x goodput → gradual probing.
+- probe_min=0.05 prevents the feedback death spiral at any ER level.
+
+### Expected outcomes:
+1. 800/1200: unchanged (probe ~1.0)
+2. 1400: improved (probe stays higher)
+3. 1800: significant recovery toward baseline
+4. 2500: significant recovery from opal_3
+5. Lower CoV at all overloaded RPS
 
 ### Experiment design
 Same config as cp_simple (800, 1200, 1400, 1800, 2500 RPS, SLO=50ms, 60s each).
