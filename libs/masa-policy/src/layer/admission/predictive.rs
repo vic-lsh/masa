@@ -323,12 +323,7 @@ impl AdmissionController {
         // Update goodput EMA from accumulated completions.
         if elapsed > 0.0 {
             let instant_rate = drained / elapsed;
-            let tau = if instant_rate >= state.goodput_rate {
-                0.3 // fast rise — rapid capacity discovery
-            } else {
-                2.0 // slow decay — ride out transient dips
-            };
-            let alpha = 1.0 - (-elapsed / tau).exp();
+            let alpha = 1.0 - (-elapsed / p.tau).exp();
             state.goodput_rate += alpha * (instant_rate - state.goodput_rate);
         }
 
