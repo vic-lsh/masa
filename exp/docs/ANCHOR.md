@@ -1262,3 +1262,44 @@ To reach 800 req/s from 200: **exploit needs ~27 EMA cycles (~27s), explore need
 1. **1800 RPS collapse:** After ~20s of stable operation at ~1600 goodput, a queuing cascade drops goodput to ~1050 and never fully recovers within the 60s step. The baseline handles this load fine (1679) without AC. The AC's cost-tracking inevitably engages at this load, causing a worse outcome than no AC at all. Can the AC detect that abort_slo alone is sufficient and stay disengaged?
 
 2. **Cross-application generalization:** All results are on Socialnet ComposePost (SLO=50ms). Hotel has serial call graphs where the AC may behave differently. The parameters (rejection_threshold, probe_min) may need to be application-aware.
+
+---
+
+## Iteration 21: ER-based explore/exploit signal (experiment anchor_21)
+
+**Status:** Pending
+
+### Change
+Change the explore→exploit signal from budget-based `rejection_ema` to early-return (ER) rate. Currently, `rejection_ema` tracks whether the budget would reject a request. In explore mode, the budget is undersized by construction, so it false-positives and causes premature exploit mode (this is why anchor_17 failed).
+
+New approach:
+1. Add an `er_ema` field to `BudgetState`, tracked from `after_child_rpc` when responses are early returns
+2. Add a lock-free `er_count` + `total_count` accumulator pair (like `completed_cost_us`)
+3. In `should_admit`, drain the ER accumulators and update `er_ema`
+4. Use `er_ema > rejection_threshold` as the explore→exploit signal (instead of budget `rejection_ema`)
+5. In explore mode: skip the budget check entirely — always admit
+6. In exploit mode: use goodput-tracking budget as before
+7. Remove the old budget-based `rejection_ema`
+
+The ER rate is an independent signal that measures actual system overload (abort_slo killing late requests), not a budget artifact.
+
+### Hypothesis
+The 15-18s slow ramp at every load transition is caused by the goodput EMA decaying to near-zero during inter-step gaps, and the explore-mode budget (`initial_budget_rate = 5M µs/s`) supporting only ~200 req/s. Previous fixes failed because the explore→exploit signal (`rejection_ema`) was driven by budget rejections — the very thing that's broken during cold start.
+
+By switching the signal to ER rate (abort_slo events):
+- **Explore mode skips the budget check entirely** → no bootstrap bottleneck → instant ramp
+- **ER rate only rises on genuine overload** (requests missing their e2e deadline) → no false-positive mode switching
+- **At 1800 RPS** (~7% natural ER rate, below threshold 0.10): AC stays in explore mode → behaves like baseline → should recover to ~1680
+- **At 2500 RPS** (high ER rate): AC enters exploit mode within ~1-2s → goodput-tracking budget restricts admission
+
+This decouples bootstrap speed from overload control. The ~1-2s of unprotected admission at the start of deep overload is handled by abort_slo (which kills late requests cheaply).
+
+### Expected outcomes if hypothesis is correct:
+1. Near-instant ramp at all load transitions (no more 15-18s climb)
+2. 800/1200 at baseline levels (no AC interference, no sub-saturation shedding)
+3. 1800 RPS recovers to near-baseline (~1650-1700) — AC stays in explore mode
+4. 1400/2500 maintain or exceed anchor_20 gains
+5. CoV improves from reduced ramp waste and fewer false-positive mode switches
+
+### Experiment design
+Same config as cp_simple (800, 1200, 1400, 1800, 2500 RPS, SLO=50ms, 60s each).
