@@ -96,6 +96,11 @@ pub struct PredParams {
     pub rejection_threshold: f64,
     /// EMA time constant in seconds for the goodput rate estimator.
     pub tau: f64,
+    /// Multiplier for the downward EMA time constant.  The goodput EMA
+    /// uses `tau` for upward convergence and `tau * tau_down_factor` for
+    /// downward decay, preventing transient goodput crashes from
+    /// depressing the budget.
+    pub tau_down_factor: f64,
     /// Idle gap threshold in seconds.  When `should_admit` sees
     /// `elapsed > idle_threshold`, the goodput EMA update is skipped so
     /// that the rate estimate is preserved across inter-step gaps.
@@ -112,6 +117,7 @@ impl Default for PredParams {
             rejection_alpha: 0.01,
             rejection_threshold: 0.10,
             tau: 1.0,
+            tau_down_factor: 4.0,
             idle_threshold: 0.5,
         }
     }
