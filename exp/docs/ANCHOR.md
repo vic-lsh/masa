@@ -1356,6 +1356,46 @@ With these fixes:
 ### Experiment design
 Same config as cp_simple (800, 1200, 1400, 1800, 2500 RPS, SLO=50ms, 60s each).
 
+---
+
+## Iterations 21-27: Slow ramp fix attempts
+
+### Summary table (all results with warmup=10s)
+
+| Iter | Key change | 800 | 1200 | 1400 | 1800 | 2500 |
+|------|-----------|-----|------|------|------|------|
+| **baseline** | no AC changes | 800 | 1164 (4.0%) | 1024 (9.1%) | **1679 (12.6%)** | 1061 (25.2%) |
+| **anchor_20** | best pre-ramp-fix | 800 (0.1%) | 1182 (0.7%) | **1254 (5.1%)** | 1451 (13.7%) | **1601 (27.0%)** |
+| 21 | ER signal, skip budget in explore | 800 | 1187 (2.2%) | 1143 (20.1%) | 611 (59.2%) | 727 (72.2%) |
+| 22a | + idle gap preserve, budget in explore | 800 | 1184 (2.0%) | 1206 (14.8%) | 1055 (24.5%) | 927 (32.9%) |
+| 22b | + fix er_ema to time-based alpha | 800 | 1186 (2.0%) | 1155 (15.0%) | 1013 (26.8%) | 1174 (26.8%) |
+| 23 | skip budget in explore + reset er_ema | 800 | 1174 (4.1%) | 1021 (27.4%) | 1135 (50.7%) | 567 (86.4%) |
+| **24** | **asymmetric tau (always slow decay)** | 800 | 1192 (1.6%) | 997 (28.6%) | **1725 (4.7%)** | 649 (71.9%) |
+| 25 | mode-aware asymmetric tau | 800 | 1178 (3.3%) | 966 (30.5%) | 744 (51.6%) | 782 (62.3%) |
+| 26 | continuous ER-scaled tau_down | 800 | 1195 (0.9%) | 1161 (15.3%) | 771 (42.4%) | 973 (49.6%) |
+| 27 | always-slow tau + probe_max=0.5 | 800 | 1195 (0.8%) | 1106 (21.8%) | 837 (37.1%) | 702 (61.0%) |
+
+### Key findings
+
+**1. Asymmetric tau is the only approach that fixes 1800 RPS.** anchor_24 achieves 1725 (4.7% CoV) — better than baseline's 1679 (12.6%). The slow downward decay prevents transient goodput dips from depressing the budget, eliminating the feedback amplification that causes oscillation.
+
+**2. 1800 and 2500 appear to have a fundamental tradeoff.** The slow tau_down that fixes 1800 breaks 2500 because it prevents the budget from tracking genuine overload. At 2500, the initial explore-mode flood (admitted at 2x or 1.5x preserved capacity) crashes the system, and the slow decay keeps the budget high, perpetuating the crash.
+
+**3. The ramp is fully solved for sub-saturation.** Idle gap preservation + any reasonable probe gives instant transitions at 800→1200. This is consistent across all iterations.
+
+**4. The ER-based explore/exploit signal works but is fragile.** Per-event alpha was too noisy (21), time-based alpha was better (22b). Carry-over from previous steps needed er_ema reset on gap. But the binary mode switch still creates coupling issues.
+
+**5. The explore-mode budget amplifies natural oscillation (22a/22b) while no budget causes floods (21/23).** This confirms the original ANCHOR.md analysis: the goodput-tracking budget creates a positive feedback loop.
+
+### The fundamental tension
+
+The same `goodput_rate` EMA controls both bootstrap speed and overload response:
+- **Fast decay (symmetric tau):** accurate overload tracking but amplifies transient dips → bad at 1800
+- **Slow decay (asymmetric tau):** resilient to dips but can't track genuine overload → bad at 2500
+- **No budget in explore:** eliminates feedback but removes all metering → catastrophic at deep overload
+
+No single tau setting works for both moderate overload (1800, where the system self-regulates via abort_slo) and deep overload (2500, where AC restriction is essential).
+
 ### First run results (anchor_22a, before er_ema fix)
 
 | RPS | anchor_20 Mean(CoV) | anchor_22a Mean(CoV) | Δ Mean |
