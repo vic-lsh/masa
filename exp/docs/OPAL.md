@@ -489,3 +489,39 @@ The `should_admit` check becomes: `inflight.load() < limit`. On admission: `infl
 3. **Instant overload rejection**: concurrent count exceeds limit → reject before processing
 4. **Inherently stable**: proportional control via latency gradient, no mode switching needed
 
+---
+
+## Iteration 6: Vegas-style concurrency limiter baseline test (experiment opal_6)
+
+**Status:** Pending
+
+**Code commit:** ba29123f
+
+### Change
+Replace the token-bucket `AdmissionController` with `ConcurrencyLimiter` as designed above. Key implementation details:
+- `should_admit`: atomically increment `inflight`; admit if pre-increment < `limit`, else decrement and reject
+- `record_completion(latency_us)`: decrement inflight, update min_latency (instant adopt of new lows, slow upward decay with alpha=0.001), update avg_latency EMA (tau=0.5s), adapt limit via `limit = limit * (min_latency / avg_latency) + queue_allowance_factor * sqrt(limit)`
+- `record_drop()`: decrement inflight without latency update (early-return/error requests have atypical latency)
+- Initial limit: 100.0 (generous start to avoid slow ramp)
+- Queue allowance factor: 1.0
+
+### Hypothesis
+The Vegas-style concurrency limiter should solve both structural problems of the rate-based token bucket:
+
+1. **No feedback death spiral:** The limit is based on latency ratio (min/avg), not output rate. Restricting admission doesn't shrink the limit — it should hold at whatever latency says is right.
+2. **Fast discovery:** At 1600 req/s capacity with 25ms latency, optimal concurrency ≈ 40. Starting from limit=100 (generous), the limiter should quickly converge downward via gradient < 1.0 when overloaded, and hold steady when not.
+3. **Instant overload rejection:** At 2500 RPS, once limit stabilizes at ~40, excess requests are rejected immediately at the gate.
+
+The initial_limit=100 is deliberately generous — at 25ms avg latency, 100 concurrent slots supports ~4000 req/s, well above the 2500 max test load. This means no artificial slow ramp at any load level.
+
+### Expected outcomes if hypothesis is correct:
+1. 800/1200: full admission, no shedding (limit stays at or above needed concurrency)
+2. 1400: near-full admission, slight tightening if latency rises
+3. 1800: limit converges to ~45 (1800 * 25ms), admits most traffic. Should match or beat anchor_20's 1451.
+4. 2500: limit converges to ~40 (capacity * avg_latency), excess rejected instantly. Should match or beat anchor_20's 1601.
+5. No slow ramp at any transition — limit starts at 100, adjusts smoothly
+6. Low CoV — proportional control should be inherently stable (no oscillation)
+
+### Experiment design (opal_6)
+Same config as cp_simple (800, 1200, 1400, 1800, 2500 RPS, SLO=50ms, 60s each). Direct comparison to anchor_20 baselines.
+
