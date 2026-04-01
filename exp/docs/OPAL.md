@@ -101,7 +101,9 @@ Same config as cp_simple (800, 1200, 1400, 1800, 2500 RPS, SLO=50ms, 60s each). 
 
 ## Iteration 2: One-way latch — budget stays engaged once triggered (experiment opal_2)
 
-**Status:** Pending
+**Status:** Regression ❌ — reverted
+
+**Code commit:** 680343fe
 
 ### Change
 Add a `budget_engaged: bool` latch to BudgetState. Once ER rate crosses the threshold, the budget stays engaged permanently until the next idle gap. During idle gaps, reset er_ema to 0 and budget_engaged to false — each load level gets a fresh start with free admission.
@@ -130,6 +132,79 @@ The goodput_rate preservation across gaps is critical: when entering a new highe
 4. 1800: admits freely (ER rate ~7%, below 10% threshold) → matches baseline ~1680
 5. 2500: budget engages after ~0.5s → stabilizes at capacity → no oscillation
 6. No collapses — the one-way latch prevents the disengagement that caused opal_1's crashes
+
+### Experiment design
+Same config as cp_simple (800, 1200, 1400, 1800, 2500 RPS, SLO=50ms, 60s each).
+
+### Actual Outcomes (opal_2)
+
+**Status:** Regression ❌ — reverted
+
+| RPS | anchor_20 Mean(CoV) | opal_2 Mean(CoV) | Δ vs anchor_20 |
+|-----|---------------------|-------------------|----------------|
+| 800 | 800 (0.1%) | 800 (0.0%) | 0 |
+| 1200 | 1182 (0.7%) | 1178 (2.6%) | -4 |
+| 1400 | 1254 (5.1%) | 1130 (18.4%) | **-124** |
+| 1800 | 1451 (13.7%) | 1593 (22.1%) | +142 (misleading — oscillating 808-1801) |
+| 2500 | 1601 (27.0%) | 693 (70.6%) | **-908** |
+
+**Key findings:**
+1. **One-way latch did not prevent oscillation.** The idle-gap reset creates a new limit cycle: budget engages → over-throttles → reset → flood → engage again. At 2500, collapses to 102 goodput (as bad as opal_1).
+2. **1200 falsely triggered** — even ~1.2% ER rate eventually pushes er_ema above threshold.
+3. **1800 mean improvement is misleading** — oscillating between ~808 and ~1800 with 22.1% CoV. The peaks pull the mean up but behavior is unstable.
+4. **Root cause:** The idle-gap-based reset mechanism is itself a source of oscillation. Additionally, the initial "admit freely" phase at deep overload causes a queue catastrophe that depresses goodput_rate, and the budget locks in at a terrible level.
+
+**Lesson learned:** Engineering for idle gaps is wrong — they're a benchmark artifact, not a real workload property. Also, any approach that admits freely at deep overload causes a queue catastrophe that poisons subsequent budget calculations.
+
+**Decision:** Revert code. Stop special-casing idle gaps. Need a fundamentally different approach.
+
+---
+
+## Iteration 3: Continuous ER-proportional probe — budget always on, ER scales the probe factor (experiment opal_3)
+
+**Status:** Pending
+
+### Change
+Keep the budget always on (no "skip budget" mode). Replace the binary explore/exploit switching with continuous ER-proportional probe scaling:
+
+```
+probe = probe_max * max(0, 1.0 - er_ema / er_saturate)
+budget_rate = goodput_rate * (1.0 + probe)
+```
+
+Parameters:
+- `probe_max = 1.0` (2x goodput when no ER)
+- `er_saturate = 0.20` (ER rate at which probe reaches 0; budget = goodput_rate)
+- `probe_min` is effectively 0 (at er_ema ≥ 0.20, budget = goodput_rate exactly)
+
+ER tracking: Same as opal_1/2 (er_count, total_count accumulators from after_child_rpc, time-based alpha EMA in should_admit).
+
+No idle-gap special casing. No mode switching. No latch. Just continuous proportional control.
+
+Remove `rejection_ema` entirely (replaced by `er_ema`). Remove `rejection_threshold` usage for mode switching (continuous, no threshold). Remove explore/exploit branching.
+
+### Hypothesis
+opal_1 and opal_2 failed because of binary mode switching (admit-freely vs budget-constrained). The sharp transition guarantees oscillation — each mode creates conditions for the other.
+
+Continuous proportional control eliminates the mode switch. The budget_rate responds smoothly to ER rate:
+- er_ema = 0 (sub-saturation): probe = 1.0, budget_rate = goodput_rate * 2.0. Generous.
+- er_ema = 0.07 (1800 RPS, ~7% natural ER): probe = 0.65, budget_rate = goodput_rate * 1.65. Still generous — admits most of 1800.
+- er_ema = 0.10: probe = 0.50, budget_rate = goodput_rate * 1.50.
+- er_ema = 0.20+ (deep overload): probe = 0, budget_rate = goodput_rate. Tightest.
+
+The feedback loop is inherently stable: ER increase → probe decrease → less admission → less ER. Small perturbations cause small responses. No cliff edges.
+
+ANCHOR iteration 12 tried linear interpolation but it failed because the transition was "too gradual" with budget-based rejection_ema (indirect signal). ER-based er_ema measures ACTUAL system overload, making the proportional response more meaningful.
+
+**What about the slow ramp?** At cold start, goodput_rate = initial_budget_rate = 5M µs/s. probe = 1.0 (no ER). budget_rate = 10M → 400 req/s at 25ms. Still a slow ramp. But once running, when load increases gradually (production scenario), the budget tracks: goodput_rate converges to current capacity, probe stays ~1.0, budget_rate = 2x capacity → handles load increases up to 2x without restriction. The ramp from 400 to 800 is ~3-4s (doubling per cycle).
+
+### Expected outcomes if hypothesis is correct:
+1. No oscillation at any RPS (continuous control → no mode switch cliff)
+2. 800/1200: budget generous enough for full admission (probe ~1.0)
+3. 1400: budget tightens slightly, goodput near anchor_20 or better
+4. 1800: probe ~0.65, budget admits most of 1800, closer to baseline than anchor_20
+5. 2500: probe ~0, tight tracking, anchor_20-level goodput or better
+6. Cold-start ramp improved but not eliminated (~4-5s vs 15s)
 
 ### Experiment design
 Same config as cp_simple (800, 1200, 1400, 1800, 2500 RPS, SLO=50ms, 60s each).
