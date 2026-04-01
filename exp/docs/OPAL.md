@@ -1030,3 +1030,66 @@ With tau=0.3s: convergence in ~1-1.5s. The budget tracks actual throughput 3x fa
 ### Experiment design (opal_13)
 Same config as cp_simple (800, 1200, 1400, 1800, 2500 RPS, SLO=50ms, 60s each).
 
+### Actual Outcomes (opal_13)
+
+**Status:** Regression ❌ — iterate
+
+**Code commit:** 2d0268e4
+
+| RPS | anchor_20 Mean(CoV) | opal_13 Mean | opal_13 ER/s | Δ vs anchor_20 |
+|-----|---------------------|--------------|--------------|----------------|
+| 800 | 800 (0.1%) | 800 | 0.2 | 0 |
+| 1200 | 1182 (0.7%) | 1122 | 78 | **-60** |
+| 1400 | 1254 (5.1%) | 1209 | 190 | **-45** |
+| 1800 | 1451 (13.7%) | 1372 | 428 | **-79** |
+| 2500 | 1601 (27.0%) | 1483 | 1017 | **-118** |
+
+**Key findings:**
+1. **Faster tau made things worse at every load point.** The more volatile goodput_rate over-reacts to transient latency dips → budget crashes → premature shedding.
+2. **Ramp hypothesis disproven at 1200.** Expected the biggest gain here (sub-saturation, ramp-dominated). Instead -60 — the steady-state volatility cost exceeds the ramp speedup benefit.
+3. **ER rates elevated across the board.** 78/s at 1200 (6.5% shedding) vs anchor_20's ~8/s (0.7%). The faster EMA triggers budget contraction from transient noise.
+
+**Decision:** Revert tau to 1.0. Try asymmetric tau (fast up, slow down) to get the ramp benefit without the volatility.
+
+---
+
+## Iteration 14: Asymmetric tau — fast rise (0.3s), slow decay (2.0s) (experiment opal_14)
+
+**Status:** Pending
+
+**Code commit:** TBD
+
+### Change
+Revert to pure anchor_20 code. In `should_admit`, replace the fixed tau with asymmetric tau:
+
+```rust
+let tau = if instant_rate >= state.goodput_rate {
+    0.3   // fast rise — rapid discovery
+} else {
+    2.0   // slow decay — ride out transient dips
+};
+let alpha = 1.0 - (-elapsed / tau).exp();
+state.goodput_rate += alpha * (instant_rate - state.goodput_rate);
+```
+
+### Hypothesis
+opal_13 showed that symmetric fast tau (0.3s) hurts because transient goodput dips crash the budget. The solution: decouple rise and decay.
+
+**Fast rise (tau=0.3s):** After a load transition, goodput_rate converges up to the new capacity in ~1s. The exploit budget (goodput * 1.05) reaches the right level quickly. Ramp from 200 req/s to 1200 takes ~3-5s instead of 15s.
+
+**Slow decay (tau=2.0s):** When goodput dips transiently (burst of SLO misses, GC pause, etc.), goodput_rate holds steady. The budget doesn't crash. The system rides out the dip and recovers.
+
+**Why this might work where opal_5 failed:** opal_5 paired slow decay with ER-based probe (concurrency limiter). The ER signal was too delayed to compensate for inflated goodput_rate → persistent over-admission. anchor_20 uses budget exhaustion for overload feedback, which is **instantaneous**: when the budget runs dry, the next request is rejected immediately. No delay. So even if goodput_rate stays high, the budget exhaustion prevents over-admission in real-time.
+
+**Risk:** At deep overload, slow decay means goodput_rate stays inflated for ~4-6s (2-3 tau). During this time, exploit budget = inflated_goodput * 1.05 → higher than optimal → more admission → more SLO misses. But the budget is still finite — it runs out faster than it refills, and rejection_ema rises to handle the excess.
+
+### Expected outcomes if hypothesis is correct:
+1. 1200: +30-60 vs anchor_20 from faster ramp (fast rise eliminates the 10s ramp period)
+2. 1400: similar or better (fast rise + no volatility from slow decay)
+3. 1800: similar to anchor_20 (slow decay keeps budget stable, budget exhaustion handles overload)
+4. 2500: similar to anchor_20 (same mechanism)
+5. No regression at any load point
+
+### Experiment design (opal_14)
+Same config as cp_simple (800, 1200, 1400, 1800, 2500 RPS, SLO=50ms, 60s each).
+
