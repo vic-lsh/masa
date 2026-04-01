@@ -106,7 +106,7 @@ impl Default for PredParams {
             probe_max: 1.0,
             rejection_alpha: 0.01,
             rejection_threshold: 0.10,
-            tau: 0.3,
+            tau: 1.0,
         }
     }
 }
@@ -168,7 +168,7 @@ mod tests {
         assert_eq!(p.rajomon.max_token, 100);
         assert!(p.rajomon.price_cap <= p.rajomon.max_token);
         assert_eq!(p.pred.probe_min, 0.05);
-        assert_eq!(p.pred.tau, 0.3);
+        assert_eq!(p.pred.tau, 1.0);
     }
 
     #[test]
