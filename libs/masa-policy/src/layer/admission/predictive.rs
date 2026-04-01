@@ -353,8 +353,8 @@ impl ConcurrencyLimiter {
             let gradient = state.min_latency_us / state.avg_latency_us;
             let queue_allowance = p.queue_allowance_factor * state.limit.sqrt();
             state.limit = state.limit * gradient + queue_allowance;
-            if state.limit < 1.0 {
-                state.limit = 1.0;
+            if state.limit < 10.0 {
+                state.limit = 10.0;
             }
         }
     }

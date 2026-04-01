@@ -91,7 +91,7 @@ impl Default for PredParams {
             initial_limit: 100.0,
             min_latency_alpha: 0.001,
             avg_latency_tau: 0.5,
-            queue_allowance_factor: 1.0,
+            queue_allowance_factor: 5.0,
         }
     }
 }
