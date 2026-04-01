@@ -325,8 +325,14 @@ impl AdmissionController {
     /// Returns true if the request should be admitted.
     ///
     /// Uses ER (early return) rate as the explore/exploit signal:
-    /// - Explore mode (er_ema <= threshold): admit freely, skip budget check.
-    /// - Exploit mode (er_ema > threshold): goodput-tracking token bucket.
+    /// - Explore mode (er_ema <= threshold): goodput-tracking budget with
+    ///   generous `probe_max` margin.
+    /// - Exploit mode (er_ema > threshold): goodput-tracking budget with
+    ///   tight `probe_min` margin.
+    ///
+    /// Idle gap detection: when `elapsed > idle_threshold`, the goodput EMA
+    /// update is skipped so the rate estimate is preserved across load
+    /// transition gaps.
     pub(crate) fn should_admit(&self, est_child_cost: u64) -> bool {
         let p = &PolicyParams::global().pred;
         let cost = est_child_cost as f64;
@@ -341,8 +347,9 @@ impl AdmissionController {
         let elapsed = now.duration_since(state.last_update).as_secs_f64();
         state.last_update = now;
 
-        // Update goodput EMA from accumulated completions.
-        if elapsed > 0.0 {
+        // Update goodput EMA — skip during idle gaps to preserve the rate
+        // estimate across load transition pauses.
+        if elapsed > 0.0 && elapsed < p.idle_threshold {
             let instant_rate = drained / elapsed;
             let alpha = 1.0 - (-elapsed / p.tau).exp();
             state.goodput_rate += alpha * (instant_rate - state.goodput_rate);
@@ -354,14 +361,15 @@ impl AdmissionController {
             state.er_ema += p.rejection_alpha * (er_rate - state.er_ema);
         }
 
-        // Explore mode: ER rate below threshold — admit freely, skip budget.
-        if state.er_ema <= p.rejection_threshold {
-            return true;
-        }
+        // Explore vs exploit: ER rate determines probe margin.
+        let probe = if state.er_ema > p.rejection_threshold {
+            p.probe_min
+        } else {
+            p.probe_max
+        };
+        let budget_rate = state.goodput_rate * (1.0 + probe);
 
-        // Exploit mode: goodput-tracking budget.
-        let budget_rate = state.goodput_rate * (1.0 + p.probe_min);
-
+        // Refill tokens, capped at burst limit.
         state.budget_us += budget_rate * elapsed;
         let max_budget = (budget_rate * p.max_burst_secs).max(cost * 2.0);
         if state.budget_us > max_budget {
@@ -517,9 +525,15 @@ mod tests {
     #[test]
     fn test_admission_controller_admits_in_explore_mode() {
         let ac = AdmissionController::new();
-        // In explore mode (er_ema = 0.0 <= threshold), all requests admitted.
+        // In explore mode (er_ema = 0.0 <= threshold), budget uses
+        // goodput_rate * (1 + probe_max).  With initial goodput_rate = 5M
+        // and probe_max = 1.0, budget_rate = 10M µs/s.  Small requests
+        // should be admitted easily.
         for _ in 0..50 {
-            assert!(ac.should_admit(100_000), "explore mode should always admit");
+            assert!(
+                ac.should_admit(1000),
+                "explore mode should admit small requests"
+            );
         }
     }
 
