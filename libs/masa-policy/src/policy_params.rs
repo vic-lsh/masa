@@ -72,10 +72,10 @@ impl Default for RajomonParams {
 ///
 /// The controller switches between two modes based on the early-return (ER)
 /// rate observed from downstream child RPCs:
-/// - **Explore** (er_ema <= `rejection_threshold`): admit freely, skip
-///   budget check entirely.
+/// - **Explore** (er_ema <= `rejection_threshold`): goodput-tracking token
+///   bucket with generous `probe_max` margin.
 /// - **Exploit** (er_ema > `rejection_threshold`): goodput-tracking token
-///   bucket with `probe_min` margin.
+///   bucket with tight `probe_min` margin.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct PredParams {
@@ -96,6 +96,10 @@ pub struct PredParams {
     pub rejection_threshold: f64,
     /// EMA time constant in seconds for the goodput rate estimator.
     pub tau: f64,
+    /// Idle gap threshold in seconds.  When `should_admit` sees
+    /// `elapsed > idle_threshold`, the goodput EMA update is skipped so
+    /// that the rate estimate is preserved across inter-step gaps.
+    pub idle_threshold: f64,
 }
 
 impl Default for PredParams {
@@ -108,6 +112,7 @@ impl Default for PredParams {
             rejection_alpha: 0.01,
             rejection_threshold: 0.10,
             tau: 1.0,
+            idle_threshold: 0.5,
         }
     }
 }
