@@ -825,3 +825,60 @@ opal_9's oscillation was caused by the 1.9x budget jump between explore and expl
 ### Experiment design (opal_10)
 Same config as cp_simple (800, 1200, 1400, 1800, 2500 RPS, SLO=50ms, 60s each).
 
+### Actual Outcomes (opal_10)
+
+**Status:** Regression ❌ — iterate
+
+**Code commit:** 3bde3136
+
+| RPS | anchor_20 Mean(CoV) | opal_9 Mean | opal_10 Mean | Δ vs anchor_20 |
+|-----|---------------------|-------------|--------------|----------------|
+| 800 | 800 (0.1%) | 800 | 800 | 0 |
+| 1200 | 1182 (0.7%) | 956 | 950 | **-232** |
+| 1400 | 1254 (5.1%) | 1049 | 1036 | **-218** |
+| 1800 | 1451 (13.7%) | 1184 | 1176 | **-275** |
+| 2500 | 1601 (27.0%) | 1227 | 1242 | **-359** |
+
+**Key findings:**
+1. **probe_max reduction had no effect** — opal_10 ≈ opal_9 (within noise). The mode-switching jump ratio was not the cause.
+2. **The gap-freeze fix itself is the cause of the regression.** Preserving stale goodput_rate from the previous step causes the system to start with a budget locked to previous (lower) capacity, constraining admission even in explore mode.
+3. **ER rates remain unreasonably high.** 250/s at 1200 RPS (20.8%) vs anchor_20's 8/s (0.7%). The stale goodput_rate causes the system to oscillate between explore/exploit with inadequate budget at each step's start.
+
+**Decision:** Revert all gap-freeze changes. Try a different approach: increase initial_budget_rate instead.
+
+---
+
+## Iteration 11: Increase initial_budget_rate from 5M to 50M (experiment opal_11)
+
+**Status:** Pending
+
+**Code commit:** TBD
+
+### Change
+Revert to pure anchor_20 code (undo gap-freeze, explore formula change, and probe_max change). Then make a single parameter change: `initial_budget_rate` from 5_000_000 to 50_000_000.
+
+This is the simplest possible fix for the slow ramp. The explore mode budget becomes 50M µs/s (~2000 req/s at 25µs cost) instead of 5M (~200 req/s). No other mechanism changes.
+
+### Hypothesis
+anchor_20's slow ramp is bottlenecked by the explore mode budget: `initial_budget_rate = 5M → ~200 req/s`. Every load transition starts in explore mode (rejection_ema decays during the gap), and the budget admits only 200 req/s regardless of system capacity.
+
+With 50M: explore mode admits ~2000 req/s from cold start. At every transition:
+- 800 RPS: all admitted (800 < 2000) ✓
+- 1200 RPS: all admitted (1200 < 2000) ✓
+- 1400 RPS: all admitted (1400 < 2000) ✓
+- 1800 RPS: most admitted (1800 < 2000) ✓
+- 2500 RPS: 2000 admitted initially, some ER, rejection_ema rises, enters exploit at goodput * 1.05
+
+The token bucket's max_burst (50M * 0.005 = 250K µs ≈ 10 requests) naturally limits the instantaneous admission burst, preventing the queue catastrophe that killed opal_1/2.
+
+**Why this won't cause over-admission problems:** The initial_budget_rate only applies in explore mode (rejection_ema < 0.10). Once overloaded, exploit mode takes over at goodput * 1.05 — identical to anchor_20. The burst is limited by max_burst_secs, not by the rate itself.
+
+### Expected outcomes if hypothesis is correct:
+1. Near-instant ramp at all load transitions (2000 req/s explore budget vs 200)
+2. 800/1200/1400: full admission, matching or exceeding anchor_20
+3. 1800/2500: matching anchor_20 (exploit mode is unchanged)
+4. Overload stability preserved (exploit mode, rejection_ema, goodput tracking all unchanged)
+
+### Experiment design (opal_11)
+Same config as cp_simple (800, 1200, 1400, 1800, 2500 RPS, SLO=50ms, 60s each).
+
