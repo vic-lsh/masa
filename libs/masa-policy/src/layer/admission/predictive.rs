@@ -354,6 +354,8 @@ struct BudgetState {
     budget_us: f64,
     budget_rate: f64,
     last_refill: Instant,
+    was_reducing: bool,
+    cooldown_until: Option<Instant>,
 }
 
 #[cfg(feature = "ac_pred")]
@@ -386,6 +388,8 @@ impl AdmissionController {
                 budget_us: p.initial_budget_rate * p.max_burst_secs,
                 budget_rate: p.initial_budget_rate,
                 last_refill: Instant::now(),
+                was_reducing: false,
+                cooldown_until: None,
             }),
         }
     }
@@ -432,10 +436,23 @@ impl AdmissionController {
         }
 
         // Adjust rate based on effective utilization (asymmetric: fast close, slow reopen)
-        if effective_util > p.util_target {
+        let is_reducing = effective_util > p.util_target;
+        if is_reducing {
             state.budget_rate *= 1.0 - p.adjust_rate_down * elapsed;
+            state.was_reducing = true;
+            state.cooldown_until = None;
         } else {
-            state.budget_rate *= 1.0 + p.adjust_rate_up * elapsed;
+            // Detect transition from reducing to increasing
+            if state.was_reducing {
+                state.cooldown_until =
+                    Some(now + std::time::Duration::from_secs_f64(p.cooldown_secs));
+                state.was_reducing = false;
+            }
+            // Only increase budget_rate after cooldown expires
+            if state.cooldown_until.map_or(true, |cd| now >= cd) {
+                state.budget_rate *= 1.0 + p.adjust_rate_up * elapsed;
+            }
+            // else: hold rate steady during cooldown
         }
         // Don't let rate go negative or explode.
         // The cap must be high enough to support max throughput × max cost.
