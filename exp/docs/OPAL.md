@@ -1000,3 +1000,33 @@ The root cause: a fixed explore budget cannot adapt to the current load level. I
 ### Code state
 Current code has initial_budget_rate=40M (commit 37cf682e). This should be reverted to anchor_20's 5M for clean state, unless the 1400 improvement (+52) is worth the 1800 regression (-169).
 
+---
+
+## Iteration 13: Faster goodput EMA — tau=0.3s (experiment opal_13)
+
+**Status:** Pending
+
+**Code commit:** TBD
+
+### Change
+Revert to pure anchor_20 code. Change `tau` from 1.0 to 0.3 in `PredParams`. Everything else unchanged.
+
+### Hypothesis
+The slow ramp is driven by goodput_rate convergence speed. After a load transition, the system enters exploit mode (budget = goodput_rate * 1.05). With tau=1.0s, the EMA takes ~3-5 tau = 3-5s to converge to the new throughput. During this time, goodput_rate (and thus the budget) lags behind actual capacity.
+
+With tau=0.3s: convergence in ~1-1.5s. The budget tracks actual throughput 3x faster. The ramp from the dynamic floor (~2 requests) to capacity takes ~5s instead of ~15s.
+
+**Risk analysis:** Faster tau means more volatile goodput_rate at steady state. But the noise per sample is only 1.7x higher (sqrt(3)). At 1600 completions/s, the averaging effect of many samples should keep the budget stable. The rejection_ema (alpha=0.01, ~100 decisions to converge) provides a separate, slower stability signal.
+
+**Key difference from opal_5's asymmetric tau:** opal_5 used slow decay (tau_down=5s) to prevent goodput_rate from dropping during overload. That INFLATED goodput_rate, causing persistent over-admission. This change uses fast decay (tau=0.3) equally in both directions — tighter at overload, not looser.
+
+### Expected outcomes if hypothesis is correct:
+1. 800/1200: faster ramp, +30-60 goodput at 1200 from reduced ramp time
+2. 1400: similar or better than anchor_20
+3. 1800: similar to anchor_20 (exploit mode behavior unchanged structurally, just faster tracking)
+4. 2500: similar to anchor_20
+5. CoV may increase slightly (more responsive = more volatile)
+
+### Experiment design (opal_13)
+Same config as cp_simple (800, 1200, 1400, 1800, 2500 RPS, SLO=50ms, 60s each).
+
