@@ -525,3 +525,63 @@ The initial_limit=100 is deliberately generous — at 25ms avg latency, 100 conc
 ### Experiment design (opal_6)
 Same config as cp_simple (800, 1200, 1400, 1800, 2500 RPS, SLO=50ms, 60s each). Direct comparison to anchor_20 baselines.
 
+### Actual Outcomes (opal_6)
+
+**Status:** Regression ❌ — iterate
+
+**Code commit:** ba29123f
+
+| RPS | anchor_20 Mean(CoV) | opal_6 Mean | opal_6 ER/s | Δ vs anchor_20 |
+|-----|---------------------|-------------|-------------|----------------|
+| 800 | 800 (0.1%) | 785 | 15.2 | **-15** |
+| 1200 | 1182 (0.7%) | 1003 | 197.1 | **-179** |
+| 1400 | 1254 (5.1%) | 985 | 415.3 | **-269** |
+| 1800 | 1451 (13.7%) | 982 | 817.7 | **-469** |
+| 2500 | 1601 (27.0%) | 90 | 2409.8 | **-1511** |
+
+**Key findings:**
+1. **Catastrophic regression at every load point.** Even at 800 RPS (below saturation), the limiter sheds 15 req/s.
+2. **Goodput capped at ~985 regardless of offered load** (1200-1800 all converge to ~982-985). The concurrency limit has converged far too low.
+3. **Complete collapse at 2500 RPS** — 90 goodput, 96.4% of requests early-returned. Classic death spiral: high latency → low gradient → limit shrinks to near-zero → few requests admitted → those see low latency → but min_latency already ratcheted down → no recovery.
+4. **Root cause: `gradient = min_latency / avg_latency` is structurally biased below 1.0.** Even at low load, avg_latency >> min_latency due to natural processing time variance. With factor=1.0 and gradient=0.5 (avg = 2*min), equilibrium limit = `(factor / (1 - gradient))^2 = 4`. This caps throughput far below capacity.
+
+**Equilibrium analysis:** At steady state, `limit * gradient + factor * sqrt(limit) = limit`, so `limit = (factor / (1 - gradient))^2`. With gradient=0.5, factor=1.0: limit=4 (~160 req/s). This explains the ~985 cap — gradient is likely ~0.7-0.8 at low load, giving limit ≈ 9-25, just enough for ~985 at observed latencies.
+
+**Decision:** Keep code, tune parameters. The mechanism is correct but the queue_allowance_factor is far too low relative to the natural gradient bias.
+
+---
+
+## Iteration 7: Increase queue_allowance_factor + add limit floor (experiment opal_7)
+
+**Status:** Pending
+
+**Code commit:** TBD
+
+### Change
+Two parameter changes in `ConcurrencyLimiter`:
+1. `queue_allowance_factor`: 1.0 → 5.0. At the equilibrium equation `limit = (factor / (1 - gradient))^2`:
+   - gradient=0.5 (avg = 2*min, healthy): limit = (5/0.5)^2 = **100** → supports ~4000 req/s
+   - gradient=0.33 (avg = 3*min, moderate overload): limit = (5/0.67)^2 = **55** → supports ~2200 req/s
+   - gradient=0.20 (avg = 5*min, deep overload): limit = (5/0.8)^2 = **39** → supports ~1560 req/s (near actual capacity)
+2. Add `limit_floor = 10.0`: limit can never drop below 10, preventing the death spiral at 2500 RPS.
+
+### Hypothesis
+opal_6 failed because queue_allowance_factor=1.0 is too small to compensate for the natural gradient bias (avg_latency is always significantly higher than min_latency, even at low load). The limit equation shows the equilibrium is extremely sensitive to this factor (quadratic relationship).
+
+With factor=5.0:
+- At sub-saturation (gradient ~0.5-0.7): equilibrium limit 50-100, generous enough for full admission
+- At moderate overload (gradient ~0.33): limit ~55, still above capacity concurrency (~40)
+- At deep overload (gradient ~0.20): limit ~39, close to capacity concurrency → meaningful shedding
+
+The limit floor prevents the catastrophic 2500 RPS collapse: even at gradient→0, limit stays ≥10 → admits ~400 req/s → system processes them → latencies recover → gradient rises → limit recovers.
+
+### Expected outcomes if hypothesis is correct:
+1. 800/1200: full or near-full admission (limit equilibrium well above needed concurrency)
+2. 1400: improved significantly, near anchor_20 levels
+3. 1800: significant recovery — limit ~55 supports most of 1800
+4. 2500: no collapse — limit ~39 provides meaningful shedding, goodput should approach capacity (~1600)
+5. Overall: should close the gap with anchor_20, especially at high loads
+
+### Experiment design (opal_7)
+Same config as cp_simple (800, 1200, 1400, 1800, 2500 RPS, SLO=50ms, 60s each).
+
