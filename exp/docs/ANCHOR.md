@@ -1387,14 +1387,31 @@ Same config as cp_simple (800, 1200, 1400, 1800, 2500 RPS, SLO=50ms, 60s each).
 
 **5. The explore-mode budget amplifies natural oscillation (22a/22b) while no budget causes floods (21/23).** This confirms the original ANCHOR.md analysis: the goodput-tracking budget creates a positive feedback loop.
 
-### The fundamental tension
+### The "tension" was an artifact
 
-The same `goodput_rate` EMA controls both bootstrap speed and overload response:
-- **Fast decay (symmetric tau):** accurate overload tracking but amplifies transient dips → bad at 1800
-- **Slow decay (asymmetric tau):** resilient to dips but can't track genuine overload → bad at 2500
-- **No budget in explore:** eliminates feedback but removes all metering → catastrophic at deep overload
+The 1800-vs-2500 tradeoff that appeared fundamental was actually an artifact of optimizing for the load generator's inter-step idle gaps. The 15-18s slow ramp only occurs because the ~2s gap between load steps causes `goodput_rate` to decay to near-zero. In production, load changes are smooth (no gaps), so the goodput EMA tracks continuously and there is no ramp problem.
 
-No single tau setting works for both moderate overload (1800, where the system self-regulates via abort_slo) and deep overload (2500, where AC restriction is essential).
+Moreover, the slow ramp at 2500 RPS was **beneficial** — it acted as natural rate-limiting that prevented queue buildup during overload transitions (anchor_20's gradual 397→2163 climb at 2500 is why it achieves 1601 mean goodput). Eliminating the ramp destroyed this benefit.
+
+### Learnings
+
+1. **Verify problems are real before optimizing.** The slow ramp was identified from timeline analysis at load step boundaries — an artifact of the load generator, not a production issue. 8 iterations were spent fixing a non-problem, each creating secondary problems that required further fixes.
+
+2. **"Bugs" can be features.** The slow ramp that looked like a bootstrap bottleneck was actually the mechanism that prevented queue buildup at deep overload. anchor_20's gradual budget increase at 2500 RPS smoothly converges to the optimal operating point without ever flooding the system.
+
+3. **The goodput-tracking budget amplifies natural oscillation.** When goodput dips transiently, the budget drops, restricting admission, deepening the dip. Asymmetric tau (anchor_24) can break this feedback loop — it achieved 1725 at 1800 RPS (4.7% CoV), beating baseline (1679, 12.6%). This is a real finding worth revisiting for the 1800 RPS regression.
+
+4. **ER-based explore/exploit signal is viable but fragile.** Per-event alpha is too noisy; time-based alpha works. But the binary mode switch creates coupling issues. If revisited, consider using ER rate to continuously modulate the probe factor rather than binary switching.
+
+### Code state
+
+Reverted to anchor_20 (commit 1836f620). All iterations 21-27 are reverted. The goodput-tracking AC with `rejection_threshold=0.10` is the current code.
+
+### Next steps (open problems from anchor_20)
+
+1. **1800 RPS: -228 vs baseline.** The AC engages at 1800 where the system self-regulates via abort_slo. Baseline achieves 1679; anchor_20 achieves 1451. anchor_24 showed that asymmetric tau can fix this (1725), but at the cost of 2500 regression. A targeted fix for 1800 that doesn't break 2500 is the highest-value next step.
+
+2. **CoV at overload.** 1800: 13.7%, 2500: 27.0%. The overload oscillation (boom-bust) is reduced vs the original utilization-based AC but not eliminated.
 
 ### First run results (anchor_22a, before er_ema fix)
 
