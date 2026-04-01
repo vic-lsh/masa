@@ -585,3 +585,78 @@ The limit floor prevents the catastrophic 2500 RPS collapse: even at gradient→
 ### Experiment design (opal_7)
 Same config as cp_simple (800, 1200, 1400, 1800, 2500 RPS, SLO=50ms, 60s each).
 
+### Actual Outcomes (opal_7)
+
+**Status:** Regression ❌ — iterate
+
+**Code commit:** 1ea45182
+
+| RPS | anchor_20 Mean(CoV) | opal_6 Mean | opal_7 Mean | opal_7 ER/s | Δ vs anchor_20 |
+|-----|---------------------|-------------|-------------|-------------|----------------|
+| 800 | 800 (0.1%) | 785 | 800 | 0 | 0 |
+| 1200 | 1182 (0.7%) | 1003 | 476 | 724 | **-706** |
+| 1400 | 1254 (5.1%) | 985 | 0 | 1400 | **-1254** |
+| 1800 | 1451 (13.7%) | 982 | 0 | 1800 | **-1451** |
+| 2500 | 1601 (27.0%) | 90 | 0 | 2500 | **-1601** |
+
+**Key findings:**
+1. **Catastrophically worse than opal_6 at all overloaded loads.** At 1400+ RPS, 100% of requests are early-returned.
+2. **Root cause: limit grew too high, allowing over-admission.** With factor=5.0, the equilibrium at healthy gradient (0.8) is (5/0.2)^2 = 625 (capped at... uncapped). The limit grows far above what the system needs, so all requests are admitted. At saturation loads (1200+), admitting all traffic causes latency inflation → mass SLO misses → 100% ER. Note: opal_6 at 1200 had ~200 ER/s with restrictive limits; opal_7 has 724 ER/s because it admits all 1200 into an overloaded system.
+3. **Opposite failure from opal_6:** opal_6 limit too low (factor=1.0, equilibrium ~25) → over-restriction. opal_7 limit too high (factor=5.0, equilibrium ~278) → under-restriction. No factor value works across all loads.
+4. **Fundamental issue with Vegas proportional formula:** Equilibrium = (factor / (1-gradient))^2 is extremely sensitive to gradient. A 10% gradient change causes 4x equilibrium change. The formula cannot find a stable operating point across varying loads.
+
+**Decision:** Revert queue_allowance_factor=5.0. Replace the proportional Vegas formula with AIMD (Additive Increase, Multiplicative Decrease) which has a naturally stable equilibrium.
+
+---
+
+## Iteration 8: AIMD adaptation replaces Vegas proportional formula (experiment opal_8)
+
+**Status:** Pending
+
+**Code commit:** TBD
+
+### Change
+Replace the Vegas proportional limit adaptation with AIMD + periodic updates:
+
+1. Add `last_limit_update: Instant` to `LimiterState`
+2. In `record_completion`: update latency EMA only, do NOT update limit
+3. Trigger limit update from `record_completion` when ≥250ms elapsed since last update:
+   - gradient = min_latency / avg_latency
+   - If gradient ≥ 0.70 (healthy): limit = min(limit + 5.0, max_limit)
+   - Else (congested): limit = max(limit * 0.90, floor)
+4. Parameters:
+   - initial_limit = 100 (unchanged)
+   - max_limit = 100 (cap, prevents runaway growth)
+   - floor = 10 (prevents death spiral)
+   - gradient_threshold = 0.70
+   - additive_increase = 5.0 per update (20/s → reaches cap from floor in ~5s)
+   - multiplicative_decrease = 0.90 (gentle: 10% per step → halves in ~7 steps = 1.75s)
+   - update_interval = 250ms
+
+### Hypothesis
+The Vegas proportional formula fails because its equilibrium is quadratically sensitive to gradient — no single factor value works across load regimes. AIMD avoids this by having a fundamentally different control structure:
+
+**Why AIMD should work:**
+- Additive increase is bounded (+5/step, capped at 100): can't over-grow
+- Multiplicative decrease is gentle (×0.9): takes 1.75s to halve, gives system time to stabilize
+- Periodic updates (250ms): smooths out transient latency spikes
+- Threshold-based: only acts on sustained gradient changes, not noise
+
+**Expected dynamics at each load:**
+- 800/1200 RPS (sub-saturation): gradient ~0.8 > 0.70 → limit grows to cap (100). All admitted. ✓
+- 1800 RPS (above saturation): gradient oscillates around 0.70. Limit oscillates between ~30 and ~45. Average ~37 concurrent → ~1500 req/s admitted → goodput ~1400-1500 after abort_slo. Close to anchor_20's 1451.
+- 2500 RPS (deep overload): gradient < 0.70 → limit shrinks toward 30-40. Similar dynamics to 1800 but with more shedding. Goodput ~1400-1600.
+
+**Key difference from Vegas:** AIMD's equilibrium is where the system naturally transitions between "healthy" and "congested" — a structural property of the workload, not a sensitive function of parameters.
+
+### Expected outcomes if hypothesis is correct:
+1. 800/1200: full admission, matching anchor_20 (limit at cap, no restriction)
+2. 1400: near-full admission, goodput ≥ 1200
+3. 1800: significant improvement over opal_6's 982 — target 1300-1500
+4. 2500: significant improvement over both opal_6 (90) and opal_7 (0) — target 1300-1600
+5. No death spiral at any RPS
+6. Moderate oscillation acceptable; CoV should be < 30%
+
+### Experiment design (opal_8)
+Same config as cp_simple (800, 1200, 1400, 1800, 2500 RPS, SLO=50ms, 60s each).
+
