@@ -342,15 +342,9 @@ impl AdmissionController {
         state.last_update = now;
 
         if elapsed > 0.0 {
-            // Update goodput EMA with asymmetric tau: fast rise, slow decay.
-            // Slow decay prevents transient dips from crashing the budget.
+            // Update goodput EMA from accumulated completions.
             let instant_rate = drained / elapsed;
-            let tau = if instant_rate >= state.goodput_rate {
-                p.tau // tau_up = 1.0s (fast rise)
-            } else {
-                p.tau * 5.0 // tau_down = 5.0s (slow decay)
-            };
-            let alpha = 1.0 - (-elapsed / tau).exp();
+            let alpha = 1.0 - (-elapsed / p.tau).exp();
             state.goodput_rate += alpha * (instant_rate - state.goodput_rate);
 
             // Update ER EMA from accumulated ER events.
