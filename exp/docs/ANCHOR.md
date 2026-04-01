@@ -211,3 +211,46 @@ The 2:1 asymmetry should still prevent post-bust flooding while allowing faster 
 
 ### Experiment design
 Same config as cp_simple (800, 1200, 1400, 1800, 2500 RPS, SLO=50ms, 60s each).
+
+### Actual Outcomes (anchor_4)
+
+**Status:** Regression ❌ — reverted
+
+| RPS | anchor_3 (CoV) | anchor_4 (CoV) | Delta vs anchor_3 |
+|-----|---------------|---------------|-------------------|
+| 800 | 800 (0.0%) | 800 (0.0%) | 0 |
+| 1200 | 1187 (3.2%) | 1188 (2.0%) | +1 |
+| 1400 | 1300 (5.5%) | 1173 (9.5%) | **-127** |
+| 1800 | 1440 (10.6%) | 1199 (12.6%) | **-241** |
+| 2500 | 1503 (19.6%) | 1246 (19.7%) | **-257** |
+
+**Key findings:**
+- 2:1 asymmetry strictly worse than 4:1 at all overloaded RPS. Faster upward adjustment overshoots.
+- The issue is NOT reopen speed — it's that AC engages too early at 1800 (util_target=0.80 triggers on handleable load).
+
+**Decision:** Revert. anchor_3 remains best. Next: raise util_target.
+
+---
+
+## Iteration 5: Raise util_target from 0.80 to 0.90 (experiment anchor_5)
+
+**Status:** Pending
+
+### Change
+Revert `adjust_rate_up` back to 0.5 (restore anchor_3 state). Increase `util_target` from 0.80 to 0.90 in `policy_params.rs`.
+
+### Hypothesis
+The 1800 RPS regression (-240 vs baseline) exists because the AC engages too early. At util_target=0.80, the system starts shedding at 1800 even though it can handle most of that load under SLO (baseline achieves 1680 = 93%).
+
+At util_target=0.90, AC only engages when utilization exceeds 90%. At 1800 RPS this shouldn't happen (system copes). At 2500 RPS (deep overload), util still exceeds 0.90, so AC still intervenes.
+
+Combined with 4:1 asymmetry (down=2.0, up=0.5), this should let 1800 run without AC interference while maintaining benefits at deep overload.
+
+### Expected outcomes if hypothesis is correct:
+1. 1800 RPS recovers to near-baseline (~1600+)
+2. 2500 RPS maintains anchor_3 gains (~1500)
+3. 1400 RPS maintains or improves (less unnecessary shedding)
+4. Possible brief overload transient at activation threshold
+
+### Experiment design
+Same config as cp_simple (800, 1200, 1400, 1800, 2500 RPS, SLO=50ms, 60s each).
