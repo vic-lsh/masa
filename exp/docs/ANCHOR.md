@@ -1303,3 +1303,55 @@ This decouples bootstrap speed from overload control. The ~1-2s of unprotected a
 
 ### Experiment design
 Same config as cp_simple (800, 1200, 1400, 1800, 2500 RPS, SLO=50ms, 60s each).
+
+### Actual Outcomes (anchor_21)
+
+**Status:** Regression ❌ — iterate (keep ER tracking infrastructure)
+
+| RPS | anchor_20 Mean(CoV) | anchor_21 Mean(CoV) | Δ Mean |
+|-----|---------------------|---------------------|--------|
+| 800 | 800 (0.1%) | 800 (0.0%) | 0 |
+| 1200 | 1182 (0.7%) | 1187 (2.2%) | +5 |
+| 1400 | 1254 (5.1%) | 1143 (20.1%) | **-111** |
+| 1800 | 1451 (13.7%) | 611 (59.2%) | **-840** |
+| 2500 | 1601 (27.0%) | 727 (72.2%) | **-874** |
+
+**Key findings:**
+1. **Ramp is fixed at sub-saturation** — 800→1200 transition is instant (1200 from t=59).
+2. **Catastrophic at overload** — at 1400, starts strong (~1350) then degrades to ~800 as ER triggers exploit mode with depressed goodput_rate. At 1800, oscillates wildly (85-1583).
+3. **Root cause:** Two coupled bugs. (a) Skipping budget in explore = no metering = floods. (b) goodput_rate still decays to near-zero during inter-step gaps, so exploit mode locks in at terrible level.
+
+**Decision:** Keep ER tracking, fix both bugs in iteration 22.
+
+---
+
+## Iteration 22: Idle gap preservation + budget in explore mode (experiment anchor_22)
+
+**Status:** Pending
+
+### Change
+Two fixes on top of anchor_21's ER-based signal:
+
+1. **Idle gap detection:** Skip goodput_rate EMA update when `elapsed > idle_threshold` (0.5s). This preserves the rate estimate across inter-step gaps. Unlike anchor_15 (which skipped on `drained==0` and broke during active overload), this only triggers on actual idle gaps where no requests arrived.
+
+2. **Budget in explore mode:** Instead of skipping the budget check in explore, use `budget_rate = goodput_rate * (1 + probe_max)` (2x observed capacity). Generous enough for step-ups, but still metered.
+
+New parameter: `idle_threshold: 0.5` (seconds).
+
+### Hypothesis
+anchor_21 failed because (a) explore mode had no metering (skipped budget → floods at overload) and (b) goodput_rate decayed to zero during gaps (exploit mode locked at terrible level).
+
+With these fixes:
+- After a gap, goodput_rate retains previous value. Explore budget = `previous_rate * 2.0` → supports 2x previous throughput → handles step-ups instantly.
+- At deep overload, ER rate crosses threshold → exploit mode with preserved goodput_rate → budget restricts to `capacity * 1.05` → effective overload control.
+- At 1800 RPS (~7% ER rate, below 10% threshold), AC stays in explore mode → admits freely like baseline → ~1680 goodput.
+
+### Expected outcomes if hypothesis is correct:
+1. Instant ramp at sub-saturation transitions (800→1200, etc.)
+2. 1800 RPS near baseline (~1680) — AC stays in explore mode
+3. 2500 RPS maintains anchor_20 gains (~1600) — exploit mode engages
+4. 1400 RPS maintained or improved
+5. CoV improves from eliminated ramp waste
+
+### Experiment design
+Same config as cp_simple (800, 1200, 1400, 1800, 2500 RPS, SLO=50ms, 60s each).
