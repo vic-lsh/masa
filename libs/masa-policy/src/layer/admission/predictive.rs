@@ -433,8 +433,11 @@ impl AdmissionController {
 
         // Adjust rate based on effective utilization (asymmetric: fast close, slow reopen)
         if effective_util > p.util_target {
-            state.budget_rate *= 1.0 - p.adjust_rate_down * elapsed;
+            // Proportional: gentle at moderate overload, aggressive at deep overload.
+            let excess = (effective_util - p.util_target) / (1.0 - p.util_target);
+            state.budget_rate *= 1.0 - p.adjust_rate_down * excess * elapsed;
         } else {
+            // Fixed rate recovery — always ramp up at the same pace.
             state.budget_rate *= 1.0 + p.adjust_rate_up * elapsed;
         }
         // Don't let rate go negative or explode.
