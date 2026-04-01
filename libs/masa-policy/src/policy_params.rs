@@ -103,7 +103,7 @@ impl Default for PredParams {
             max_burst_secs: 0.005,
             initial_budget_rate: 5_000_000.0,
             probe_min: 0.05,
-            probe_max: 1.0,
+            probe_max: 0.2,
             rejection_alpha: 0.01,
             rejection_threshold: 0.10,
             tau: 1.0,
