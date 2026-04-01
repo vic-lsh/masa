@@ -1009,3 +1009,45 @@ The 15-18s ramp is caused by the initial budget being too small for the actual p
 
 ### Experiment design
 Same config as cp_simple (800, 1200, 1400, 1800, 2500 RPS, SLO=50ms, 60s each).
+
+### Actual Outcomes (anchor_18)
+
+**Status:** Regression ❌ — reverted
+
+| RPS | anchor_13 Mean(CoV) | anchor_18 Mean(CoV) | Δ Mean | Δ CoV |
+|-----|----------------------|----------------------|--------|-------|
+| 800 | 800 (0.0%) | 800 (0.0%) | 0 | 0 |
+| 1200 | 1195 (2.1%) | 1160 (4.3%) | -35 | +2.2pp |
+| 1400 | 1341 (9.3%) | 1058 (17.3%) | -283 | +8.0pp |
+| 1800 | 1509 (20.2%) | 1137 (49.6%) | -372 | +29.4pp |
+| 2500 | 1593 (30.3%) | 901 (68.1%) | -692 | +37.8pp |
+
+**Key findings:**
+1. **Ramp is fixed** — 800 RPS instant from t=1 (800.5), 1200 instant transition. The high initial budget works for sub-saturation.
+2. **Catastrophic at overload** — 1800 starts at 1799, crashes to 820 within 3s and stays there. The generous budget floods the system, triggering massive overload → goodput crash → budget locks to low level.
+3. The slow ramp in anchor_13 was actually **beneficial** at overload — it acts as natural rate limiting during transitions, preventing the flood that causes crashes.
+
+**Root cause insight:** The ramp speed and overload protection are coupled. Fast ramp = flood at overload. Slow ramp = miss capacity at sub-saturation. We need asymmetric behavior:
+- Sub-saturation: fast ramp (no flooding risk)
+- Overload: gradual ramp (avoid flooding)
+
+**Decision:** Revert to 5M initial_budget_rate. The 15s ramp at sub-saturation is acceptable when the measurement excludes 10s warmup (anchor_13 shows 800 (0.0%) after warmup). Focus remaining iterations on overload CoV instead.
+
+---
+
+## Summary after Iterations 11-18
+
+The goodput-tracking AC (anchor_13 = best variant) achieves:
+
+| RPS | Baseline | anchor_3 (best param-tuned) | **anchor_13 (goodput-tracking)** |
+|-----|----------|----------------------------|----------------------------------|
+| 800 | 800 (0.0%) | 800 (0.0%) | **800 (0.0%)** |
+| 1200 | 1164 (4.0%) | 1180 (3.2%) | **1195 (2.1%)** ✅ best |
+| 1400 | 1024 (9.1%) | 1246 (5.5%) | **1341 (9.3%)** ✅ best mean |
+| 1800 | 1679 (12.6%) | 1336 (10.6%) | 1509 (20.2%) |
+| 2500 | 1061 (25.2%) | 1345 (19.7%) | **1593 (30.3%)** ✅ best mean |
+
+**Wins:** Best mean at 1200, 1400, 2500. Eliminates the non-monotonic 1400<1800 anomaly.
+**Weakness:** 1800 still -170 vs baseline, CoV elevated at overload (20-30%).
+
+The cold-start ramp (15s) is a cosmetic issue excluded by warmup. The overload CoV is the remaining real problem.
