@@ -94,7 +94,7 @@ impl Default for PredParams {
             staleness_secs: 2.0,
             staleness_default: 0.5,
             util_target: 0.80,
-            adjust_rate: 0.5,
+            adjust_rate: 2.0,
             max_burst_secs: 0.005,
             initial_budget_rate: 5_000_000.0,
             prob_smooth: 1.0,
