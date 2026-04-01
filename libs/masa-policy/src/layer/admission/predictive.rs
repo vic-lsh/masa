@@ -353,14 +353,17 @@ impl AdmissionController {
         if elapsed > 0.0 && elapsed < p.idle_threshold {
             let instant_rate = drained / elapsed;
 
-            // Asymmetric alpha: fast rise (tau), slow fall (tau * tau_down_factor).
-            // Prevents transient goodput crashes from depressing the budget —
-            // the budget stays high during dips, letting the system recover
-            // naturally (like baseline), instead of amplifying the crash.
+            // Asymmetric alpha: fast rise always, slow fall only in explore
+            // mode.  In explore mode, slow decay prevents transient goodput
+            // dips from depressing the budget (so 1800 RPS behaves like
+            // baseline).  In exploit mode, fast decay lets the budget
+            // respond to genuine overload (so 2500 stops flooding).
             let tau_eff = if instant_rate >= state.goodput_rate {
                 p.tau
-            } else {
+            } else if state.er_ema <= p.rejection_threshold {
                 p.tau * p.tau_down_factor
+            } else {
+                p.tau
             };
             let alpha = 1.0 - (-elapsed / tau_eff).exp();
             state.goodput_rate += alpha * (instant_rate - state.goodput_rate);
