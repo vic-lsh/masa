@@ -1121,3 +1121,36 @@ At 2500, the rejection rate exceeds 10% (system can only handle ~60-65% of load)
 
 ### Experiment design
 Same config as cp_simple (800, 1200, 1400, 1800, 2500 RPS, SLO=50ms, 60s each).
+
+### Actual Outcomes (anchor_20)
+
+**Status:** Keep ✅ — best CoV result, strong improvement
+
+| RPS | anchor_13 Mean(CoV) | anchor_20 Mean(CoV) | Δ Mean | Δ CoV |
+|-----|----------------------|----------------------|--------|-------|
+| 800 | 800 (0.0%) | 800 (0.1%) | 0 | +0.1pp |
+| 1200 | 1195 (2.1%) | 1182 (0.7%) | -13 | **-1.4pp** |
+| 1400 | 1341 (9.3%) | 1254 (5.1%) | -87 | **-4.2pp** |
+| 1800 | 1509 (20.2%) | 1451 (13.7%) | -58 | **-6.5pp** |
+| 2500 | 1593 (30.3%) | 1601 (27.0%) | +8 | **-3.3pp** |
+
+**Key findings:**
+1. **CoV improved at every overloaded RPS** — 1200: 0.7%, 1400: 5.1%, 1800: 13.7%, 2500: 27.0%. All best in series.
+2. **1800 timeline: 20s of stable 1600** (t=168-189) before collapse, vs anchor_13's 5s of stable 1800 before collapse. Higher threshold keeps AC in explore mode longer.
+3. **Post-collapse recovery is upward-trending** (1046 → 1230 over 8s), unlike anchor_13 which stayed flat at 1100.
+4. **2500 essentially unchanged** — the AC still engages at deep overload. +8 mean, -3.3pp CoV.
+5. **Mean slightly lower** at 1200-1800 — the tradeoff for stability. The explore mode steady state at 1800 is ~1600 (vs anchor_13's brief 1800 peak before collapse).
+
+**Comparison to baseline:**
+
+| RPS | Baseline | anchor_20 | Δ |
+|-----|----------|-----------|---|
+| 800 | 800 (0.0%) | 800 (0.1%) | 0 |
+| 1200 | 1164 (4.0%) | 1182 (0.7%) | +18, **-3.4pp** |
+| 1400 | 1024 (9.1%) | 1254 (5.1%) | **+229**, **-4.0pp** |
+| 1800 | 1679 (12.6%) | 1451 (13.7%) | -228, +1.1pp |
+| 2500 | 1061 (25.2%) | 1601 (27.0%) | **+540**, +1.8pp |
+
+Beats baseline in mean at 1200, 1400, 2500. Loses at 1800. Best CoV at 1200, 1400. Comparable CoV at 1800, 2500.
+
+**Decision:** Keep. anchor_20 is the new best overall — best CoV profile with strong mean gains at overload.
