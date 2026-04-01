@@ -257,6 +257,8 @@ struct LimiterState {
     avg_latency_us: f64,
     /// Timestamp of last completion (for time-based EMA alpha).
     last_update: Instant,
+    /// Timestamp of last AIMD limit update.
+    last_limit_update: Instant,
 }
 
 #[cfg(feature = "ac_pred")]
@@ -270,12 +272,12 @@ impl std::fmt::Debug for LimiterState {
     }
 }
 
-/// Vegas-style concurrency limiter.
+/// AIMD concurrency limiter.
 ///
 /// Controls the number of in-flight requests at ingress, adapting the
 /// limit using a latency-based gradient: `gradient = min_latency / avg_latency`.
-/// When latency is near the floor (no queueing), the limit grows.
-/// When latency is inflated (overloaded), the limit shrinks proportionally.
+/// When the gradient is above the threshold (healthy), the limit increases
+/// additively. When below (congested), it decreases multiplicatively.
 #[cfg(feature = "ac_pred")]
 #[derive(Debug)]
 pub(crate) struct ConcurrencyLimiter {
@@ -295,6 +297,7 @@ impl ConcurrencyLimiter {
                 min_latency_us: 0.0,
                 avg_latency_us: 0.0,
                 last_update: Instant::now(),
+                last_limit_update: Instant::now(),
             }),
         }
     }
@@ -348,13 +351,19 @@ impl ConcurrencyLimiter {
             state.avg_latency_us += alpha * (latency - state.avg_latency_us);
         }
 
-        // Vegas-style limit adaptation.
-        if state.min_latency_us > 0.0 && state.avg_latency_us > 0.0 {
-            let gradient = state.min_latency_us / state.avg_latency_us;
-            let queue_allowance = p.queue_allowance_factor * state.limit.sqrt();
-            state.limit = state.limit * gradient + queue_allowance;
-            if state.limit < 10.0 {
-                state.limit = 10.0;
+        // Periodic AIMD limit update.
+        let update_elapsed = now.duration_since(state.last_limit_update).as_secs_f64();
+        if update_elapsed >= (p.update_interval_ms as f64 / 1000.0) {
+            state.last_limit_update = now;
+            if state.min_latency_us > 0.0 && state.avg_latency_us > 0.0 {
+                let gradient = state.min_latency_us / state.avg_latency_us;
+                if gradient >= p.gradient_threshold {
+                    // Healthy: additive increase
+                    state.limit = (state.limit + p.additive_increase).min(p.max_limit);
+                } else {
+                    // Congested: multiplicative decrease
+                    state.limit = (state.limit * p.multiplicative_decrease).max(10.0);
+                }
             }
         }
     }
@@ -557,6 +566,11 @@ mod tests {
             cl.record_completion(50_000); // 50ms — 5x the floor
             std::thread::sleep(std::time::Duration::from_millis(1));
         }
+
+        // Wait for the AIMD update interval to elapse (default 250ms),
+        // then trigger the periodic update with one more completion.
+        std::thread::sleep(std::time::Duration::from_millis(260));
+        cl.record_completion(50_000);
 
         let final_limit = cl.state.lock().unwrap().limit;
         assert!(
