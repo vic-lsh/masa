@@ -5,12 +5,12 @@
 // tightens child deadlines (when `sched_pred` is also enabled), and runs
 // predictive admission control.
 
-#[cfg(feature = "ac_pred")]
-use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 #[cfg(feature = "ac_pred")]
-use std::sync::Mutex;
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    Mutex,
+};
 use std::task::Poll;
 #[cfg(feature = "ac_pred")]
 use std::time::Instant;
@@ -63,9 +63,6 @@ pub(crate) struct PredAdmissionLayer {
     pub(crate) est: EstRequestState<DefaultLatencyEstimator>,
     pred_admission: Arc<PredictiveAdmission>,
     rpc: CowGrpcMethod,
-    /// Set when this request was shed by the Layer 2 token bucket.
-    /// Used to exclude Layer 2 rejections from ER tracking.
-    shed_by_token_bucket: AtomicBool,
 }
 
 impl Layer for PredAdmissionLayer {
@@ -79,7 +76,6 @@ impl Layer for PredAdmissionLayer {
             est: EstRequestState::new(resolved_method_id, server.est.clone()),
             pred_admission: server.pred_admission.clone(),
             rpc: method.clone(),
-            shed_by_token_bucket: AtomicBool::new(false),
         }
     }
 
@@ -123,9 +119,6 @@ impl Layer for PredAdmissionLayer {
                 result.key,
             );
             if admission != AdmissionResult::Admit {
-                if admission == AdmissionResult::ShedLayer2 {
-                    self.shed_by_token_bucket.store(true, Ordering::Relaxed);
-                }
                 return Err(Status::new(
                     Code::DeadlineExceeded,
                     format!(
@@ -148,7 +141,7 @@ impl Layer for PredAdmissionLayer {
         Ok(())
     }
 
-    /// Process a child RPC response: track latencies, propagate errors.
+    /// Process a child RPC response: track latencies, accumulate goodput.
     #[inline]
     fn after_child_rpc<T>(
         &self,
@@ -158,10 +151,24 @@ impl Layer for PredAdmissionLayer {
         child_ctx: &PredAdmissionChild,
     ) -> Result<(), Status> {
         child_ctx.est.finalize(response);
-        if let Some(downstream_util) = self.est.after_child_rpc(response, &child_ctx.est) {
-            self.pred_admission
-                .update_bottleneck(ctx.api(), downstream_util);
+        let _ = self.est.after_child_rpc(response, &child_ctx.est);
+
+        // Accumulate completed cost for goodput tracking (ingress only, success only).
+        #[cfg(feature = "ac_pred")]
+        if ctx.hop_count() == 0 && response.is_ok() {
+            if let Some(id) = &child_ctx.est.parent_to_child_id {
+                let cost = self
+                    .est
+                    .server
+                    .est_child_latency
+                    .get_estimate(id.to_key())
+                    .unwrap_or(0);
+                self.pred_admission.record_completion(cost);
+            }
         }
+
+        #[cfg(not(feature = "ac_pred"))]
+        let _ = ctx;
 
         #[cfg(feature = "sched_pred")]
         if let Err(status) = response {
@@ -187,14 +194,7 @@ impl Layer for PredAdmissionLayer {
     /// Sets `response_meta` on the shared `ctx`; the caller serializes once.
     #[inline]
     fn finalize<Ret>(&self, ctx: &mut Context, result: &mut Result<Response<Ret>, Status>) {
-        if is_early_return_response(result) {
-            // Record ER unless this was a Layer 2 (token bucket) rejection,
-            // which is excluded to avoid a positive feedback loop.
-            if !self.shed_by_token_bucket.load(Ordering::Relaxed) {
-                self.pred_admission.record_er();
-            }
-        } else {
-            self.pred_admission.record_success();
+        if !is_early_return_response(result) {
             self.est.track_latencies();
         }
         self.est.inject_response_meta(ctx);
@@ -241,138 +241,44 @@ impl LayerChild for PredAdmissionChild {
 }
 
 // ══════════════════════════════════════════════════════════════════════════
-// Predictive admission control
+// Goodput-tracking admission control
 // ══════════════════════════════════════════════════════════════════════════
-
-// ── Bottleneck Tracker ──────────────────────────────────────────────────
-
-/// Tracks max_downstream_util per API with staleness decay.
-#[cfg(feature = "ac_pred")]
-#[derive(Debug)]
-pub(crate) struct BottleneckTracker {
-    inner: Mutex<HashMap<String, (f32, Instant)>>,
-}
-
-#[cfg(feature = "ac_pred")]
-impl BottleneckTracker {
-    pub(crate) fn new() -> Self {
-        Self {
-            inner: Mutex::new(HashMap::new()),
-        }
-    }
-
-    pub(crate) fn update(&self, api: &str, max_downstream_util: f32) {
-        let mut map = self.inner.lock().unwrap();
-        map.insert(api.to_string(), (max_downstream_util, Instant::now()));
-    }
-
-    /// Per-API utilization (preserved for diagnostics and future per-API
-    /// bucket merging).
-    #[allow(dead_code)]
-    pub(crate) fn get(&self, api: &str) -> f32 {
-        let p = &PolicyParams::global().pred;
-        let map = self.inner.lock().unwrap();
-        if let Some((util, last_update)) = map.get(api) {
-            Self::decayed_util(*util, last_update)
-        } else {
-            p.staleness_default
-        }
-    }
-
-    /// Returns the maximum utilization across all tracked APIs, with
-    /// staleness decay applied. Returns `STALENESS_DEFAULT` when empty.
-    pub(crate) fn get_max(&self) -> f32 {
-        let p = &PolicyParams::global().pred;
-        let map = self.inner.lock().unwrap();
-        if map.is_empty() {
-            return p.staleness_default;
-        }
-        map.values()
-            .map(|(util, last_update)| Self::decayed_util(*util, last_update))
-            .fold(0.0_f32, f32::max)
-    }
-
-    fn decayed_util(util: f32, last_update: &Instant) -> f32 {
-        let p = &PolicyParams::global().pred;
-        let age = last_update.elapsed().as_secs_f64();
-        if age > p.staleness_secs {
-            let decay = (-(age - p.staleness_secs) / p.staleness_secs).exp() as f32;
-            util * decay + p.staleness_default * (1.0 - decay)
-        } else {
-            util
-        }
-    }
-}
-
-// ── ER Tracker ─────────────────────────────────────────────────────────
-
-/// Tracks the early-return fraction as a slow EMA (α=ER_ALPHA) to detect
-/// overload when CPU utilization alone misses it (e.g., requests shed by
-/// Layer 1 before consuming CPU).
-///
-/// Layer 2 (token bucket) rejections are excluded to avoid a positive
-/// feedback loop (reject → ER up → throttle → more rejections).
-#[cfg(feature = "ac_pred")]
-#[derive(Debug)]
-struct ErTracker {
-    ema: Mutex<f64>,
-}
-
-#[cfg(feature = "ac_pred")]
-impl ErTracker {
-    fn new() -> Self {
-        Self {
-            ema: Mutex::new(0.0),
-        }
-    }
-
-    fn record_er(&self) {
-        let p = &PolicyParams::global().pred;
-        let mut ema = self.ema.lock().unwrap();
-        *ema = *ema * (1.0 - p.er_alpha) + p.er_alpha;
-    }
-
-    fn record_success(&self) {
-        let p = &PolicyParams::global().pred;
-        let mut ema = self.ema.lock().unwrap();
-        *ema *= 1.0 - p.er_alpha;
-    }
-
-    /// Pseudo-utilization derived from ER fraction.
-    /// Saturates at 1.0 when `er_fraction >= er_threshold`.
-    fn pseudo_util(&self) -> f64 {
-        let p = &PolicyParams::global().pred;
-        let ema = *self.ema.lock().unwrap();
-        (ema / p.er_threshold).min(1.0)
-    }
-}
 
 // ── Admission Controller ────────────────────────────────────────────────
 
 #[cfg(feature = "ac_pred")]
 struct BudgetState {
+    /// EMA of cost-weighted goodput (µs/s).
+    goodput_rate: f64,
+    /// Token bucket balance (µs).
     budget_us: f64,
-    budget_rate: f64,
-    last_refill: Instant,
+    /// Timestamp of last admission check.
+    last_update: Instant,
 }
 
 #[cfg(feature = "ac_pred")]
 impl std::fmt::Debug for BudgetState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("BudgetState")
+            .field("goodput_rate", &self.goodput_rate)
             .field("budget_us", &self.budget_us)
-            .field("budget_rate", &self.budget_rate)
             .finish()
     }
 }
 
-/// Admission controller using compute-budget token bucket.
+/// Goodput-tracking admission controller.
+///
+/// Sets the token-bucket refill rate to slightly above observed goodput
+/// (successful completion throughput in µs/s). This eliminates the
+/// observer effect of the previous utilization-based controller: goodput
+/// reflects actual system output, not the controller's own actions.
 #[cfg(feature = "ac_pred")]
 #[derive(Debug)]
 pub(crate) struct AdmissionController {
-    bottleneck: BottleneckTracker,
-    er_tracker: ErTracker,
     state: Mutex<BudgetState>,
+    /// Lock-free accumulator for completed child RPC costs (µs).
+    /// Drained by `should_admit` to compute the instantaneous goodput rate.
+    completed_cost_us: AtomicU64,
 }
 
 #[cfg(feature = "ac_pred")]
@@ -380,106 +286,63 @@ impl AdmissionController {
     pub(crate) fn new() -> Self {
         let p = &PolicyParams::global().pred;
         Self {
-            bottleneck: BottleneckTracker::new(),
-            er_tracker: ErTracker::new(),
             state: Mutex::new(BudgetState {
+                goodput_rate: p.initial_budget_rate,
                 budget_us: p.initial_budget_rate * p.max_burst_secs,
-                budget_rate: p.initial_budget_rate,
-                last_refill: Instant::now(),
+                last_update: Instant::now(),
             }),
+            completed_cost_us: AtomicU64::new(0),
         }
     }
 
-    pub(crate) fn update_bottleneck(&self, api: &str, max_downstream_util: f32) {
-        self.bottleneck.update(api, max_downstream_util);
+    /// Record a successful child RPC completion (lock-free).
+    pub(crate) fn record_completion(&self, est_child_cost: u64) {
+        self.completed_cost_us
+            .fetch_add(est_child_cost, Ordering::Relaxed);
     }
 
     /// Returns true if the request should be admitted.
     ///
     /// Uses a token-bucket where tokens are microseconds of compute budget.
-    /// The refill rate adjusts up/down based on bottleneck utilization,
-    /// similar to TCP congestion control discovering available bandwidth.
-    pub(crate) fn should_admit(
-        &self,
-        _api: &str,
-        _time_left: u64,
-        est_compute: u64,
-        _est_total_mean: u64,
-    ) -> bool {
+    /// The refill rate tracks observed goodput plus a probe margin.
+    pub(crate) fn should_admit(&self, est_child_cost: u64) -> bool {
         let p = &PolicyParams::global().pred;
-        // Rate signal: max utilization across all APIs + ER pseudo-util backstop.
-        // Using max across APIs because all APIs share one bucket — if any
-        // path is stressed, the rate should decrease. The cost metric ensures
-        // requests on uncongested paths (low est_child) still get admitted.
-        let max_cpu_util = self.bottleneck.get_max() as f64;
-        let er_pseudo = self.er_tracker.pseudo_util();
-        let effective_util = max_cpu_util.max(er_pseudo);
+        let cost = est_child_cost as f64;
+
+        // Drain the completion accumulator (lock-free swap).
+        let drained = self.completed_cost_us.swap(0, Ordering::Relaxed) as f64;
 
         let mut state = self.state.lock().unwrap();
         let now = Instant::now();
-        let elapsed = now.duration_since(state.last_refill).as_secs_f64();
-        state.last_refill = now;
+        let elapsed = now.duration_since(state.last_update).as_secs_f64();
+        state.last_update = now;
+
+        // Update goodput EMA from accumulated completions.
+        if elapsed > 0.0 {
+            let instant_rate = drained / elapsed;
+            let alpha = 1.0 - (-elapsed / p.tau).exp();
+            state.goodput_rate += alpha * (instant_rate - state.goodput_rate);
+        }
+
+        // Set budget rate to track goodput with probe margin.
+        let budget_rate = state.goodput_rate * (1.0 + p.probe_factor);
 
         // Refill tokens, capped at burst limit.
         // Dynamic floor: ensure the budget can always hold at least one
         // request (cost × 2), so no request is permanently inadmissible
         // regardless of how large est_child is (e.g., I/O-heavy Hotel calls).
-        state.budget_us += state.budget_rate * elapsed;
-        let cost = est_compute as f64;
-        let max_budget = (state.budget_rate * p.max_burst_secs).max(cost * 2.0);
+        state.budget_us += budget_rate * elapsed;
+        let max_budget = (budget_rate * p.max_burst_secs).max(cost * 2.0);
         if state.budget_us > max_budget {
             state.budget_us = max_budget;
         }
 
-        // Adjust rate based on effective utilization (asymmetric: fast close, slow reopen)
-        if effective_util > p.util_target {
-            // Proportional: gentle at moderate overload, aggressive at deep overload.
-            let excess = (effective_util - p.util_target) / (1.0 - p.util_target);
-            state.budget_rate *= 1.0 - p.adjust_rate_down * excess * elapsed;
-        } else {
-            // Fixed rate recovery — always ramp up at the same pace.
-            state.budget_rate *= 1.0 + p.adjust_rate_up * elapsed;
-        }
-        // Don't let rate go negative or explode.
-        // The cap must be high enough to support max throughput × max cost.
-        // With MAX_BURST_SECS limiting the actual budget, warmup inflation
-        // only affects the rate (not the burst size), so a high cap is safe.
-        state.budget_rate = state
-            .budget_rate
-            .clamp(p.initial_budget_rate / 10.0, p.initial_budget_rate * 20.0);
-
-        // Admit if we have enough budget
         if state.budget_us >= cost {
             state.budget_us -= cost;
             true
-        } else if p.prob_smooth == 0.0 {
-            // Disabled: always admit (opt-out for experiments)
-            state.budget_us -= cost;
-            true
         } else {
-            // Probabilistic admission: as budget depletes, admission
-            // probability decreases gradually rather than falling off a cliff.
-            // Budget can go negative (debt) after a probabilistic admit,
-            // meaning p=0 until the debt is repaid via refill.
-            if state.budget_us <= 0.0 {
-                return false;
-            }
-            let prob = (state.budget_us / cost).powf(p.prob_smooth);
-            if rand::random::<f64>() < prob {
-                state.budget_us -= cost;
-                true
-            } else {
-                false
-            }
+            false
         }
-    }
-
-    pub(crate) fn record_er(&self) {
-        self.er_tracker.record_er();
-    }
-
-    pub(crate) fn record_success(&self) {
-        self.er_tracker.record_success();
     }
 }
 
@@ -534,14 +397,7 @@ impl PredictiveAdmission {
         // parent→child pair) as cost.
         if ctx.hop_count() == 0 {
             let est_child_cost = est_server.est_child_latency.get_estimate(key).unwrap_or(0);
-            let est_total_mean = est_server
-                .est_after_child_latency
-                .get_mean_estimate(key)
-                .unwrap_or(0);
-            if !self
-                .controller
-                .should_admit(ctx.api(), time_left, est_child_cost, est_total_mean)
-            {
+            if !self.controller.should_admit(est_child_cost) {
                 return AdmissionResult::ShedLayer2;
             }
         }
@@ -549,22 +405,10 @@ impl PredictiveAdmission {
         AdmissionResult::Admit
     }
 
-    /// Feed downstream utilization data into the admission controller.
+    /// Record a successful child RPC completion for goodput tracking.
     #[inline]
-    pub(crate) fn update_bottleneck(&self, api: &str, max_downstream_util: f32) {
-        self.controller.update_bottleneck(api, max_downstream_util);
-    }
-
-    /// Record an early return (Layer 1 or abort_slo) for the ER backstop.
-    #[inline]
-    pub(crate) fn record_er(&self) {
-        self.controller.record_er();
-    }
-
-    /// Record a successful completion for the ER backstop.
-    #[inline]
-    pub(crate) fn record_success(&self) {
-        self.controller.record_success();
+    pub(crate) fn record_completion(&self, est_child_cost: u64) {
+        self.controller.record_completion(est_child_cost);
     }
 }
 
@@ -609,108 +453,32 @@ impl PredictiveAdmission {
     }
 
     #[inline]
-    pub(crate) fn update_bottleneck(&self, _api: &str, _max_downstream_util: f32) {}
-
-    #[inline]
-    pub(crate) fn record_er(&self) {}
-
-    #[inline]
-    pub(crate) fn record_success(&self) {}
+    pub(crate) fn record_completion(&self, _est_child_cost: u64) {}
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    // Default parameter value matching PolicyParams default.
-    const STALENESS_DEFAULT: f32 = 0.5;
-
-    #[test]
-    fn test_bottleneck_tracker_default() {
-        let tracker = BottleneckTracker::new();
-        let util = tracker.get("unknown_api");
-        assert!((util - STALENESS_DEFAULT).abs() < 0.01);
-    }
-
-    #[test]
-    fn test_bottleneck_tracker_update() {
-        let tracker = BottleneckTracker::new();
-        tracker.update("Search", 0.9);
-        let util = tracker.get("Search");
-        assert!((util - 0.9).abs() < 0.01);
-    }
-
-    #[test]
-    fn test_bottleneck_tracker_get_max_empty() {
-        let tracker = BottleneckTracker::new();
-        assert!((tracker.get_max() - STALENESS_DEFAULT).abs() < 0.01);
-    }
-
-    #[test]
-    fn test_bottleneck_tracker_get_max() {
-        let tracker = BottleneckTracker::new();
-        tracker.update("Search", 0.7);
-        tracker.update("Hotel", 0.9);
-        tracker.update("Compose", 0.5);
-        assert!((tracker.get_max() - 0.9).abs() < 0.01);
-    }
-
-    #[test]
-    fn test_er_tracker_basic() {
-        let tracker = ErTracker::new();
-        assert!(tracker.pseudo_util() < 0.01);
-
-        // Record 20 ERs — EMA should increase
-        for _ in 0..20 {
-            tracker.record_er();
-        }
-        let util_after_ers = tracker.pseudo_util();
-        assert!(
-            util_after_ers > 0.1,
-            "pseudo_util should increase after ERs"
-        );
-
-        // Record 200 successes — EMA should decrease (α=0.05 is slow,
-        // so we need many observations to pull the EMA down).
-        for _ in 0..200 {
-            tracker.record_success();
-        }
-        assert!(
-            tracker.pseudo_util() < util_after_ers,
-            "pseudo_util should decrease after successes"
-        );
-    }
-
-    #[test]
-    fn test_er_tracker_saturation() {
-        let tracker = ErTracker::new();
-        // Saturate: record many ERs until EMA >= ER_THRESHOLD
-        for _ in 0..1000 {
-            tracker.record_er();
-        }
-        assert!(
-            (tracker.pseudo_util() - 1.0).abs() < 0.01,
-            "pseudo_util should saturate at 1.0"
-        );
-    }
-
     #[test]
     fn test_admission_controller_admits_with_budget() {
         let ac = AdmissionController::new();
-        // With initial budget, small compute cost should be admitted
-        let admitted = ac.should_admit("Search", 100_000, 1000, 50_000);
-        assert!(admitted);
+        // With initial budget (goodput_rate = 5M, budget = 25K µs),
+        // a small compute cost should be admitted.
+        assert!(ac.should_admit(1000));
     }
 
     #[test]
     fn test_admission_controller_rejects_when_budget_exhausted() {
         let ac = AdmissionController::new();
         // Exhaust the budget by admitting requests with large compute costs.
-        // Dynamic burst floor: max_budget = max(rate * 0.005, cost * 2) = 200K us.
+        // Initial budget = 5M * 0.005 = 25K µs. With no completions,
+        // goodput_rate decays toward 0 and budget won't refill meaningfully.
+        // Dynamic burst floor: max(budget_rate * 0.005, cost * 2) = 200K us.
         // Each request costs 100K, so ~2 requests exhaust the budget.
         let mut rejected = false;
         for _ in 0..20 {
-            if !ac.should_admit("Search", 100_000, 100_000, 50_000) {
+            if !ac.should_admit(100_000) {
                 rejected = true;
                 break;
             }
@@ -722,30 +490,22 @@ mod tests {
     }
 
     #[test]
-    fn test_probabilistic_admission_sometimes_admits() {
-        // Initial budget = 25_000 µs. With cost = 50_000 µs (> budget),
-        // we're in the probabilistic regime: p = (25000/50000)^1.0 = 0.5.
-        // Over many trials, some should be admitted and some rejected.
+    fn test_goodput_tracking_refills_budget() {
         let ac = AdmissionController::new();
-        let mut admitted = 0;
-        let mut rejected = 0;
-        for _ in 0..200 {
-            // Sleep briefly so budget refills between calls, keeping us
-            // in the probabilistic regime (budget < cost but > 0).
-            std::thread::sleep(std::time::Duration::from_millis(1));
-            if ac.should_admit("Search", 100_000, 50_000, 50_000) {
-                admitted += 1;
-            } else {
-                rejected += 1;
-            }
-        }
+        // Exhaust budget
+        while ac.should_admit(100_000) {}
+
+        // Simulate completions
+        ac.record_completion(100_000);
+        ac.record_completion(100_000);
+
+        // Sleep to let elapsed time accumulate for refill
+        std::thread::sleep(std::time::Duration::from_millis(50));
+
+        // Should be able to admit again after completions refill the budget
         assert!(
-            admitted > 0,
-            "probabilistic admission should admit at least some requests (admitted={admitted})"
-        );
-        assert!(
-            rejected > 0,
-            "should not admit all requests when budget < cost (rejected={rejected})"
+            ac.should_admit(1000),
+            "should admit after completions refill the budget"
         );
     }
 }

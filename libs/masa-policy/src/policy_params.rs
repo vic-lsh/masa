@@ -65,44 +65,32 @@ impl Default for RajomonParams {
 }
 
 /// Tunable parameters for the predictive admission control policy.
+///
+/// Uses a goodput-tracking rate controller: the token-bucket refill rate
+/// tracks observed successful completion throughput (in µs/s) plus a small
+/// probe margin, replacing the previous utilization-based feedback loop.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct PredParams {
-    /// Age (seconds) after which a bottleneck utilization reading is considered stale.
-    pub staleness_secs: f64,
-    /// Utilization assumed when no (or stale) bottleneck data is available.
-    pub staleness_default: f32,
-    /// Target bottleneck utilisation fraction for the token-bucket rate controller.
-    pub util_target: f64,
-    /// Multiplicative rate-adjustment factor per second (budget decrease when util > target).
-    pub adjust_rate_down: f64,
-    /// Multiplicative rate-adjustment factor per second (budget increase when util < target).
-    pub adjust_rate_up: f64,
-    /// Maximum burst window in seconds (token-bucket capacity = initial_budget_rate × max_burst_secs).
+    /// Maximum burst window in seconds (token-bucket capacity = budget_rate × max_burst_secs).
     pub max_burst_secs: f64,
     /// Initial token-bucket refill rate in µs of compute budget per second.
+    /// Used as bootstrap value before real completions arrive.
     pub initial_budget_rate: f64,
-    /// Probabilistic smoothing exponent (1.0=linear, high=binary, 0.0=disabled).
-    pub prob_smooth: f64,
-    /// ER fraction at which pseudo-utilization saturates to 1.0.
-    pub er_threshold: f64,
-    /// Slow EMA alpha for ER tracker (averages over oscillation cycles).
-    pub er_alpha: f64,
+    /// Fraction above observed goodput to set the budget rate (probe margin).
+    /// E.g., 0.05 means budget_rate = goodput_rate * 1.05.
+    pub probe_factor: f64,
+    /// EMA time constant in seconds for the goodput rate estimator.
+    pub tau: f64,
 }
 
 impl Default for PredParams {
     fn default() -> Self {
         Self {
-            staleness_secs: 2.0,
-            staleness_default: 0.5,
-            util_target: 0.80,
-            adjust_rate_down: 2.0,
-            adjust_rate_up: 0.5,
             max_burst_secs: 0.005,
             initial_budget_rate: 5_000_000.0,
-            prob_smooth: 1.0,
-            er_threshold: 0.2,
-            er_alpha: 0.05,
+            probe_factor: 0.05,
+            tau: 1.0,
         }
     }
 }
@@ -163,7 +151,8 @@ mod tests {
         let p = PolicyParams::default();
         assert_eq!(p.rajomon.max_token, 100);
         assert!(p.rajomon.price_cap <= p.rajomon.max_token);
-        assert_eq!(p.pred.util_target, 0.80);
+        assert_eq!(p.pred.probe_factor, 0.05);
+        assert_eq!(p.pred.tau, 1.0);
     }
 
     #[test]
@@ -174,7 +163,7 @@ mod tests {
         // Other rajomon fields should be defaults
         assert_eq!(p.rajomon.price_update_rate_ms, 10);
         // pred fields should be defaults
-        assert_eq!(p.pred.util_target, 0.80);
+        assert_eq!(p.pred.probe_factor, 0.05);
     }
 
     #[test]
@@ -182,6 +171,6 @@ mod tests {
         let p: PolicyParams = serde_json::from_str("{}").unwrap();
         let d = PolicyParams::default();
         assert_eq!(p.rajomon.max_token, d.rajomon.max_token);
-        assert_eq!(p.pred.util_target, d.pred.util_target);
+        assert_eq!(p.pred.probe_factor, d.pred.probe_factor);
     }
 }
