@@ -754,3 +754,23 @@ The overload regression in anchor_12 was caused by probe_factor staying too high
 
 ### Experiment design
 Same config as cp_simple (800, 1200, 1400, 1800, 2500 RPS, SLO=50ms, 60s each).
+
+### Actual Outcomes (anchor_13)
+
+**Status:** Keep ✅ — sub-saturation fix confirmed
+
+| RPS | anchor_11 Mean(CoV) | anchor_13 Mean(CoV) | Δ Mean | Δ CoV |
+|-----|----------------------|----------------------|--------|-------|
+| 800 | 770 (1.7%) | **800 (0.0%)** | **+30** | **-1.7pp** |
+| 1200 | 1158 (4.7%) | **1195 (2.1%)** | **+37** | **-2.6pp** |
+| 1400 | 1327 (9.3%) | **1341 (9.3%)** | **+14** | 0pp |
+| 1800 | 1524 (18.3%) | 1509 (20.2%) | -15 | +1.9pp |
+| 2500 | 1618 (29.4%) | 1593 (30.3%) | -25 | +0.9pp |
+
+**Key findings:**
+1. **Sub-saturation shedding eliminated** — 800 is perfect (0.0% CoV), 1200 is best-in-class (1195, 2.1% CoV).
+2. **1400 is new best** — 1341, +316 vs baseline. Threshold probe explores capacity but doesn't overshoot.
+3. **1800/2500 within noise** of anchor_11 — threshold switching correctly snaps to tight tracking during overload.
+4. **CoV still elevated at 1800 (20.2%) and 2500 (30.3%)** — the remaining problem is oscillation during sustained overload, not the probe mechanism.
+
+**Decision:** Keep. anchor_13 is the new best. Next: tackle CoV at high load.
