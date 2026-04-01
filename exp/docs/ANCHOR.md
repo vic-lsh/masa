@@ -169,3 +169,45 @@ With asymmetric rates (2.0 down / 0.5 up), after a rejection wave the AC ramps b
 
 ### Experiment design
 Same config as cp_simple (800, 1200, 1400, 1800, 2500 RPS, SLO=50ms, 60s each).
+
+### Actual Outcomes (anchor_3)
+
+**Status:** Keep ✅ — best AC result so far
+
+| RPS | Baseline (CoV) | anchor_3 (CoV) | Delta vs Baseline |
+|-----|---------------|---------------|-------------------|
+| 800 | 800 (0.0%) | 800 (0.0%) | 0 |
+| 1200 | 1164 (4.1%) | 1187 (3.2%) | +23 |
+| 1400 | 1024 (9.1%) | **1300 (5.5%)** | **+276** |
+| 1800 | 1680 (12.7%) | 1440 (10.6%) | -240 |
+| 2500 | 1061 (25.4%) | **1503 (19.6%)** | **+442** |
+
+**Key findings:**
+- **1400 RPS is the star:** +276 goodput, CoV halved (9.1% → 5.5%), no deep collapses. Range 1094-1376.
+- **2500 RPS dramatically improved:** +442 goodput, CoV from 25.4% to 19.6%. Still has ~8-10s boom-bust cycles (1020-1700) but much higher floor.
+- **1800 RPS still regressed (-240):** Fast close works, but slow reopen (0.5) creates 6-10s recovery troughs at ~1150.
+- **ER pattern is healthy:** Rejections at frontend only. Rates: 1200: 1.1%, 1400: 7.1%, 1800: 19.9%, 2500: 39.8%.
+
+**Decision:** Keep. Iterate on up rate.
+
+---
+
+## Iteration 4: Faster reopen rate (experiment anchor_4)
+
+**Status:** Pending
+
+### Change
+Increase `adjust_rate_up` from 0.5 to 1.0 in `policy_params.rs`. Asymmetry goes from 4:1 to 2:1 (down=2.0, up=1.0).
+
+### Hypothesis
+The 1800 RPS regression is caused by slow recovery after burst suppression. At 0.5, the AC takes ~2s to double the budget — too slow for a load the system can mostly handle. At 1.0, recovery takes ~1s, matching the system's natural recovery time.
+
+The 2:1 asymmetry should still prevent post-bust flooding while allowing faster recovery at moderate overload.
+
+### Expected outcomes if hypothesis is correct:
+1. 1800 RPS recovers toward baseline (~1600+), shorter recovery troughs
+2. 1400 and 2500 maintain their gains (still asymmetric, just less so)
+3. CoV improves at 1800
+
+### Experiment design
+Same config as cp_simple (800, 1200, 1400, 1800, 2500 RPS, SLO=50ms, 60s each).
