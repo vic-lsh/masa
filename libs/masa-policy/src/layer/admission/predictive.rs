@@ -321,7 +321,7 @@ impl AdmissionController {
         state.last_update = now;
 
         // Update goodput EMA from accumulated completions.
-        if elapsed > 0.0 {
+        if elapsed > 0.0 && drained > 0.0 {
             let instant_rate = drained / elapsed;
             let alpha = 1.0 - (-elapsed / p.tau).exp();
             state.goodput_rate += alpha * (instant_rate - state.goodput_rate);
