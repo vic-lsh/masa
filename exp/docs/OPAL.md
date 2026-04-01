@@ -322,3 +322,65 @@ ANCHOR iteration 24 proved this works: asymmetric tau achieved 1725 at 1800 RPS 
 
 ### Experiment design (opal_5)
 Same config as cp_simple (800, 1200, 1400, 1800, 2500 RPS, SLO=50ms, 60s each).
+
+### Actual Outcomes (opal_5)
+
+**Status:** Regression ❌ — reverted
+
+**Code commit:** 720b318c (reverted)
+
+| RPS | opal_4 Mean(CoV) | opal_5 Mean(CoV) | Δ Mean |
+|-----|-------------------|-------------------|--------|
+| 800 | 800 (0.0%) | 800 (0.0%) | 0 |
+| 1200 | 1175 (3.0%) | 1185 (2.2%) | +9 |
+| 1400 | 1127 (19.7%) | 964 (36.9%) | **-163** |
+| 1800 | 974 (28.2%) | 714 (51.3%) | **-260** |
+| 2500 | 1320 (20.4%) | 616 (73.5%) | **-704** |
+
+**Key finding:** Slow goodput_rate decay keeps the budget inflated during overload, perpetuating over-admission. Even at probe_min=0.05, an inflated goodput_rate at 50M+ admits ~2100 req/s when capacity is ~1600. The excess creates a persistent queue catastrophe. The ER probe cannot compensate because the goodput_rate inflation is the dominant term.
+
+**Why ANCHOR iteration 24 worked but opal_5 didn't:** anchor_24 used asymmetric tau WITHOUT ER-based probe — it used the old budget-based rejection_ema. Budget rejections are instantaneous (the budget runs dry → immediate rejection), while ER signals are delayed (request must enter the system, process, and miss SLO). The instantaneous budget signal provided fast enough feedback to prevent queue buildup. The ER signal is too slow to pair with slow goodput decay.
+
+**Decision:** Revert. Asymmetric tau + ER probe is not a viable combination.
+
+---
+
+## Summary and Conclusions (Iterations 1-5)
+
+### Results table
+
+| Iter | Key change | 800 | 1200 | 1400 | 1800 | 2500 |
+|------|-----------|-----|------|------|------|------|
+| **anchor_20** | **baseline** | **800 (0.1%)** | **1182 (0.7%)** | **1254 (5.1%)** | **1451 (13.7%)** | **1601 (27.0%)** |
+| opal_1 | ER-gated admit-freely | 800 (0.0%) | 1177 (4.6%) | 934 (24.3%) | 613 (61.7%) | 746 (59.9%) |
+| opal_2 | + one-way latch + gap reset | 800 (0.0%) | 1178 (2.6%) | 1130 (18.4%) | 1593 (22.1%) | 693 (70.6%) |
+| opal_3 | continuous probe, er_sat=0.20 | 800 (0.0%) | **1183 (1.9%)** | 1187 (18.6%) | 1006 (24.8%) | 905 (30.8%) |
+| opal_4 | er_sat=0.50, probe floor | 800 (0.0%) | 1175 (3.0%) | 1127 (19.7%) | 974 (28.2%) | 1320 (20.4%) |
+| opal_5 | + asymmetric tau | 800 (0.0%) | 1185 (2.2%) | 964 (36.9%) | 714 (51.3%) | 616 (73.5%) |
+
+### What worked
+1. **ER-based probe eliminates the slow ramp at sub-saturation.** All opal iterations achieve instant transitions at 800→1200 and 1200→1400 (vs anchor_20's 10-15s ramp). This validates the user's core hypothesis about using ER to gate tightening.
+2. **Continuous probe (opal_3+) eliminates mode-switching oscillation.** opal_1/2's bang-bang cycling is gone. Remaining oscillation is from the goodput-tracking feedback loop, not the probe mechanism.
+3. **Probe floor prevents feedback death spiral.** opal_4's probe_min=0.05 dramatically improved 2500 (905→1320, CoV 30.8%→20.4%).
+
+### What didn't work
+1. **Admitting freely at overload** (opal_1/2): Queue catastrophe from uncontrolled admission. The initial flood overwhelms the system before the ER signal can respond.
+2. **Binary mode switching** (opal_1/2): Bang-bang oscillation between admit-freely and budget-constrained. Neither mode creates stable equilibrium at overload.
+3. **er_saturate too low** (opal_3): At 0.20, moderate overload (1800, ~30% ER) clamps probe to 0 → feedback death spiral.
+4. **Asymmetric goodput tau** (opal_5): Inflated goodput_rate during overload causes persistent over-admission. ER signals are too delayed to compensate.
+
+### Fundamental finding: ER signals are too slow for budget control
+
+The core issue across all 5 iterations: **ER (early return) signals have inherent delay** (request must enter the system, be processed, and miss SLO before the ER is observed). Budget-based signals (anchor_20's rejection_ema) are instantaneous (budget runs dry → immediate rejection). This makes budget-based mode switching inherently more stable at overload.
+
+ER signals are better for the *direction* of the probe (are we overloaded or not?) but too slow for the *timing* of budget changes. The goodput-tracking budget needs fast feedback to prevent queue buildup during overload transitions — and budget exhaustion provides exactly that.
+
+### Remaining tension: slow ramp vs overload stability
+
+anchor_20's budget-based approach is stable at overload but has a slow ramp. The ER-based approach eliminates the ramp but is unstable at overload. No configuration in 5 iterations achieved both instant ramp AND stable overload behavior.
+
+A potential hybrid: use anchor_20's budget-based rejection_ema for exploit/explore switching (fast feedback, stable), but use ER rate to set the explore-mode budget generously (goodput_rate * f(er_ema) instead of fixed initial_budget_rate). This would speed up the ramp without sacrificing overload stability.
+
+### Code state
+Reverted to opal_4 code (commit 1ad4dd67) then reverted opal_5. Current code has the ER-proportional probe with er_saturate=0.50 and probe floor. This should be reverted to anchor_20 baseline for clean state.
+
