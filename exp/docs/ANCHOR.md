@@ -913,3 +913,57 @@ The explore→exploit transition: when enough requests are admitted and some get
 
 ### Experiment design
 Same config as cp_simple (800, 1200, 1400, 1800, 2500 RPS, SLO=50ms, 60s each).
+
+### Actual Outcomes (anchor_16)
+
+**Status:** Mixed — CoV improved but ramp still present
+
+| RPS | anchor_13 Mean(CoV) | anchor_16 Mean(CoV) | Δ Mean | Δ CoV |
+|-----|----------------------|----------------------|--------|-------|
+| 800 | 800 (0.0%) | 800 (0.1%) | 0 | +0.1pp |
+| 1200 | 1195 (2.1%) | 1181 (1.3%) | -14 | **-0.8pp** |
+| 1400 | 1341 (9.3%) | 1307 (9.1%) | -34 | -0.2pp |
+| 1800 | 1509 (20.2%) | 1511 (16.6%) | +2 | **-3.6pp** |
+| 2500 | 1593 (30.3%) | 1620 (28.9%) | +27 | **-1.4pp** |
+
+CoV improved at 3/5 RPS levels but the 15-18s ramp per transition persists. Timeline analysis shows the ramp is NOT a measurement artifact — 7381 early returns at 800 RPS vs 0 in baseline.
+
+**Root cause of slow ramp:** `initial_budget_rate = 5M µs/s` is too low. With est_child_cost ~25,000 µs per ComposePost, the budget supports only ~200 req/s, not 800. Even in explore mode, `budget_rate = initial_budget_rate = 5M` exhausts the budget immediately. The goodput EMA slowly builds up as completions trickle in, but the budget is always the bottleneck during cold start.
+
+**Decision:** Keep anchor_16 as base (better CoV). Fix: make explore mode skip the budget check entirely.
+
+---
+
+## Iteration 17: Skip budget check in explore mode (experiment anchor_17)
+
+**Status:** Pending
+
+### Change
+In explore mode (rejection_ema ≤ threshold), bypass the budget check entirely — always admit. The budget check only applies in exploit mode.
+
+```rust
+let budget_rate = state.goodput_rate * (1.0 + p.probe_min);
+// ... refill tokens ...
+
+if state.rejection_ema <= p.rejection_threshold {
+    // Explore mode: always admit, skip budget check
+    return true;  // (after updating rejection_ema)
+}
+
+// Exploit mode: standard budget check
+if state.budget_us >= cost { ... }
+```
+
+This eliminates the cold-start budget bottleneck. In explore mode, the system admits freely. Once overload causes rejection_ema to rise above the threshold, the controller switches to exploit mode with tight budget tracking.
+
+### Hypothesis
+The 15-18s ramp is caused by the budget being too small in explore mode. Skipping the budget check entirely in explore mode gives instant ramp (like baseline). The transition to exploit mode is triggered by overload-induced rejections from abort_slo (which ARE proportional to actual overload, not budget exhaustion).
+
+### Expected outcomes if hypothesis is correct:
+1. Instant ramp at load transitions (like baseline)
+2. 800/1200 at baseline levels (no AC interference)
+3. 1400/1800/2500 maintain anchor_16 gains but with more time at peak (less ramp waste)
+4. Overall mean improvement from reduced ramp time
+
+### Experiment design
+Same config as cp_simple (800, 1200, 1400, 1800, 2500 RPS, SLO=50ms, 60s each).
