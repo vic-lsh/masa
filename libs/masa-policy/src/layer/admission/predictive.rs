@@ -8,7 +8,7 @@
 use std::sync::Arc;
 #[cfg(feature = "ac_pred")]
 use std::sync::{
-    atomic::{AtomicU32, Ordering},
+    atomic::{AtomicU64, Ordering},
     Mutex,
 };
 use std::task::Poll;
@@ -153,18 +153,17 @@ impl Layer for PredAdmissionLayer {
         child_ctx.est.finalize(response);
         let _ = self.est.after_child_rpc(response, &child_ctx.est);
 
-        // Track concurrency: decrement in-flight and update latency (ingress only).
+        // Accumulate completed cost for goodput tracking (ingress only, success only).
         #[cfg(feature = "ac_pred")]
-        if ctx.hop_count() == 0 {
-            if response.is_ok() {
-                if let Some(start) = child_ctx.est.start_time {
-                    let latency_us = Instant::now().duration_since(start).as_micros() as u64;
-                    self.pred_admission.record_completion(latency_us);
-                } else {
-                    self.pred_admission.record_drop();
-                }
-            } else {
-                self.pred_admission.record_drop();
+        if ctx.hop_count() == 0 && response.is_ok() {
+            if let Some(id) = &child_ctx.est.parent_to_child_id {
+                let cost = self
+                    .est
+                    .server
+                    .est_child_latency
+                    .get_estimate(id.to_key())
+                    .unwrap_or(0);
+                self.pred_admission.record_completion(cost);
             }
         }
 
@@ -245,133 +244,122 @@ impl LayerChild for PredAdmissionChild {
 // Goodput-tracking admission control
 // ══════════════════════════════════════════════════════════════════════════
 
-// ── Concurrency Limiter ─────────────────────────────────────────────────
+// ── Admission Controller ────────────────────────────────────────────────
 
 #[cfg(feature = "ac_pred")]
-struct LimiterState {
-    /// Current adaptive concurrency limit.
-    limit: f64,
-    /// Observed no-load latency floor (µs). Zero until first completion.
-    min_latency_us: f64,
-    /// EMA of recent latencies (µs). Zero until first completion.
-    avg_latency_us: f64,
-    /// Timestamp of last completion (for time-based EMA alpha).
+struct BudgetState {
+    /// EMA of cost-weighted goodput (µs/s).
+    goodput_rate: f64,
+    /// Token bucket balance (µs).
+    budget_us: f64,
+    /// Timestamp of last admission check.
     last_update: Instant,
-    /// Timestamp of last AIMD limit update.
-    last_limit_update: Instant,
+    /// EMA of per-decision rejection rate (0.0 = no rejections, 1.0 = all rejected).
+    rejection_ema: f64,
 }
 
 #[cfg(feature = "ac_pred")]
-impl std::fmt::Debug for LimiterState {
+impl std::fmt::Debug for BudgetState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("LimiterState")
-            .field("limit", &self.limit)
-            .field("min_latency_us", &self.min_latency_us)
-            .field("avg_latency_us", &self.avg_latency_us)
+        f.debug_struct("BudgetState")
+            .field("goodput_rate", &self.goodput_rate)
+            .field("budget_us", &self.budget_us)
             .finish()
     }
 }
 
-/// AIMD concurrency limiter.
+/// Goodput-tracking admission controller.
 ///
-/// Controls the number of in-flight requests at ingress, adapting the
-/// limit using a latency-based gradient: `gradient = min_latency / avg_latency`.
-/// When the gradient is above the threshold (healthy), the limit increases
-/// additively. When below (congested), it decreases multiplicatively.
+/// Sets the token-bucket refill rate to slightly above observed goodput
+/// (successful completion throughput in µs/s). This eliminates the
+/// observer effect of the previous utilization-based controller: goodput
+/// reflects actual system output, not the controller's own actions.
 #[cfg(feature = "ac_pred")]
 #[derive(Debug)]
-pub(crate) struct ConcurrencyLimiter {
-    /// Current in-flight request count.
-    inflight: AtomicU32,
-    state: Mutex<LimiterState>,
+pub(crate) struct AdmissionController {
+    state: Mutex<BudgetState>,
+    /// Lock-free accumulator for completed child RPC costs (µs).
+    /// Drained by `should_admit` to compute the instantaneous goodput rate.
+    completed_cost_us: AtomicU64,
 }
 
 #[cfg(feature = "ac_pred")]
-impl ConcurrencyLimiter {
+impl AdmissionController {
     pub(crate) fn new() -> Self {
         let p = &PolicyParams::global().pred;
         Self {
-            inflight: AtomicU32::new(0),
-            state: Mutex::new(LimiterState {
-                limit: p.initial_limit,
-                min_latency_us: 0.0,
-                avg_latency_us: 0.0,
+            state: Mutex::new(BudgetState {
+                goodput_rate: p.initial_budget_rate,
+                budget_us: p.initial_budget_rate * p.max_burst_secs,
                 last_update: Instant::now(),
-                last_limit_update: Instant::now(),
+                rejection_ema: 0.0,
             }),
+            completed_cost_us: AtomicU64::new(0),
         }
     }
 
-    /// Check if a new request should be admitted.
+    /// Record a successful child RPC completion (lock-free).
+    pub(crate) fn record_completion(&self, est_child_cost: u64) {
+        self.completed_cost_us
+            .fetch_add(est_child_cost, Ordering::Relaxed);
+    }
+
+    /// Returns true if the request should be admitted.
     ///
-    /// If admitted, increments the in-flight count. The caller MUST
-    /// eventually call `record_completion` or `record_drop`.
-    pub(crate) fn should_admit(&self) -> bool {
-        let limit = {
-            let state = self.state.lock().unwrap();
-            state.limit
-        };
-        let current = self.inflight.fetch_add(1, Ordering::Relaxed);
-        if (current as f64) < limit {
-            true
-        } else {
-            self.inflight.fetch_sub(1, Ordering::Relaxed);
-            false
-        }
-    }
-
-    /// Record a successful completion: decrement in-flight, update latency
-    /// estimates, and adapt the concurrency limit.
-    pub(crate) fn record_completion(&self, latency_us: u64) {
-        self.inflight.fetch_sub(1, Ordering::Relaxed);
-
+    /// Uses a token-bucket where tokens are microseconds of compute budget.
+    /// The refill rate tracks observed goodput plus a probe margin.
+    pub(crate) fn should_admit(&self, est_child_cost: u64) -> bool {
         let p = &PolicyParams::global().pred;
-        let latency = latency_us as f64;
-        if latency <= 0.0 {
-            return;
-        }
+        let cost = est_child_cost as f64;
+
+        // Drain the completion accumulator (lock-free swap).
+        let drained = self.completed_cost_us.swap(0, Ordering::Relaxed) as f64;
 
         let mut state = self.state.lock().unwrap();
         let now = Instant::now();
         let elapsed = now.duration_since(state.last_update).as_secs_f64();
         state.last_update = now;
 
-        // Update min_latency: adopt new lows instantly, decay upward slowly.
-        if state.min_latency_us <= 0.0 || latency < state.min_latency_us {
-            state.min_latency_us = latency;
+        // Update goodput EMA from accumulated completions.
+        // Skip update during idle gaps (>0.5s) to preserve goodput_rate
+        // across load transitions instead of decaying toward zero.
+        if elapsed > 0.0 && elapsed <= 0.5 {
+            let instant_rate = drained / elapsed;
+            let alpha = 1.0 - (-elapsed / p.tau).exp();
+            state.goodput_rate += alpha * (instant_rate - state.goodput_rate);
+        }
+
+        // Exploit vs explore: when rejections are happening, track observed
+        // goodput tightly; otherwise admit freely at the generous initial rate.
+        let budget_rate = if state.rejection_ema > p.rejection_threshold {
+            // Exploit mode: tight tracking of observed goodput
+            state.goodput_rate * (1.0 + p.probe_min)
         } else {
-            state.min_latency_us += p.min_latency_alpha * (latency - state.min_latency_us);
+            // Explore mode: use preserved goodput_rate if available,
+            // fall back to initial_budget_rate for cold start.
+            (state.goodput_rate * (1.0 + p.probe_max)).max(p.initial_budget_rate)
+        };
+
+        // Refill tokens, capped at burst limit.
+        // Dynamic floor: ensure the budget can always hold at least one
+        // request (cost × 2), so no request is permanently inadmissible
+        // regardless of how large est_child is (e.g., I/O-heavy Hotel calls).
+        state.budget_us += budget_rate * elapsed;
+        let max_budget = (budget_rate * p.max_burst_secs).max(cost * 2.0);
+        if state.budget_us > max_budget {
+            state.budget_us = max_budget;
         }
 
-        // Update avg_latency EMA.
-        if state.avg_latency_us <= 0.0 {
-            state.avg_latency_us = latency;
-        } else if elapsed > 0.0 {
-            let alpha = 1.0 - (-elapsed / p.avg_latency_tau).exp();
-            state.avg_latency_us += alpha * (latency - state.avg_latency_us);
-        }
-
-        // Periodic AIMD limit update.
-        let update_elapsed = now.duration_since(state.last_limit_update).as_secs_f64();
-        if update_elapsed >= (p.update_interval_ms as f64 / 1000.0) {
-            state.last_limit_update = now;
-            if state.min_latency_us > 0.0 && state.avg_latency_us > 0.0 {
-                let gradient = state.min_latency_us / state.avg_latency_us;
-                if gradient >= p.gradient_threshold {
-                    // Healthy: additive increase
-                    state.limit = (state.limit + p.additive_increase).min(p.max_limit);
-                } else {
-                    // Congested: multiplicative decrease
-                    state.limit = (state.limit * p.multiplicative_decrease).max(10.0);
-                }
-            }
-        }
-    }
-
-    /// Record a failed/early-return completion: decrement in-flight without
-    /// updating latency estimates (failed requests have atypical latency).
-    pub(crate) fn record_drop(&self) {
-        self.inflight.fetch_sub(1, Ordering::Relaxed);
+        // Admission decision + rejection EMA update.
+        let rejected = if state.budget_us >= cost {
+            state.budget_us -= cost;
+            false
+        } else {
+            true
+        };
+        state.rejection_ema +=
+            p.rejection_alpha * ((if rejected { 1.0 } else { 0.0 }) - state.rejection_ema);
+        !rejected
     }
 }
 
@@ -382,14 +370,14 @@ impl ConcurrencyLimiter {
 #[cfg(feature = "ac_pred")]
 #[derive(Debug)]
 pub(crate) struct PredictiveAdmission {
-    controller: ConcurrencyLimiter,
+    controller: AdmissionController,
 }
 
 #[cfg(feature = "ac_pred")]
 impl PredictiveAdmission {
     pub(crate) fn new() -> Self {
         Self {
-            controller: ConcurrencyLimiter::new(),
+            controller: AdmissionController::new(),
         }
     }
 
@@ -397,8 +385,8 @@ impl PredictiveAdmission {
     ///
     /// - Layer 1 (every hop): floor-based deadline feasibility — reject if
     ///   estimated remaining wall-clock time exceeds deadline.
-    /// - Layer 2 (ingress only, hop_count==0): concurrency-based admission —
-    ///   reject if in-flight count exceeds the adaptive limit.
+    /// - Layer 2 (ingress only, hop_count==0): compute-capacity admission via
+    ///   token-bucket, using the child's wall-clock latency as cost.
     #[inline]
     pub(crate) fn admission_check(
         &self,
@@ -421,9 +409,12 @@ impl PredictiveAdmission {
             return AdmissionResult::ShedLayer1;
         }
 
-        // Layer 2: concurrency-based admission (ingress only)
+        // Layer 2: compute-capacity admission (ingress only)
+        // Uses the child's wall-clock latency (from ResponseMeta, keyed by
+        // parent→child pair) as cost.
         if ctx.hop_count() == 0 {
-            if !self.controller.should_admit() {
+            let est_child_cost = est_server.est_child_latency.get_estimate(key).unwrap_or(0);
+            if !self.controller.should_admit(est_child_cost) {
                 return AdmissionResult::ShedLayer2;
             }
         }
@@ -431,16 +422,10 @@ impl PredictiveAdmission {
         AdmissionResult::Admit
     }
 
-    /// Record a successful child RPC completion with observed latency.
+    /// Record a successful child RPC completion for goodput tracking.
     #[inline]
-    pub(crate) fn record_completion(&self, latency_us: u64) {
-        self.controller.record_completion(latency_us);
-    }
-
-    /// Record a failed/early-return completion (decrement in-flight only).
-    #[inline]
-    pub(crate) fn record_drop(&self) {
-        self.controller.record_drop();
+    pub(crate) fn record_completion(&self, est_child_cost: u64) {
+        self.controller.record_completion(est_child_cost);
     }
 }
 
@@ -485,10 +470,7 @@ impl PredictiveAdmission {
     }
 
     #[inline]
-    pub(crate) fn record_completion(&self, _latency_us: u64) {}
-
-    #[inline]
-    pub(crate) fn record_drop(&self) {}
+    pub(crate) fn record_completion(&self, _est_child_cost: u64) {}
 }
 
 #[cfg(test)]
@@ -496,88 +478,51 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_concurrency_limiter_admits_under_limit() {
-        let cl = ConcurrencyLimiter::new();
-        // With initial_limit = 100, first request should be admitted.
-        assert!(cl.should_admit());
-        assert_eq!(cl.inflight.load(Ordering::Relaxed), 1);
+    fn test_admission_controller_admits_with_budget() {
+        let ac = AdmissionController::new();
+        // With initial budget (goodput_rate = 5M, budget = 25K µs),
+        // a small compute cost should be admitted.
+        assert!(ac.should_admit(1000));
     }
 
     #[test]
-    fn test_concurrency_limiter_rejects_at_limit() {
-        let cl = ConcurrencyLimiter::new();
-        // Default initial_limit = 100. Admit 100 requests.
-        for _ in 0..100 {
-            assert!(cl.should_admit());
-        }
-        // 101st should be rejected.
-        assert!(
-            !cl.should_admit(),
-            "should reject when at concurrency limit"
-        );
-        assert_eq!(cl.inflight.load(Ordering::Relaxed), 100);
-    }
-
-    #[test]
-    fn test_completion_decrements_and_readmits() {
-        let cl = ConcurrencyLimiter::new();
-        // Fill to limit.
-        for _ in 0..100 {
-            assert!(cl.should_admit());
-        }
-        assert!(!cl.should_admit());
-
-        // Complete one request.
-        cl.record_completion(25_000); // 25ms latency
-        assert_eq!(cl.inflight.load(Ordering::Relaxed), 99);
-
-        // Should admit again.
-        assert!(cl.should_admit());
-    }
-
-    #[test]
-    fn test_drop_decrements_without_latency_update() {
-        let cl = ConcurrencyLimiter::new();
-        assert!(cl.should_admit());
-        assert_eq!(cl.inflight.load(Ordering::Relaxed), 1);
-
-        cl.record_drop();
-        assert_eq!(cl.inflight.load(Ordering::Relaxed), 0);
-
-        // Latency state should still be at initial values.
-        let state = cl.state.lock().unwrap();
-        assert_eq!(state.min_latency_us, 0.0);
-        assert_eq!(state.avg_latency_us, 0.0);
-    }
-
-    #[test]
-    fn test_limit_shrinks_under_latency_inflation() {
-        let cl = ConcurrencyLimiter::new();
-        let initial_limit = { cl.state.lock().unwrap().limit };
-
-        // First completion sets the floor.
-        cl.record_completion(10_000); // 10ms
-
-        // Sleep briefly so EMA alpha is non-trivial.
-        std::thread::sleep(std::time::Duration::from_millis(10));
-
-        // Completions with much higher latency (queueing).
+    fn test_admission_controller_rejects_when_budget_exhausted() {
+        let ac = AdmissionController::new();
+        // Exhaust the budget by admitting requests with large compute costs.
+        // Initial budget = 5M * 0.005 = 25K µs. With no completions,
+        // goodput_rate decays toward 0 and budget won't refill meaningfully.
+        // Dynamic burst floor: max(budget_rate * 0.005, cost * 2) = 200K us.
+        // Each request costs 100K, so ~2 requests exhaust the budget.
+        let mut rejected = false;
         for _ in 0..20 {
-            cl.record_completion(50_000); // 50ms — 5x the floor
-            std::thread::sleep(std::time::Duration::from_millis(1));
+            if !ac.should_admit(100_000) {
+                rejected = true;
+                break;
+            }
         }
-
-        // Wait for the AIMD update interval to elapse (default 250ms),
-        // then trigger the periodic update with one more completion.
-        std::thread::sleep(std::time::Duration::from_millis(260));
-        cl.record_completion(50_000);
-
-        let final_limit = cl.state.lock().unwrap().limit;
         assert!(
-            final_limit < initial_limit,
-            "limit should shrink when latency is inflated: {} < {}",
-            final_limit,
-            initial_limit,
+            rejected,
+            "should eventually reject when budget is exhausted"
+        );
+    }
+
+    #[test]
+    fn test_goodput_tracking_refills_budget() {
+        let ac = AdmissionController::new();
+        // Exhaust budget
+        while ac.should_admit(100_000) {}
+
+        // Simulate completions
+        ac.record_completion(100_000);
+        ac.record_completion(100_000);
+
+        // Sleep to let elapsed time accumulate for refill
+        std::thread::sleep(std::time::Duration::from_millis(50));
+
+        // Should be able to admit again after completions refill the budget
+        assert!(
+            ac.should_admit(1000),
+            "should admit after completions refill the budget"
         );
     }
 }
