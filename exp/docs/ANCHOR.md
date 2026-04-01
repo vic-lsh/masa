@@ -401,3 +401,50 @@ With a ~5-request buffer (max_burst_secs=0.1), the AC can absorb short-term mism
 
 ### Experiment design
 Same config as cp_simple (800, 1200, 1400, 1800, 2500 RPS, SLO=50ms, 60s each).
+
+### Actual Outcomes (anchor_8)
+
+**Status:** Regression ❌ — reverted
+
+| RPS | anchor_3 Mean(CoV) | anchor_8 Mean(CoV) | Δ Mean | Δ CoV |
+|-----|---------------------|---------------------|--------|-------|
+| 1200 | 1180 (3.2%) | 1171 (3.5%) | -9 | +0.3pp |
+| 1400 | 1246 (5.5%) | 1223 (7.6%) | -23 | +2.1pp |
+| 1800 | 1336 (10.6%) | 1258 (12.5%) | -78 | +1.9pp |
+| 2500 | 1345 (19.7%) | 1312 (18.6%) | -33 | -1.1pp |
+
+**Key findings:** Larger burst buffer delays corrections during overload spikes. The oscillation is driven by the rate feedback loop, not buffer size.
+
+**New direction:** All 8 iterations focused on the AC controller. The deeper issue may be the *cost signal*: the latency estimator's asymmetric alpha (0.05 up / 0.2 down) causes fast deflation after rejections, feeding the AC a whipsawing cost signal.
+
+---
+
+## Iteration 9: Symmetric estimator alpha (experiment anchor_9)
+
+**Status:** Pending
+
+### Change
+Revert max_burst_secs to 0.005. In `mean_var.rs`, change asymmetric alpha to symmetric:
+- Before: `let alpha = if x > self.mean { 0.05 } else { 0.2 };`
+- After: `let alpha = 0.1;`
+
+Base: anchor_3 (asymmetric AC rates, util_target=0.80, max_burst_secs=0.005).
+
+### Hypothesis
+The AC's token bucket uses est_child_cost from the latency estimator. With asymmetric alpha (0.05/0.2), after rejections lower load:
+1. Observed latencies drop → estimator deflates fast (alpha=0.2)
+2. AC sees low costs → admits more → system floods
+3. Latencies spike → estimator inflates slowly (alpha=0.05) → AC catches up late
+4. Cycle repeats
+
+The cost-signal whipsaw drives AC oscillation regardless of controller tuning.
+
+With symmetric alpha=0.1: deflation is 2x slower (0.1 vs 0.2) and inflation is 2x faster (0.1 vs 0.05). Both effects dampen the cost signal, reducing the AC's tendency to overshoot.
+
+### Expected outcomes:
+1. Reduced CoV at all overloaded RPS (smoother cost signal)
+2. Possible mean improvement at 1800 (faster inflation catches overload sooner)
+3. Risk: faster inflation could make scheduling more reactive to transient spikes
+
+### Experiment design
+Same config as cp_simple (800, 1200, 1400, 1800, 2500 RPS, SLO=50ms, 60s each).
