@@ -355,3 +355,49 @@ The limit cycle's critical moment is the transition from "correcting" to "recove
 
 ### Experiment design
 Same config as cp_simple (800, 1200, 1400, 1800, 2500 RPS, SLO=50ms, 60s each).
+
+### Actual Outcomes (anchor_7)
+
+**Status:** Neutral — reverted (negligible effect)
+
+| RPS | anchor_3 Mean(CoV) | anchor_7 Mean(CoV) | Δ Mean | Δ CoV |
+|-----|---------------------|---------------------|--------|-------|
+| 800 | 800 (0.0%) | 800 (0.0%) | 0 | 0 |
+| 1200 | 1180 (3.2%) | 1186 (1.8%) | +6 | -1.4pp |
+| 1400 | 1246 (5.5%) | 1287 (6.7%) | +41 | +1.2pp |
+| 1800 | 1336 (10.6%) | 1331 (11.1%) | -5 | +0.5pp |
+| 2500 | 1345 (19.7%) | 1333 (20.9%) | -12 | +1.2pp |
+
+**Key findings:**
+- Cooldown is essentially neutral. Slight CoV improvement at 1200 (-1.4pp), slight regression everywhere else.
+- The oscillation is NOT driven by the immediate rebound transition — the feedback loop operates at a deeper level.
+
+**Root cause insight:** Investigating the token bucket: `max_burst_secs=0.005` with `budget_rate=5M µs/s` gives a burst buffer of only 25,000 µs = ~1 request at typical 20-30ms child costs. This makes admission binary — any momentary rate mismatch causes immediate rejection. The oscillation may be driven by this razor-thin buffer: when budget runs dry, ALL requests are rejected until the next refill tick, creating a bursty admit/reject pattern.
+
+**Decision:** Revert cooldown (not worth the complexity). Next: increase burst buffer.
+
+---
+
+## Iteration 8: Increase burst buffer (experiment anchor_8)
+
+**Status:** Pending
+
+### Change
+Revert cooldown. Increase `max_burst_secs` from 0.005 to 0.1 in `policy_params.rs`. This increases the token bucket capacity from ~1 request to ~5 requests at typical 20-30ms child costs.
+
+Base: anchor_3 state (adjust_rate_down=2.0, adjust_rate_up=0.5, util_target=0.80).
+
+### Hypothesis
+With a ~1-request burst buffer, the AC operates as a binary gate: budget full → admit, budget empty → reject ALL until next refill. This creates bursty admit/reject cycles even when the rate is close to optimal — a small rate undershoot causes complete rejection until the next tick.
+
+With a ~5-request buffer (max_burst_secs=0.1), the AC can absorb short-term mismatches. If the rate is slightly below the incoming load, the buffer drains gradually rather than hitting zero immediately. This transforms the AC from a binary gate into a smoother metering system:
+- Budget rate slightly too low → buffer slowly drains → occasional rejections → gradual rate increase
+- Budget rate slightly too high → buffer slowly fills → steady admission → gradual rate decrease
+
+### Expected outcomes if hypothesis is correct:
+1. Reduced CoV at all overloaded RPS (smoother admission instead of binary gate)
+2. Maintained or improved mean goodput (fewer wasted rejections from binary gating)
+3. Possible regression at 2500 if larger buffer allows too many requests through during overload spikes
+
+### Experiment design
+Same config as cp_simple (800, 1200, 1400, 1800, 2500 RPS, SLO=50ms, 60s each).
