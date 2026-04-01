@@ -431,11 +431,11 @@ impl AdmissionController {
             state.budget_us = max_budget;
         }
 
-        // Adjust rate based on effective utilization
+        // Adjust rate based on effective utilization (asymmetric: fast close, slow reopen)
         if effective_util > p.util_target {
-            state.budget_rate *= 1.0 - p.adjust_rate * elapsed;
+            state.budget_rate *= 1.0 - p.adjust_rate_down * elapsed;
         } else {
-            state.budget_rate *= 1.0 + p.adjust_rate * elapsed;
+            state.budget_rate *= 1.0 + p.adjust_rate_up * elapsed;
         }
         // Don't let rate go negative or explode.
         // The cap must be high enough to support max throughput × max cost.
