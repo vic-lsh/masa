@@ -718,3 +718,50 @@ Same config as cp_simple (800, 1200, 1400, 1800, 2500 RPS, SLO=50ms, 60s each).
 ### Code state
 Current code has AIMD concurrency limiter (commit b2e5b115). Should be reverted to anchor_20 baseline for clean state if pursuing other directions.
 
+---
+
+## Iteration 9: Freeze goodput_rate across idle gaps — minimal anchor_20 fix (experiment opal_9)
+
+**Status:** Pending
+
+**Code commit:** TBD
+
+### Change
+Revert to anchor_20's token-bucket admission controller (undo all concurrency limiter changes). Then add a single targeted fix to `should_admit`:
+
+```rust
+// Skip goodput EMA update during idle gaps — preserves rate across load transitions.
+if elapsed > 0.0 && elapsed <= 0.5 {
+    let instant_rate = drained / elapsed;
+    let alpha = 1.0 - (-elapsed / p.tau).exp();
+    state.goodput_rate += alpha * (instant_rate - state.goodput_rate);
+}
+```
+
+When `elapsed > 0.5s` (idle gap between load steps), the goodput_rate EMA is frozen at its previous value instead of decaying toward 0. Everything else in anchor_20 is unchanged.
+
+### Hypothesis
+anchor_20's slow ramp (15-18s) is caused by goodput_rate decaying to near-zero during idle gaps between load steps. When the new step starts, `budget_rate = goodput_rate * 1.05 ≈ 0`, so the token bucket admits almost nothing. The budget slowly refills as completions trickle in, taking 15+ cycles to discover capacity.
+
+By freezing goodput_rate across gaps:
+- After 800 RPS step: goodput_rate ≈ 800 * 25000 = 20M µs/s
+- At 1200 RPS transition: budget_rate = 20M * 1.05 = 21M µs/s → admits ~840 req/s immediately
+- Wait — that's still below 1200. But the system is in explore mode (rejection_ema should be low after a gap). In explore mode, budget_rate = initial_budget_rate = 5M µs/s (~200 req/s). The preserved goodput_rate only matters in exploit mode.
+
+**Correction:** The slow ramp happens because in explore mode, `initial_budget_rate = 5M` caps admission at ~200 req/s regardless of previous goodput. The fix needs to also use the preserved goodput_rate in explore mode.
+
+Updated change: In explore mode, use `max(initial_budget_rate, goodput_rate * (1.0 + probe_max))` instead of just `initial_budget_rate`. This way:
+- If goodput_rate is preserved from previous step: budget_rate = goodput_rate * 2.0 (generous)
+- If goodput_rate is cold (first step): budget_rate = initial_budget_rate (fallback)
+
+### Expected outcomes if hypothesis is correct:
+1. Near-instant ramp at all load transitions (budget starts at previous capacity × 2.0)
+2. 800/1200: full admission, no shedding
+3. 1400/1800/2500: same overload performance as anchor_20 (the token bucket mechanism is unchanged)
+4. No oscillation — this is anchor_20's proven-stable control loop with one gap fix
+5. Ramp from 800→1200: budget = 20M*2.0 = 40M → admits ~1600 req/s instantly (1200 < 1600, all admitted)
+6. Ramp from 1400→1800: budget = 1400*25K*2.0 = 70M → admits ~2800 req/s (1800 < 2800, all admitted)
+
+### Experiment design (opal_9)
+Same config as cp_simple (800, 1200, 1400, 1800, 2500 RPS, SLO=50ms, 60s each).
+
