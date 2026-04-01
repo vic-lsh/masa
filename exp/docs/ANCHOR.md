@@ -867,3 +867,49 @@ This should eliminate the slow ramp without affecting steady-state behavior (whe
 
 ### Experiment design
 Same config as cp_simple (800, 1200, 1400, 1800, 2500 RPS, SLO=50ms, 60s each).
+
+### Actual Outcomes (anchor_15)
+
+**Status:** Regression ❌ — reverted
+
+| RPS | anchor_13 Mean(CoV) | anchor_15 Mean(CoV) | Δ Mean |
+|-----|----------------------|----------------------|--------|
+| 800 | 800 (0.0%) | 800 (0.0%) | 0 |
+| 1200 | 1195 (2.1%) | 1183 (2.7%) | -12 |
+| 1400 | 1341 (9.3%) | 1075 (26.5%) | **-266** |
+| 1800 | 1509 (20.2%) | 655 (67.5%) | **-854** |
+| 2500 | 1593 (30.3%) | 550 (62.5%) | **-1043** |
+
+**Key findings:**
+1. **Ramp is fixed** — 1800 starts at 1797 instantly (vs 429 in anchor_13). The preserved EMA bootstraps correctly.
+2. **But oscillation is far worse** — once overload triggers at 1800, the controller can't recover because goodput_rate never decays below the inflated value from the previous step. It over-admits, crashes, over-admits again.
+3. The fix and the problem are coupled: preserving the EMA helps bootstrapping but hurts overload recovery.
+
+**Root cause insight:** The multiplicative probe `budget_rate = goodput_rate * (1 + probe_factor)` is fundamentally limited — when goodput_rate is near zero (after a gap), even probe_max=1.0 can't help. But preserving goodput_rate across gaps prevents decay during overload.
+
+**Decision:** Revert. Need to decouple bootstrapping from overload tracking.
+
+---
+
+## Iteration 16: Bypass goodput tracking in explore mode (experiment anchor_16)
+
+**Status:** Pending
+
+### Change
+In explore mode (rejection_ema ≤ threshold), set `budget_rate = initial_budget_rate` (5M µs/s) directly, bypassing goodput_rate entirely. In exploit mode, use `budget_rate = goodput_rate * (1 + probe_min)` as before.
+
+This decouples the two functions: explore mode admits freely without depending on the goodput EMA, while exploit mode tracks goodput tightly.
+
+### Hypothesis
+The slow ramp in anchor_13 happens because the multiplicative probe depends on goodput_rate, which is near zero after gaps. By using the generous initial_budget_rate directly in explore mode, the controller admits freely until rejections appear, then switches to tight tracking.
+
+The explore→exploit transition: when enough requests are admitted and some get rejected (overload), rejection_ema crosses the threshold and the controller instantly switches to goodput-based tracking. At that point goodput_rate has already converged (the system has been processing requests), so the transition is smooth.
+
+### Expected outcomes if hypothesis is correct:
+1. Near-instant ramp at load transitions (explore mode admits freely)
+2. 800/1200 unchanged (already handled by explore mode)
+3. 1400 improves (less time in ramp)
+4. 1800/2500: faster initial ramp, overload oscillation same as anchor_13
+
+### Experiment design
+Same config as cp_simple (800, 1200, 1400, 1800, 2500 RPS, SLO=50ms, 60s each).
