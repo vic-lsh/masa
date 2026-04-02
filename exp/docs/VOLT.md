@@ -449,3 +449,41 @@ Risk: without explore mode's generous initial_budget_rate, cold start may be slo
 
 ### Experiment design (volt_11)
 Same config as volt_1. Only `sched_pred,abort_slo,ac_pred,est_mean_var`.
+
+Code commit: `01be08a0`
+
+### Actual Outcomes (volt_11)
+
+**Status:** Mixed — REVERT
+
+| RPS  | volt_11 (no modes) | volt_9 (with modes) | Δ Mean | CoV volt_11 | CoV volt_9 | Δ CoV  |
+|------|-------------------|---------------------|--------|-------------|------------|--------|
+| 800  | 792.4             | 800.0               | -7.6   | 0.0%        | 0.0%       | 0.0pp  |
+| 1200 | **1077.6**        | 1188.7              | **-111.1** | **13.4%** | 2.6%    | +10.8pp |
+| 1400 | **1262.1**        | 1239.3              | +22.8  | **13.3%**  | 15.8%      | **-2.5pp** |
+| 1800 | 1423.9            | 1402.4              | +21.5  | 18.8%       | 11.7%      | +7.1pp |
+| 2500 | 1453.1            | 1412.7              | +40.4  | 29.4%       | 21.8%      | +7.6pp |
+
+**Targeted improvement at 1400** (13.3% CoV, -2.5pp) confirms the mode switch is a CoV contributor. But catastrophic 1200 regression: without explore mode, goodput_rate EMA decays from initial 5M toward real goodput, causing transient over-rejection at sub-saturation load. The mode switch is load-bearing for sub-saturation stability.
+
+## Iteration 11: Combined max_burst_secs + probe_min increase (experiment volt_12)
+
+**Status:** Pending
+
+### Change
+In `policy_params.rs`, change both:
+- `max_burst_secs`: 0.005 → 0.02 (4x larger bucket)
+- `probe_min`: 0.15 → 0.25 (25% headroom in exploit mode)
+
+### Hypothesis
+volt_6 showed max_burst=0.02 helped 1400 (+44 mean) but hurt 1800 (-75) — the larger bucket delayed shedding at deep overload because the exploit-mode budget rate was too tight (goodput * 1.15). By also raising probe_min to 0.25, the exploit-mode rate increases to goodput * 1.25, compensating for the larger bucket at deep overload while maintaining the smoothing benefit at moderate overload.
+
+The combined effect: larger bucket absorbs micro-oscillation (reducing CoV), higher probe margin prevents the larger bucket from under-shedding at deep overload.
+
+### Expected outcomes if hypothesis is correct:
+1. CoV at 1400 drops below 12% (smoothing from larger bucket)
+2. Mean at 1400 stays ≥1200
+3. 1800 mean stays ≥1350 (probe_min compensates for larger bucket)
+
+### Experiment design (volt_12)
+Same config as volt_1. Only `sched_pred,abort_slo,ac_pred,est_mean_var`.
