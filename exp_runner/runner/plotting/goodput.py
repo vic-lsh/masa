@@ -1504,6 +1504,132 @@ def plot_goodput_timeline(
     plt.close(fig)
 
 
+def plot_early_return_timeline(
+    output_path: str,
+    rps_sequence: list[int],
+    policies: list[str],
+    policy_data_by_rps: dict[str, dict[int, pd.DataFrame]],
+    *,
+    duration_sec: float,
+    warmup_sec: float = 0,
+    window_sec: float = 2.0,
+) -> None:
+    """Plot per-second early-return rate over time for real apps.
+
+    Mirrors ``plot_goodput_timeline`` but counts early-return requests
+    instead of SLO-meeting requests.
+    """
+    fig, ax = plt.subplots(figsize=(14, 6))
+    cmap = plt.get_cmap("tab10")
+    csv_rows: list[dict[str, object]] = []
+
+    for idx, policy in enumerate(policies):
+        rps_data = policy_data_by_rps.get(policy, {})
+        all_times: list[float] = []
+        all_er_rate: list[float] = []
+
+        for period_idx, rps in enumerate(rps_sequence):
+            df = rps_data.get(rps, pd.DataFrame())
+            if df.empty:
+                continue
+
+            start_at = pd.to_numeric(df["start_at"], errors="coerce")
+            if start_at.dropna().empty:
+                continue
+
+            t_min = start_at.min()
+            rel_sec = (start_at - t_min) / 1_000_000.0
+
+            if warmup_sec > 0:
+                keep = rel_sec >= warmup_sec
+                rel_sec = rel_sec[keep] - warmup_sec
+                df = df.loc[keep]
+
+            effective_duration = duration_sec - warmup_sec
+            abs_sec = rel_sec + period_idx * effective_duration
+
+            # Early-return mask
+            if "error_type" in df.columns:
+                is_er = (df["error_type"] == "EarlyReturn").values
+            elif "error" in df.columns:
+                is_er = df["error"].astype(str).str.startswith("/EarlyReturn").values
+            else:
+                is_er = np.zeros(len(df), dtype=bool)
+
+            order = np.argsort(abs_sec.values)
+            t_arr = abs_sec.values[order]
+            er_arr = is_er[order]
+
+            step = 0.5
+            t_centers = np.arange(
+                period_idx * effective_duration + window_sec / 2,
+                (period_idx + 1) * effective_duration - window_sec / 2 + step,
+                step,
+            )
+            for tc in t_centers:
+                lo, hi = tc - window_sec / 2, tc + window_sec / 2
+                mask = (t_arr >= lo) & (t_arr < hi)
+                all_times.append(tc)
+                all_er_rate.append(float(er_arr[mask].sum()) / window_sec)
+
+        if not all_times:
+            continue
+
+        for t, er in zip(all_times, all_er_rate):
+            csv_rows.append({"Time": t, "Policy": policy, "EarlyReturnRate": er})
+
+        color = get_policy_color(policy)
+        if color is None:
+            color = cmap(idx % cmap.N)
+        ax.plot(
+            all_times,
+            all_er_rate,
+            label=get_policy_display_name(policy),
+            color=color,
+            linewidth=1.5,
+        )
+
+    if csv_rows:
+        csv_path = output_path.replace(".png", ".csv")
+        pd.DataFrame(csv_rows).to_csv(csv_path, index=False)
+
+    # Offered RPS as a filled step area
+    effective_duration = duration_sec - warmup_sec
+    step_t = [0.0]
+    step_rps: list[float] = [float(rps_sequence[0])]
+    for i, rps in enumerate(rps_sequence):
+        t_start = i * effective_duration
+        if i > 0:
+            step_t.append(t_start)
+            step_rps.append(float(rps))
+            ax.axvline(t_start, linestyle="--", color="grey", alpha=0.4, linewidth=1)
+        step_t.append(t_start + effective_duration)
+        step_rps.append(float(rps))
+    ax.fill_between(
+        step_t, step_rps, step=None, color="grey", alpha=0.12, label="Offered RPS"
+    )
+    ax.step(
+        step_t,
+        step_rps,
+        where="post",
+        color="grey",
+        linewidth=1.5,
+        linestyle="-",
+        alpha=0.5,
+    )
+
+    ax.set_xlabel("Time (s)")
+    ax.set_ylabel("RPS")
+    ax.set_title(f"Early-return timeline ({window_sec:g}s window)")
+    ax.set_xlim(left=0, right=len(rps_sequence) * effective_duration)
+    ax.set_ylim(bottom=0)
+    ax.grid(True, which="both", linestyle="--", alpha=0.4)
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=300)
+    plt.close(fig)
+
+
 def generate_plots(args, plot_data: PlotData | None = None) -> None:
     prepare_output_dir(args)
 
@@ -1672,6 +1798,26 @@ def generate_plots(args, plot_data: PlotData | None = None) -> None:
                 plot_goodput_timeline,
                 (
                     os.path.join(output_dir, "goodput_timeline.png"),
+                    rps_sequence,
+                    policies,
+                    policy_data_by_rps,
+                ),
+                {
+                    "duration_sec": duration_sec,
+                    "warmup_sec": warmup_sec,
+                },
+            )
+        )
+
+    # Add early-return timeline plots (per iteration, ALL api only)
+    for i in range(repeats):
+        output_dir = os.path.join(args.output_dir, str(i))
+        policy_data_by_rps = {policy: results[i]["ALL"][policy] for policy in policies}
+        future_specs.append(
+            (
+                plot_early_return_timeline,
+                (
+                    os.path.join(output_dir, "early_return_timeline.png"),
                     rps_sequence,
                     policies,
                     policy_data_by_rps,
