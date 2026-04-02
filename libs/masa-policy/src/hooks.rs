@@ -117,13 +117,6 @@ pub struct ParentContext {
     pub(crate) queue_latency: QueueLatencyLayer,
 }
 
-impl ParentContext {
-    #[cfg(all(feature = "estimator", test))]
-    pub(crate) fn ctx(&self) -> &Context {
-        &self.ctx
-    }
-}
-
 impl ParentHooks<ChildContext, ServerContext> for ParentContext {
     fn begin<B>(
         method: GrpcMethod,
@@ -450,11 +443,15 @@ mod tests {
             assert_eq!(p_m, "ParentMethod");
         }
 
-        /// Verify that `admission_check` uses the floor-based check.
-        /// The floor check should admit when there is plenty of time left (no shed).
+        /// Verify that `PredictiveAdmission::admission_check` admits when there
+        /// is plenty of time left (floor-based Layer 1 check).
         #[test]
         fn test_admission_check_floor_based_admits_with_budget() {
-            let server_ctx = Arc::new(ServerContext::new("FloorService"));
+            use crate::layer::admission::predictive::{AdmissionResult, PredictiveAdmission};
+            use crate::layer::est::estimator::DefaultLatencyEstimator;
+
+            let est_server = EstServerState::<DefaultLatencyEstimator>::new();
+            let pred = PredictiveAdmission::new();
 
             // Generous deadline: 100ms from now.
             let slo_us = 100_000u64;
@@ -466,18 +463,14 @@ mod tests {
                 .deadline(deadline)
                 .build();
 
-            let req = http::Request::builder()
-                .header(MASA_CONTEXT_HEADER, ctx.to_header_string())
-                .body(())
-                .unwrap();
-
-            let method = GrpcMethod::new("FloorService", "ParentMethod");
-            let parent_ctx = ParentContext::begin(method, &req, server_ctx.clone());
-
-            // With est_remaining_floor = 0, the floor check is: time_now > e2e_deadline - 0 = e2e_deadline.
+            // With est_remaining_floor = 0, the floor check is: time_now > e2e_deadline.
             // Since e2e_deadline is 100ms in the future, this should NOT shed.
-            let shed = parent_ctx.policy.est.admission_check(parent_ctx.ctx(), 0);
-            assert!(!shed, "should admit when plenty of time remains");
+            let result = pred.admission_check(&est_server, 0, &ctx, 0);
+            assert_eq!(
+                result,
+                AdmissionResult::Admit,
+                "should admit when plenty of time remains"
+            );
         }
     }
 }
