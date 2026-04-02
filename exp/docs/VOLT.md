@@ -256,3 +256,35 @@ With `max_burst_secs=0.005`, the token bucket can hold only `budget_rate * 0.005
 
 ### Experiment design (volt_6)
 Same config as volt_1 (5 RPS levels, SLO=50ms). Only `sched_pred,abort_slo,ac_pred,est_mean_var`.
+
+Code commit: `01513685`
+
+### Actual Outcomes (volt_6)
+
+| RPS  | volt_6 (burst 0.02) | volt_3 (burst 0.005) | Δ Mean | CoV volt_6 | CoV volt_3 |
+|------|---------------------|---------------------|--------|------------|------------|
+| 800  | 800.0               | 800.0               | +0.0   | 0.0%       | 0.0%       |
+| 1200 | 1195.4              | 1177.0              | +18.4  | 1.5%       | 5.2%       |
+| 1400 | 1195.3              | 1151.6              | +43.7  | 19.7%      | 22.0%      |
+| 1800 | **1261.2**          | 1336.4              | **-75.2** | 17.4%   | 15.3%      |
+| 2500 | 1440.9              | 1422.1              | +18.8  | 20.9%      | 21.0%      |
+
+**Mixed result — REVERT.** Larger burst window helps at 1200-1400 (+18/+44 mean, CoV improves) but regresses at 1800 (-75 mean, +2pp CoV). The larger bucket delays shedding at deep overload. Not a clean win.
+
+## Iteration 6: Raise rejection_threshold from 0.10 to 0.20 (experiment volt_7)
+
+**Status:** Pending
+
+### Change
+In `policy_params.rs`, change `rejection_threshold` from 0.10 to 0.20. This delays the explore→exploit mode switch.
+
+### Hypothesis
+The token bucket oscillates because it enters exploit mode too early. At `rejection_threshold=0.10`, just 10% rejection rate triggers the switch to tight goodput tracking. Raising to 0.20 keeps the controller in explore mode longer, maintaining the generous initial budget at moderate overload (1400). Unlike the smooth transition (volt_4), this preserves the full explore budget — it just requires more sustained rejections before switching.
+
+### Expected outcomes if hypothesis is correct:
+1. CoV at 1400 drops (less time in exploit mode at moderate overload)
+2. Mean goodput at 1400 stays ≥1100
+3. Deep overload (1800/2500) should be unaffected (rejection_ema quickly exceeds 0.20 there)
+
+### Experiment design (volt_7)
+Same config as volt_1. Only `sched_pred,abort_slo,ac_pred,est_mean_var`.
