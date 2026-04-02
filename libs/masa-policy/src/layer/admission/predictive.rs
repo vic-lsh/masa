@@ -98,19 +98,16 @@ impl Layer for PredAdmissionLayer {
         // exceeds remaining time. Only checked once — after the first poll the
         // request is in-flight and should not be killed by this coarse check.
         if !self.feasibility_checked.swap(true, Ordering::Relaxed) {
-            let root = ctx.root_method();
-            if root != 0 {
-                if let Some(est) = self.est.server.est_method_latency.get_estimate(root) {
-                    if masa_core::time_now() + est > ctx.e2e_deadline() {
-                        return Err(Err(Status::new(
-                            Code::DeadlineExceeded,
-                            format!(
-                                "/EarlyReturn?src={}::{}?reason=early_feasibility",
-                                self.rpc.service(),
-                                self.rpc.method(),
-                            ),
-                        )));
-                    }
+            if let Some(est) = self.est.est_method_latency() {
+                if masa_core::time_now() + est > ctx.e2e_deadline() {
+                    return Err(Err(Status::new(
+                        Code::DeadlineExceeded,
+                        format!(
+                            "/EarlyReturn?src={}::{}?reason=early_feasibility",
+                            self.rpc.service(),
+                            self.rpc.method(),
+                        ),
+                    )));
                 }
             }
         }
