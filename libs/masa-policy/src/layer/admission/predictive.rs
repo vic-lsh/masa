@@ -69,19 +69,45 @@ impl Layer for PredAdmissionLayer {
     type Server = PredAdmissionServer;
     type Child = PredAdmissionChild;
 
-    fn new(method: &CowGrpcMethod, server: &PredAdmissionServer, _ctx: &mut Context) -> Self {
+    fn new(method: &CowGrpcMethod, server: &PredAdmissionServer, ctx: &mut Context) -> Self {
         let resolved_method_id =
             MethodRegistry::global().get_or_register_method(method.service(), method.method());
+        // Set root_method at ingress (hop_count == 0)
+        if ctx.hop_count() == 0 {
+            ctx.root_method = resolved_method_id;
+        }
+        let root_method_id = ctx.root_method();
         Self {
-            est: EstRequestState::new(resolved_method_id, server.est.clone()),
+            est: EstRequestState::new(resolved_method_id, root_method_id, server.est.clone()),
             pred_admission: server.pred_admission.clone(),
             rpc: method.clone(),
         }
     }
 
     /// Reprioritize the current task based on remaining time to deadline.
+    ///
+    /// Also performs an early feasibility check: if the estimated total method
+    /// latency exceeds the remaining time budget, reject before any compute.
     #[inline]
     fn before_poll<Ret>(&self, ctx: &Context) -> Result<(), Result<Response<Ret>, Status>> {
+        // Early feasibility: reject if estimated total method latency exceeds time budget.
+        // Fires on every poll; on the first poll, no compute has been done yet.
+        let root = ctx.root_method();
+        if root != 0 {
+            if let Some(est_total) = self.est.server.est_method_latency.get_estimate(root) {
+                if masa_core::time_now() + est_total > ctx.e2e_deadline() {
+                    return Err(Err(Status::new(
+                        Code::DeadlineExceeded,
+                        format!(
+                            "/EarlyReturn?src={}::{}?reason=early_feasibility",
+                            self.rpc.service(),
+                            self.rpc.method(),
+                        ),
+                    )));
+                }
+            }
+        }
+
         #[cfg(feature = "sched_pred")]
         {
             let remaining = ctx.deadline().saturating_sub(masa_core::time_now());
@@ -151,24 +177,24 @@ impl Layer for PredAdmissionLayer {
         child_ctx: &PredAdmissionChild,
     ) -> Result<(), Status> {
         child_ctx.est.finalize(response);
-        let _ = self.est.after_child_rpc(response, &child_ctx.est);
+        let info = self.est.after_child_rpc(response, &child_ctx.est);
 
         // Accumulate completed cost for goodput tracking (ingress only, success only).
+        // Uses accumulated compute cost from the child's entire subtree instead of
+        // wall-clock child latency to avoid conflating queueing with compute.
         #[cfg(feature = "ac_pred")]
         if ctx.hop_count() == 0 && response.is_ok() {
-            if let Some(id) = &child_ctx.est.parent_to_child_id {
-                let cost = self
-                    .est
-                    .server
-                    .est_child_latency
-                    .get_estimate(id.to_key())
-                    .unwrap_or(0);
-                self.pred_admission.record_completion(cost);
+            if let Some(acc_cost) = info.accumulated_compute_us {
+                self.pred_admission.record_completion(acc_cost);
+                let root = ctx.root_method();
+                if root != 0 {
+                    self.est.server.est_accumulated_cost.track(root, acc_cost);
+                }
             }
         }
 
         #[cfg(not(feature = "ac_pred"))]
-        let _ = ctx;
+        let _ = (ctx, info);
 
         #[cfg(feature = "sched_pred")]
         if let Err(status) = response {
@@ -397,21 +423,32 @@ impl PredictiveAdmission {
         let time_left = ctx.e2e_deadline().saturating_sub(time_now());
 
         // Layer 1: floor-based deadline feasibility
+        // Includes estimated child call duration so requests that will spend
+        // most of their remaining budget on the child RPC are caught early.
         let est_remaining_floor = est_server
             .est_after_child_latency
             .get_mean_floor_estimate(key)
             .unwrap_or(0)
             .min(time_left);
-        if time_now() > ctx.e2e_deadline().saturating_sub(est_remaining_floor) {
+        let est_child = est_server.est_child_latency.get_estimate(key).unwrap_or(0);
+        if time_now() + est_child + est_remaining_floor > ctx.e2e_deadline() {
             return AdmissionResult::ShedLayer1;
         }
 
         // Layer 2: compute-capacity admission (ingress only)
-        // Uses the child's wall-clock latency (from ResponseMeta, keyed by
-        // parent→child pair) as cost.
+        // Uses accumulated compute cost keyed by root API type. Falls back to
+        // wall-clock child latency when root_method is not yet set (cold start).
         if ctx.hop_count() == 0 {
-            let est_child_cost = est_server.est_child_latency.get_estimate(key).unwrap_or(0);
-            if !self.controller.should_admit(est_child_cost) {
+            let root = ctx.root_method();
+            let est_cost = if root != 0 {
+                est_server
+                    .est_accumulated_cost
+                    .get_estimate(root)
+                    .unwrap_or(0)
+            } else {
+                est_server.est_child_latency.get_estimate(key).unwrap_or(0)
+            };
+            if !self.controller.should_admit(est_cost) {
                 return AdmissionResult::ShedLayer2;
             }
         }
@@ -459,7 +496,8 @@ impl PredictiveAdmission {
             .get_mean_floor_estimate(key)
             .unwrap_or(0)
             .min(time_left);
-        if time_now() > ctx.e2e_deadline().saturating_sub(est_remaining_floor) {
+        let est_child = est_server.est_child_latency.get_estimate(key).unwrap_or(0);
+        if time_now() + est_child + est_remaining_floor > ctx.e2e_deadline() {
             AdmissionResult::ShedLayer1
         } else {
             AdmissionResult::Admit
