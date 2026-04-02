@@ -354,3 +354,28 @@ With rejection_alpha=0.05 fixing mode-switch lag, the remaining CoV (11-21%) may
 
 ### Experiment design (volt_9)
 Same config as volt_1. Only `sched_pred,abort_slo,ac_pred,est_mean_var`.
+
+Code commit: `8e1dbe32`
+
+### Actual Outcomes (volt_9)
+
+**Status:** Complete ✅ — KEEP
+
+| RPS  | volt_9 (τ=2.0) | volt_8 (τ=1.0) | Δ vs volt_8 | CoV volt_9 | CoV volt_8 | Δ CoV |
+|------|----------------|----------------|-------------|------------|------------|-------|
+| 800  | 800.0          | 800.0          | 0.0         | 0.0%       | 0.0%       | 0.0pp |
+| 1200 | 1188.7         | 1179.1         | +9.6        | 2.6%       | 3.8%       | -1.2pp |
+| 1400 | **1239.3**     | 1230.0         | +9.3        | **15.8%**  | 21.1%      | **-5.3pp** |
+| 1800 | **1402.4**     | 1410.0         | -7.6        | 11.7%      | 11.6%      | +0.0pp |
+| 2500 | 1412.7         | 1478.7         | -66.0       | 21.8%      | 16.2%      | +5.6pp |
+
+**Cumulative improvement vs volt_3 (original v2 baseline after removing early feas.):**
+
+| RPS  | volt_9 | volt_3 | Δ Mean | CoV volt_9 | CoV volt_3 | Δ CoV  |
+|------|--------|--------|--------|------------|------------|--------|
+| 1200 | 1189   | 1177   | +12    | 2.6%       | 5.2%       | -2.5pp |
+| 1400 | 1239   | 1152   | **+87** | **15.8%** | 22.0%     | **-6.2pp** |
+| 1800 | 1402   | 1336   | **+66** | **11.7%** | 15.3%     | **-3.6pp** |
+| 2500 | 1413   | 1422   | -9     | 21.8%      | 21.0%      | +0.7pp |
+
+**Hypothesis partially confirmed.** τ=2.0 significantly improves 1400 CoV (-5.3pp vs volt_8, -6.2pp vs volt_3) and mean (+9 vs volt_8). The 2500 CoV regresses +5.6pp vs volt_8 (slower EMA can't track extreme overload as well). Net: clear win at moderate overload, acceptable tradeoff at extreme overload.
