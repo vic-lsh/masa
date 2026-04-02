@@ -402,15 +402,12 @@ impl PredictiveAdmission {
         let time_left = ctx.e2e_deadline().saturating_sub(time_now());
 
         // Layer 1: floor-based deadline feasibility
-        // Includes estimated child call duration so requests that will spend
-        // most of their remaining budget on the child RPC are caught early.
         let est_remaining_floor = est_server
             .est_after_child_latency
             .get_mean_floor_estimate(key)
             .unwrap_or(0)
             .min(time_left);
-        let est_child = est_server.est_child_latency.get_estimate(key).unwrap_or(0);
-        if time_now() + est_child + est_remaining_floor > ctx.e2e_deadline() {
+        if time_now() + est_remaining_floor > ctx.e2e_deadline() {
             return AdmissionResult::ShedLayer1;
         }
 
@@ -475,8 +472,7 @@ impl PredictiveAdmission {
             .get_mean_floor_estimate(key)
             .unwrap_or(0)
             .min(time_left);
-        let est_child = est_server.est_child_latency.get_estimate(key).unwrap_or(0);
-        if time_now() + est_child + est_remaining_floor > ctx.e2e_deadline() {
+        if time_now() + est_remaining_floor > ctx.e2e_deadline() {
             AdmissionResult::ShedLayer1
         } else {
             AdmissionResult::Admit
