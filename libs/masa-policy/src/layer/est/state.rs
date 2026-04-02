@@ -305,24 +305,6 @@ impl<E: LatencyEstimator + Default + 'static> EstRequestState<E> {
 
         ChildRpcPrepareResult { est_remaining, key }
     }
-
-    /// Floor-based admission check using latency estimates.
-    ///
-    /// Returns true if the request should be shed (rejected).
-    #[allow(dead_code)]
-    pub(crate) fn admission_check(&self, ctx: &Context, key: u64) -> bool {
-        use masa_core::time_now;
-
-        let time_left = ctx.e2e_deadline().saturating_sub(time_now());
-        let est_remaining_floor = self
-            .server
-            .est_after_child_latency
-            .get_mean_floor_estimate(key)
-            .unwrap_or(0)
-            .min(time_left);
-        let est_child = self.server.est_child_latency.get_estimate(key).unwrap_or(0);
-        time_now() + est_child + est_remaining_floor > ctx.e2e_deadline()
-    }
 }
 
 /// Result of `prepare_before_child_rpc` containing estimates for deadline computation.
