@@ -100,7 +100,7 @@ pub struct PredParams {
 impl Default for PredParams {
     fn default() -> Self {
         Self {
-            max_burst_secs: 0.005,
+            max_burst_secs: 0.02,
             initial_budget_rate: 5_000_000.0,
             probe_min: 0.15,
             probe_max: 1.0,
