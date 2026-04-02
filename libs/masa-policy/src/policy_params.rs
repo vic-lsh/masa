@@ -104,7 +104,7 @@ impl Default for PredParams {
             initial_budget_rate: 5_000_000.0,
             probe_min: 0.15,
             probe_max: 1.0,
-            rejection_alpha: 0.01,
+            rejection_alpha: 0.05,
             rejection_threshold: 0.10,
             tau: 1.0,
         }
