@@ -399,3 +399,53 @@ The remaining 15.8% CoV at 1400 RPS is caused by discrete oscillation in the tok
 
 ### Experiment design (volt_10)
 Same config as volt_1. Only `sched_pred,abort_slo,ac_pred,est_mean_var`.
+
+Code commit: `dd6942e8`
+
+### Actual Outcomes (volt_10)
+
+**Status:** Regression ❌ — REVERT
+
+| RPS  | volt_10 (prob.) | volt_9 (binary) | Δ Mean | CoV volt_10 | CoV volt_9 | Δ CoV  |
+|------|-----------------|-----------------|--------|-------------|------------|--------|
+| 800  | 800.0           | 800.0           | 0.0    | 0.0%        | 0.0%       | 0.0pp  |
+| 1200 | 1164.9          | 1188.7          | -23.8  | 6.2%        | 2.6%       | +3.6pp |
+| 1400 | **1138.2**      | 1239.3          | **-101.1** | **20.7%** | 15.8%   | +5.0pp |
+| 1800 | **1300.7**      | 1402.4          | **-101.7** | **20.0%** | 11.7%   | +8.3pp |
+| 2500 | 1272.1          | 1412.7          | -140.6 | 28.5%       | 21.8%      | +6.7pp |
+
+**Hypothesis refuted.** Probabilistic admission made both mean and CoV worse at every overloaded RPS. The random coin flip when budget < cost creates its own variance source — admit sequences of 3+ followed by forced rejects (since admitting drains budget to 0). The oscillation problem is in the budget *refill dynamics*, not the *decision boundary*. Randomizing the boundary adds noise without addressing the underlying cycle.
+
+## Iteration 10: Remove explore/exploit mode switch entirely (experiment volt_11)
+
+**Status:** Pending
+
+### Change
+Remove the binary explore/exploit mode switch. Instead, always use `goodput_rate * (1 + probe_min)` as budget_rate. Initialize `goodput_rate` to `initial_budget_rate` so the system starts generous and converges via EMA. This eliminates the mode switch entirely — no threshold, no oscillation between modes.
+
+Replace:
+```rust
+let budget_rate = if state.rejection_ema > p.rejection_threshold {
+    state.goodput_rate * (1.0 + p.probe_min)
+} else {
+    p.initial_budget_rate
+};
+```
+With:
+```rust
+let budget_rate = state.goodput_rate * (1.0 + p.probe_min);
+```
+And initialize `goodput_rate` to `initial_budget_rate` (already the case).
+
+### Hypothesis
+The remaining CoV is caused by the feedback loop through the goodput_rate EMA, amplified by the mode switch. When rejection_ema hovers near the threshold, the budget_rate jumps between ~5M (explore) and ~500K (exploit) — and even if we've tuned how fast the switch happens, the *existence* of two discrete modes creates discontinuities. Removing the distinction makes budget_rate a smooth, continuous function of observed goodput with no mode transitions.
+
+Risk: without explore mode's generous initial_budget_rate, cold start may be slower. But goodput_rate starts at 5M and tau=2.0 means it takes ~4-6s to decay, which overlaps with warmup anyway.
+
+### Expected outcomes if hypothesis is correct:
+1. CoV at 1400 drops below 12% (currently 15.8%)
+2. Mean goodput at 1400 stays ≥1200
+3. No mode-switch artifacts at any load level
+
+### Experiment design (volt_11)
+Same config as volt_1. Only `sched_pred,abort_slo,ac_pred,est_mean_var`.
