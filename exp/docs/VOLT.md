@@ -193,3 +193,32 @@ Code commit: `46df3d29`
 **Hypothesis refuted.** Linear interpolation made both goodput and stability worse at 1400 and 2500. The linear blend dilutes the explore budget at low rejection rates (even rejection_ema=0.02 reduces budget_rate by 20%), causing the controller to under-admit at moderate overload where it should still be exploring freely. The binary switch is better — it maintains full explore budget until rejections are clearly established, then snaps to tight tracking.
 
 **Root cause:** The 10x gap between explore (5M) and exploit (~500K) means even small interpolation factors (t=0.1) create a 450K reduction in budget. The issue is not the transition sharpness but the magnitude of the gap.
+
+## Open hypotheses (CoV reduction)
+
+Six questions to resolve, in priority order:
+
+1. **Q6 (free):** Is the CoV inherent to near-saturation? Check sched-only and tailclipper CoV at 1400 from volt_1 data.
+2. **Q1 (diagnostic):** Is Layer 1's wall-clock `est_child` driving CoV? Remove `est_child` from Layer 1 check.
+3. **Q5 (low-risk):** Does `max_burst_secs=0.005` cause micro-starvation? Raise to 0.02.
+4. **Q4:** Would `rejection_threshold=0.20` delay exploit mode enough? (Binary switch, just higher threshold.)
+5. **Q3:** Is `rejection_alpha=0.01` too slow for mode switching? Try 0.05.
+6. **Q2:** Is `tau=1.0` making goodput EMA too reactive? Try 2.0.
+
+## Iteration 4: Remove est_child from Layer 1 check (experiment volt_5)
+
+**Status:** Pending
+
+### Change
+In the `admission_check` methods (both `ac_pred` enabled and disabled paths), remove `est_child` from the Layer 1 feasibility check. Revert from `now + est_child + est_remaining_floor > deadline` back to `now + est_remaining_floor > deadline`. This is a diagnostic to isolate whether Layer 1's wall-clock `est_child` drives the CoV.
+
+### Hypothesis
+Layer 1 uses `est_child_latency` (wall-clock, includes queueing). Under transient congestion, `est_child` inflates → Layer 1 over-sheds → queue drains → `est_child` deflates → admits freely → queue builds again. This oscillation cycle creates the 22% CoV at 1400. Removing `est_child` should break this cycle.
+
+### Expected outcomes if hypothesis is correct:
+1. CoV at 1400 drops below 15%
+2. Mean goodput at 1400 may decrease slightly (less aggressive shedding) but stays ≥1050
+3. Deep overload (1800/2500) may regress if Layer 1 was doing useful shedding there
+
+### Experiment design
+Same config as volt_1 (5 RPS levels, SLO=50ms). Only `sched_pred,abort_slo,ac_pred,est_mean_var`.
