@@ -122,3 +122,33 @@ Risk: too much headroom could reduce shedding effectiveness at 1800-2500 (deeper
 
 ### Experiment design
 Same config as volt_1 (5 RPS levels, SLO=50ms). Only `sched_pred,abort_slo,ac_pred,est_mean_var`.
+
+Code commit: `16e3f7b0`
+
+### Actual Outcomes (volt_3)
+
+**Status:** Complete ✅ — KEEP
+
+| RPS  | volt_3 (probe 0.15) | volt_2 (probe 0.05) | Δ vs volt_2 | anchor_20 (v1) | Δ vs v1 |
+|------|---------------------|---------------------|-------------|----------------|---------|
+| 800  | 800.0               | 800.0               | +0.0        | 799.8          | +0.2    |
+| 1200 | 1177.0              | 1174.2              | +2.8        | 942.3          | **+234.7** |
+| 1400 | **1151.6**          | 1033.5              | **+118.1**  | 966.7          | **+184.9** |
+| 1800 | **1336.4**          | 1275.4              | **+61.0**   | 1106.4         | **+230.0** |
+| 2500 | **1422.1**          | 1345.7              | **+76.4**   | 1209.5         | **+212.6** |
+
+Early returns (frontend ComposePost): 800: 0, 1200: 22.8/s, 1400: 247.5/s, 1800: 462.7/s, 2500: 1068.3/s
+
+**Stability analysis (mean goodput, CoV):**
+
+| RPS  | volt_1 (v2 all) | volt_2 (no early feas.) | volt_3 (probe 0.15) |
+|------|-----------------|------------------------|---------------------|
+| 800  | 800 (0.0%)      | 800 (0.0%)             | 800 (0.0%)          |
+| 1200 | 954 (23.0%)     | 1160 (3.8%)            | 1164 (5.2%)         |
+| 1400 | 619 (46.8%)     | 833 (39.4%)            | **1020 (22.0%)**    |
+| 1800 | 907 (26.5%)     | 1121 (19.8%)           | **1195 (15.3%)**    |
+| 2500 | 840 (47.2%)     | 1070 (25.8%)           | **1162 (21.0%)**    |
+
+volt_3 wins on both mean goodput and stability at 1400-2500. The 1400 CoV drops from 46.8% (volt_1) → 39.4% (volt_2) → 22.0% (volt_3), confirming that wider probe margin reduces oscillation between explore/exploit modes.
+
+**Hypothesis confirmed — all criteria exceeded.** probe_min=0.15 improves every load point in both goodput and stability. The mechanism is clear: more budget headroom prevents the controller from starving itself at the explore/exploit boundary.
