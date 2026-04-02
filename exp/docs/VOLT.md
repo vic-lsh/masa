@@ -320,3 +320,37 @@ The CoV is partly caused by the rejection EMA being too slow to track rapid chan
 
 ### Experiment design (volt_8)
 Same config as volt_1. Only `sched_pred,abort_slo,ac_pred,est_mean_var`.
+
+Code commit: `367c260b`
+
+### Actual Outcomes (volt_8)
+
+**Status:** Complete ✅ — KEEP
+
+| RPS  | volt_8 (α=0.05) | volt_3 (α=0.01) | Δ Mean | CoV volt_8 | CoV volt_3 | Δ CoV  |
+|------|-----------------|-----------------|--------|------------|------------|--------|
+| 800  | 800.0           | 800.0           | 0.0    | 0.0%       | 0.0%       | 0.0pp  |
+| 1200 | 1179.1          | 1177.0          | +2.1   | 3.8%       | 5.2%       | -1.3pp |
+| 1400 | **1230.0**      | 1151.6          | **+78.4** | **21.1%** | 22.0%   | -0.9pp |
+| 1800 | **1410.0**      | 1336.4          | **+73.6** | **11.6%** | 15.3%   | -3.6pp |
+| 2500 | 1478.7          | 1422.1          | +56.6  | **16.2%** | 21.0%     | -4.8pp |
+
+**Hypothesis confirmed.** Faster rejection_alpha improves both mean goodput AND stability at every load point. The mechanism works: faster EMA convergence reduces the phase lag between actual rejection state and the controller's mode, eliminating the "stuck in wrong mode" oscillation. CoV drops 1-5pp across all overloaded RPS levels. Mean improves +2 to +78 across 1200-2500.
+
+## Iteration 8: Raise tau from 1.0 to 2.0 (experiment volt_9)
+
+**Status:** Pending
+
+### Change
+In `policy_params.rs`, change `tau` from 1.0 to 2.0. This doubles the smoothing window for the goodput rate EMA, stacking on top of rejection_alpha=0.05 (kept from volt_8).
+
+### Hypothesis
+With rejection_alpha=0.05 fixing mode-switch lag, the remaining CoV (11-21%) may come from noise in the goodput_rate EMA. At tau=1.0, the goodput estimate is reactive to short-term completion bursts. Doubling to tau=2.0 smooths this, producing more stable exploit-mode budget rates and reducing CoV further.
+
+### Expected outcomes if hypothesis is correct:
+1. CoV drops further at 1400 (below 18%) and 1800 (below 10%)
+2. Mean goodput stays within ±30 of volt_8
+3. No regression at any load point
+
+### Experiment design (volt_9)
+Same config as volt_1. Only `sched_pred,abort_slo,ac_pred,est_mean_var`.
