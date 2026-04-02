@@ -26,8 +26,6 @@ pub(crate) struct EstServerState<E: LatencyEstimator + Default + 'static> {
     pub est_after_child_latency: Arc<LatencyMap<E>>,
     /// Tracks actual child RPC call latencies (keyed by parent->child pair).
     pub est_child_latency: Arc<LatencyMap<E>>,
-    /// Tracks compute time (poll duration) per method.
-    pub est_compute_latency: Arc<LatencyMap<E>>,
     /// EMA of accumulated compute cost per root API type (for Layer 2 capacity metering).
     pub est_accumulated_cost: Arc<LatencyMap<E>>,
     /// Total wall-clock latency per method keyed by root API type (for early feasibility).
@@ -40,20 +38,17 @@ impl<E: LatencyEstimator + Default + 'static> EstServerState<E> {
     pub(crate) fn new() -> Self {
         let est_after_child_latency = Arc::new(LatencyMap::new());
         let est_child_latency = Arc::new(LatencyMap::new());
-        let est_compute_latency = Arc::new(LatencyMap::new());
         let est_accumulated_cost = Arc::new(LatencyMap::new());
         let est_method_latency = Arc::new(LatencyMap::new());
 
         spawn_stats_printer(est_after_child_latency.clone(), "Est Remaining Values");
         spawn_stats_printer(est_child_latency.clone(), "Est Child Call Latencies");
-        spawn_method_stats_printer(est_compute_latency.clone(), "Est Compute Latencies");
         spawn_method_stats_printer(est_accumulated_cost.clone(), "Est Accumulated Cost");
         spawn_method_stats_printer(est_method_latency.clone(), "Est Method Latency");
 
         Self {
             est_after_child_latency,
             est_child_latency,
-            est_compute_latency,
             est_accumulated_cost,
             est_method_latency,
             print_counter: AtomicUsize::new(0),
@@ -146,12 +141,6 @@ impl<E: LatencyEstimator + Default + 'static> EstRequestState<E> {
             );
         }
 
-        // Track compute time (accumulated poll duration) per method
-        self.server.est_compute_latency.track(
-            self.resolved_method_id,
-            self.poll_compute_us.load(Ordering::Relaxed),
-        );
-
         // Track total wall-clock latency per (root API type, local method) for early feasibility.
         if let Some(key) = self.method_latency_key() {
             let total_wall_clock = self.request_start.elapsed().as_micros() as u64;
@@ -196,12 +185,6 @@ impl<E: LatencyEstimator + Default + 'static> EstRequestState<E> {
         if let Ok(resp) = response {
             if let Some(child_ctx_resp) = resp.get_masa_context() {
                 if let Some(meta) = child_ctx_resp.response_meta() {
-                    // Track child's compute time
-                    if let Some(parent_to_child_id) = &child_ctx.parent_to_child_id {
-                        self.server
-                            .est_compute_latency
-                            .track(parent_to_child_id.to_key(), meta.compute_time_us);
-                    }
                     // Track max downstream utilization
                     let mut max_util = self.max_child_downstream_util.lock().unwrap();
                     if meta.max_downstream_util > *max_util {
