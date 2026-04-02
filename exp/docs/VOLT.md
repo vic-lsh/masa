@@ -82,3 +82,23 @@ Disabling Change 4 should eliminate the 1400 RPS dip while preserving the gains 
 
 ### Experiment design
 Same config as volt_1 (5 RPS levels, SLO=50ms). Only `sched_pred,abort_slo,ac_pred,est_mean_var`.
+
+Code commit: `54bc3584`
+
+### Actual Outcomes (volt_2)
+
+**Status:** Complete ✅ — KEEP
+
+| RPS  | anchor_20 (v1) | volt_1 (v2 all) | volt_2 (no early feas.) | Δ vs v1 |
+|------|----------------|-----------------|------------------------|---------|
+| 800  | 799.8          | 799.9           | 800.0                  | +0.2    |
+| 1200 | 942.3          | 1042.3          | **1174.2**             | **+231.9** |
+| 1400 | 966.7          | 876.6           | **1033.5**             | **+66.8**  |
+| 1800 | 1106.4         | 1154.0          | **1275.4**             | **+169.0** |
+| 2500 | 1209.5         | 1163.7          | **1345.7**             | **+136.2** |
+
+Early returns (frontend ComposePost): 800: 0, 1200: 25.7/s, 1400: 364.5/s, 1800: 524/s, 2500: 1144.6/s
+
+**Hypothesis confirmed.** The early feasibility check was the source of the 1400 dip. `est_method_latency` tracks wall-clock time including queueing, creating the exact feedback loop v2 was designed to eliminate — just in a different layer. Removing it yields consistent gains at every load point: +67 to +232 vs v1.
+
+All three remaining v2 changes (accumulated compute cost, root_method keying, tightened Layer 1) are contributing to the improvement without introducing feedback loops.
