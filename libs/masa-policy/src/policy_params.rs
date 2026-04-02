@@ -105,7 +105,7 @@ impl Default for PredParams {
             probe_min: 0.15,
             probe_max: 1.0,
             rejection_alpha: 0.01,
-            rejection_threshold: 0.10,
+            rejection_threshold: 0.20,
             tau: 1.0,
         }
     }
