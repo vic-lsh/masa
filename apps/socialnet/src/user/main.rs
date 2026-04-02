@@ -5,7 +5,7 @@ use tracing_subscriber::FmtSubscriber;
 mod server;
 use server::{social_network::user_service_server::UserServiceServer, UserServer};
 
-use mongodb::Client as MongoClient;
+use mongodb::{options::IndexOptions, Client as MongoClient, IndexModel};
 use std::env;
 use tonic::transport::Server;
 
@@ -45,6 +45,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 3. Initialize MongoDB client
     let mongo_client = MongoClient::with_uri_str(&mongo_url).await?;
     info!("Successfully connected to MongoDB.");
+
+    // Create unique index on username for O(log n) lookups
+    let user_collection: mongodb::Collection<mongodb::bson::Document> =
+        mongo_client.database("user").collection("user");
+    let index = IndexModel::builder()
+        .keys(mongodb::bson::doc! { "username": 1 })
+        .options(IndexOptions::builder().unique(true).build())
+        .build();
+    user_collection.create_index(index, None).await?;
+    info!("Created unique index on username field.");
 
     // --- THIS IS THE ROBUST REDIS CONNECTION POOL ---
     // 4. Initialize Redis connection pool
