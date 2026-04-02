@@ -101,6 +101,24 @@ impl<E: LatencyEstimator + Default + 'static> EstRequestState<E> {
         }
     }
 
+    /// Estimated wall-clock latency for this (root API type, local method) pair.
+    pub(crate) fn est_method_latency(&self) -> Option<u64> {
+        if self.root_method_id == 0 {
+            return None;
+        }
+        let key = (self.root_method_id << 32) | self.resolved_method_id;
+        self.server.est_method_latency.get_estimate(key)
+    }
+
+    /// Compound key for tracking into `est_method_latency`.
+    fn method_latency_key(&self) -> Option<u64> {
+        if self.root_method_id != 0 {
+            Some((self.root_method_id << 32) | self.resolved_method_id)
+        } else {
+            None
+        }
+    }
+
     /// Start tracking compute time for the current poll.
     pub(crate) fn start_compute_tracking(&self) {
         *self.poll_start.lock().unwrap() = Some(Instant::now());
@@ -134,12 +152,10 @@ impl<E: LatencyEstimator + Default + 'static> EstRequestState<E> {
             self.poll_compute_us.load(Ordering::Relaxed),
         );
 
-        // Track total wall-clock latency per root API type (for early feasibility)
-        if self.root_method_id != 0 {
+        // Track total wall-clock latency per (root API type, local method) for early feasibility.
+        if let Some(key) = self.method_latency_key() {
             let total_wall_clock = self.request_start.elapsed().as_micros() as u64;
-            self.server
-                .est_method_latency
-                .track(self.root_method_id, total_wall_clock);
+            self.server.est_method_latency.track(key, total_wall_clock);
         }
     }
 
