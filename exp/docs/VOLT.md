@@ -288,3 +288,35 @@ The token bucket oscillates because it enters exploit mode too early. At `reject
 
 ### Experiment design (volt_7)
 Same config as volt_1. Only `sched_pred,abort_slo,ac_pred,est_mean_var`.
+
+Code commit: `f5175d63`
+
+### Actual Outcomes (volt_7)
+
+| RPS  | volt_7 (thresh 0.20) | volt_3 (thresh 0.10) | Δ Mean | CoV volt_7 | CoV volt_3 |
+|------|---------------------|---------------------|--------|------------|------------|
+| 800  | 799.9               | 800.0               | -0.1   | 0.0%       | 0.0%       |
+| 1200 | 1184.8              | 1177.0              | +7.8   | 3.3%       | 5.2%       |
+| 1400 | 1195.0              | 1151.6              | +43.4  | 23.2%      | 22.0%      |
+| 1800 | **977.1**           | 1336.4              | **-359.3** | **55.9%** | 15.3%   |
+| 2500 | 1418.9              | 1422.1              | -3.2   | 25.2%      | 21.0%      |
+
+**Catastrophic regression at 1800 — REVERT.** Higher threshold delays exploit mode too much: controller stays in explore mode, overwhelms system at 1800, then crashes into exploit. Improves 1400 slightly (+43) but 1800 collapse is disqualifying.
+
+## Iteration 7: Faster rejection_alpha (experiment volt_8)
+
+**Status:** Pending
+
+### Change
+In `policy_params.rs`, change `rejection_alpha` from 0.01 to 0.05. This makes the rejection EMA converge 5x faster (~20 decisions vs ~100).
+
+### Hypothesis
+The CoV is partly caused by the rejection EMA being too slow to track rapid changes in rejection rate. At `rejection_alpha=0.01`, the EMA takes ~100 decisions to converge. If the system oscillates between admit-all and reject-all on a 2-3 second cycle, the EMA lags behind reality — it's still in explore mode when it should be in exploit, and vice versa. Faster tracking (0.05) should reduce this phase lag.
+
+### Expected outcomes if hypothesis is correct:
+1. CoV at 1400 drops (faster mode correction)
+2. Mean goodput at 1400 stays ≥1100
+3. Deep overload unaffected (rejection_ema converges quickly either way)
+
+### Experiment design (volt_8)
+Same config as volt_1. Only `sched_pred,abort_slo,ac_pred,est_mean_var`.
