@@ -85,29 +85,8 @@ impl Layer for PredAdmissionLayer {
     }
 
     /// Reprioritize the current task based on remaining time to deadline.
-    ///
-    /// Also performs an early feasibility check: if the estimated total method
-    /// latency exceeds the remaining time budget, reject before any compute.
     #[inline]
     fn before_poll<Ret>(&self, ctx: &Context) -> Result<(), Result<Response<Ret>, Status>> {
-        // Early feasibility: reject if estimated total method latency exceeds time budget.
-        // Fires on every poll; on the first poll, no compute has been done yet.
-        let root = ctx.root_method();
-        if root != 0 {
-            if let Some(est_total) = self.est.server.est_method_latency.get_estimate(root) {
-                if masa_core::time_now() + est_total > ctx.e2e_deadline() {
-                    return Err(Err(Status::new(
-                        Code::DeadlineExceeded,
-                        format!(
-                            "/EarlyReturn?src={}::{}?reason=early_feasibility",
-                            self.rpc.service(),
-                            self.rpc.method(),
-                        ),
-                    )));
-                }
-            }
-        }
-
         #[cfg(feature = "sched_pred")]
         {
             let remaining = ctx.deadline().saturating_sub(masa_core::time_now());
