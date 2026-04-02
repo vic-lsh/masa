@@ -198,16 +198,18 @@ Code commit: `46df3d29`
 
 Six questions to resolve, in priority order:
 
-1. **Q6 (free):** Is the CoV inherent to near-saturation? Check sched-only and tailclipper CoV at 1400 from volt_1 data.
-2. **Q1 (diagnostic):** Is Layer 1's wall-clock `est_child` driving CoV? Remove `est_child` from Layer 1 check.
-3. **Q5 (low-risk):** Does `max_burst_secs=0.005` cause micro-starvation? Raise to 0.02.
-4. **Q4:** Would `rejection_threshold=0.20` delay exploit mode enough? (Binary switch, just higher threshold.)
+1. **Q6 ✅ ANSWERED:** CoV is NOT inherent to near-saturation. sched-only at 1400 has 0.7% CoV (rock-solid). The 22% CoV is entirely AC-caused.
+2. **Q1 ✅ ANSWERED:** Layer 1's est_child is NOT the CoV source. Removing it made CoV worse (34%). Layer 1 is helping, not hurting.
+3. **Q5:** Does `max_burst_secs=0.005` cause micro-starvation? Raise to 0.02.
+4. **Q4:** Would `rejection_threshold=0.20` delay exploit mode enough?
 5. **Q3:** Is `rejection_alpha=0.01` too slow for mode switching? Try 0.05.
 6. **Q2:** Is `tau=1.0` making goodput EMA too reactive? Try 2.0.
 
+**Key diagnostic insight:** The CoV is driven by Layer 2 (token bucket), not Layer 1. The sched-only baseline achieves 0.7% CoV at 1400 — the AC is creating oscillation via its budget dynamics.
+
 ## Iteration 4: Remove est_child from Layer 1 check (experiment volt_5)
 
-**Status:** Pending
+**Status:** Regression ❌ — REVERT
 
 ### Change
 In the `admission_check` methods (both `ac_pred` enabled and disabled paths), remove `est_child` from the Layer 1 feasibility check. Revert from `now + est_child + est_remaining_floor > deadline` back to `now + est_remaining_floor > deadline`. This is a diagnostic to isolate whether Layer 1's wall-clock `est_child` drives the CoV.
@@ -221,4 +223,36 @@ Layer 1 uses `est_child_latency` (wall-clock, includes queueing). Under transien
 3. Deep overload (1800/2500) may regress if Layer 1 was doing useful shedding there
 
 ### Experiment design
+Same config as volt_1 (5 RPS levels, SLO=50ms). Only `sched_pred,abort_slo,ac_pred,est_mean_var`.
+
+Code commit: `bfce6b3a`
+
+### Actual Outcomes (volt_5)
+
+| RPS  | volt_5 (no est_child) | volt_3 (with est_child) | Δ Mean | CoV volt_5 | CoV volt_3 |
+|------|----------------------|------------------------|--------|------------|------------|
+| 800  | 800.0                | 800.0                  | +0.0   | 0.0%       | 0.0%       |
+| 1200 | 1191.6               | 1177.0                 | +14.6  | 1.9%       | 5.2%       |
+| 1400 | **1068.4**           | 1151.6                 | **-83.2** | **34.0%** | 22.0%     |
+| 1800 | 1332.3               | 1336.4                 | -4.1   | 15.3%      | 15.3%      |
+| 2500 | 1420.4               | 1422.1                 | -1.7   | 22.3%      | 21.0%      |
+
+**Hypothesis refuted.** Removing est_child from Layer 1 made 1400 significantly worse: -83 mean, +12pp CoV. Layer 1's est_child is providing useful shedding that reduces the load on Layer 2, keeping the token bucket healthier. Without it, Layer 2 has to do all the shedding alone and oscillates more.
+
+## Iteration 5: Raise max_burst_secs from 0.005 to 0.02 (experiment volt_6)
+
+**Status:** Pending
+
+### Change
+In `policy_params.rs`, change `max_burst_secs` from 0.005 to 0.02. This increases the token bucket capacity from ~1 request to ~4 requests at typical compute costs.
+
+### Hypothesis
+With `max_burst_secs=0.005`, the token bucket can hold only `budget_rate * 0.005` µs. In exploit mode with goodput_rate ~500K, that's 2500 µs — barely one request (~2000 µs compute). Any brief gap in completions empties the bucket instantly, causing a rejection spike → budget refills → admits burst → another spike. A 4x larger bucket (0.02) should absorb brief completion gaps, reducing CoV without changing steady-state throughput.
+
+### Expected outcomes if hypothesis is correct:
+1. CoV at 1400 drops below 15%
+2. Mean goodput at 1400 stays ≥1100
+3. 1800/2500 CoV also improves
+
+### Experiment design (volt_6)
 Same config as volt_1 (5 RPS levels, SLO=50ms). Only `sched_pred,abort_slo,ac_pred,est_mean_var`.
