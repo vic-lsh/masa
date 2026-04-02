@@ -152,3 +152,28 @@ Early returns (frontend ComposePost): 800: 0, 1200: 22.8/s, 1400: 247.5/s, 1800:
 volt_3 wins on both mean goodput and stability at 1400-2500. The 1400 CoV drops from 46.8% (volt_1) → 39.4% (volt_2) → 22.0% (volt_3), confirming that wider probe margin reduces oscillation between explore/exploit modes.
 
 **Hypothesis confirmed — all criteria exceeded.** probe_min=0.15 improves every load point in both goodput and stability. The mechanism is clear: more budget headroom prevents the controller from starving itself at the explore/exploit boundary.
+
+## Iteration 3: Smooth explore→exploit transition (experiment volt_4)
+
+**Status:** Pending
+
+### Change
+Replace the binary explore/exploit mode switch with linear interpolation. Currently, `budget_rate` jumps from `initial_budget_rate` (5M µs/s) to `goodput_rate * 1.15` (~500K µs/s) when `rejection_ema` crosses `rejection_threshold` (0.10) — a ~10x cliff. Replace with:
+
+```
+t = clamp(rejection_ema / rejection_threshold, 0, 1)
+budget_rate = (1 - t) * initial_budget_rate + t * goodput_rate * (1 + probe_min)
+```
+
+This linearly blends from explore to exploit as rejections increase, eliminating the mode-switch oscillation.
+
+### Hypothesis
+The 22% CoV at 1400 RPS is caused by oscillation at the explore/exploit boundary. When `rejection_ema` hovers near 0.10, the budget_rate oscillates between 5M and ~500K µs/s — a 10x jump that alternately floods and starves the system. Smoothing this transition should reduce CoV while maintaining mean goodput (the steady-state exploit rate is unchanged).
+
+### Expected outcomes if hypothesis is correct:
+1. CoV at 1400 RPS drops below 15% (currently 22%)
+2. Mean goodput at 1400 stays ≥1100 (currently 1152)
+3. 1800/2500 goodput and CoV remain comparable to volt_3
+
+### Experiment design
+Same config as volt_1 (5 RPS levels, SLO=50ms). Only `sched_pred,abort_slo,ac_pred,est_mean_var`.
