@@ -352,21 +352,10 @@ impl AdmissionController {
             state.budget_us = max_budget;
         }
 
-        // Probabilistic admission: when budget partially covers cost,
-        // admit with probability budget/cost instead of binary reject.
-        // This spreads rejections uniformly across time, reducing CoV.
+        // Admission decision + rejection EMA update.
         let rejected = if state.budget_us >= cost {
             state.budget_us -= cost;
             false
-        } else if state.budget_us > 0.0 {
-            let p_admit = state.budget_us / cost;
-            let r: f64 = rand::random();
-            if r < p_admit {
-                state.budget_us = 0.0;
-                false
-            } else {
-                true
-            }
         } else {
             true
         };
