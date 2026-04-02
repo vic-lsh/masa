@@ -5,12 +5,10 @@
 // tightens child deadlines (when `sched_pred` is also enabled), and runs
 // predictive admission control.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 #[cfg(feature = "ac_pred")]
-use std::sync::{
-    atomic::{AtomicU64, Ordering},
-    Mutex,
-};
+use std::sync::{atomic::AtomicU64, Mutex};
 use std::task::Poll;
 #[cfg(feature = "ac_pred")]
 use std::time::Instant;
@@ -63,6 +61,7 @@ pub(crate) struct PredAdmissionLayer {
     pub(crate) est: EstRequestState<DefaultLatencyEstimator>,
     pred_admission: Arc<PredictiveAdmission>,
     rpc: CowGrpcMethod,
+    feasibility_checked: AtomicBool,
 }
 
 impl Layer for PredAdmissionLayer {
@@ -81,10 +80,12 @@ impl Layer for PredAdmissionLayer {
             est: EstRequestState::new(resolved_method_id, root_method_id, server.est.clone()),
             pred_admission: server.pred_admission.clone(),
             rpc: method.clone(),
+            feasibility_checked: AtomicBool::new(false),
         }
     }
 
     /// Reprioritize the current task based on remaining time to deadline.
+    /// On first poll, reject if estimated method latency exceeds remaining time.
     #[inline]
     fn before_poll<Ret>(&self, ctx: &Context) -> Result<(), Result<Response<Ret>, Status>> {
         #[cfg(feature = "sched_pred")]
@@ -92,8 +93,27 @@ impl Layer for PredAdmissionLayer {
             let remaining = ctx.deadline().saturating_sub(masa_core::time_now());
             tokio::task::reprioritize(PriorityHint::new(remaining));
         }
-        #[cfg(not(feature = "sched_pred"))]
-        let _ = ctx;
+
+        // Early feasibility: on first poll, reject if estimated method latency
+        // exceeds remaining time. Only checked once — after the first poll the
+        // request is in-flight and should not be killed by this coarse check.
+        if !self.feasibility_checked.swap(true, Ordering::Relaxed) {
+            let root = ctx.root_method();
+            if root != 0 {
+                if let Some(est) = self.est.server.est_method_latency.get_estimate(root) {
+                    if masa_core::time_now() + est > ctx.e2e_deadline() {
+                        return Err(Err(Status::new(
+                            Code::DeadlineExceeded,
+                            format!(
+                                "/EarlyReturn?src={}::{}?reason=early_feasibility",
+                                self.rpc.service(),
+                                self.rpc.method(),
+                            ),
+                        )));
+                    }
+                }
+            }
+        }
 
         self.est.start_compute_tracking();
         Ok(())
