@@ -379,3 +379,23 @@ Code commit: `8e1dbe32`
 | 2500 | 1413   | 1422   | -9     | 21.8%      | 21.0%      | +0.7pp |
 
 **Hypothesis partially confirmed.** τ=2.0 significantly improves 1400 CoV (-5.3pp vs volt_8, -6.2pp vs volt_3) and mean (+9 vs volt_8). The 2500 CoV regresses +5.6pp vs volt_8 (slower EMA can't track extreme overload as well). Net: clear win at moderate overload, acceptable tradeoff at extreme overload.
+
+## Iteration 9: Probabilistic admission (experiment volt_10)
+
+**Status:** Pending
+
+### Change
+Replace the binary admit/reject decision in `should_admit` with probabilistic admission. Instead of `if budget >= cost { admit } else { reject }`, compute `p_admit = clamp(budget / cost, 0, 1)` and admit with that probability. This spreads rejections uniformly across time instead of clustering them into bursts.
+
+The rejection EMA update uses the actual admission outcome (0 or 1), so it naturally tracks the probabilistic decisions.
+
+### Hypothesis
+The remaining 15.8% CoV at 1400 RPS is caused by discrete oscillation in the token bucket: budget fills → admit burst until empty → reject burst until refill → repeat. With max_burst_secs=0.005 and ~1 request worth of capacity, this creates high-frequency on/off cycling. Probabilistic admission smooths this by spreading rejections uniformly — when budget is 70% of cost, 30% of requests are randomly rejected rather than all requests being rejected for 30% of the time.
+
+### Expected outcomes if hypothesis is correct:
+1. CoV at 1400 drops below 10% (currently 15.8%)
+2. Mean goodput at 1400 stays ≥1200 (currently 1239)
+3. CoV improvement at all overloaded RPS levels
+
+### Experiment design (volt_10)
+Same config as volt_1. Only `sched_pred,abort_slo,ac_pred,est_mean_var`.
