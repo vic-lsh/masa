@@ -155,7 +155,7 @@ volt_3 wins on both mean goodput and stability at 1400-2500. The 1400 CoV drops 
 
 ## Iteration 3: Smooth explore→exploit transition (experiment volt_4)
 
-**Status:** Pending
+**Status:** Regression ❌ — REVERT
 
 ### Change
 Replace the binary explore/exploit mode switch with linear interpolation. Currently, `budget_rate` jumps from `initial_budget_rate` (5M µs/s) to `goodput_rate * 1.15` (~500K µs/s) when `rejection_ema` crosses `rejection_threshold` (0.10) — a ~10x cliff. Replace with:
@@ -177,3 +177,19 @@ The 22% CoV at 1400 RPS is caused by oscillation at the explore/exploit boundary
 
 ### Experiment design
 Same config as volt_1 (5 RPS levels, SLO=50ms). Only `sched_pred,abort_slo,ac_pred,est_mean_var`.
+
+Code commit: `46df3d29`
+
+### Actual Outcomes (volt_4)
+
+| RPS  | volt_4 (smooth) | volt_3 (binary) | Δ vs volt_3 | CoV volt_4 | CoV volt_3 |
+|------|-----------------|-----------------|-------------|------------|------------|
+| 800  | 800.0           | 800.0           | +0.0        | 0.0%       | 0.0%       |
+| 1200 | 1184.0          | 1177.0          | +7.0        | 2.7%       | 5.2%       |
+| 1400 | **1043.3**      | 1151.6          | **-108.3**  | **29.0%**  | 22.0%      |
+| 1800 | 1326.8          | 1336.4          | -9.6        | 14.4%      | 15.3%      |
+| 2500 | **1369.2**      | 1422.1          | **-52.9**   | **24.4%**  | 21.0%      |
+
+**Hypothesis refuted.** Linear interpolation made both goodput and stability worse at 1400 and 2500. The linear blend dilutes the explore budget at low rejection rates (even rejection_ema=0.02 reduces budget_rate by 20%), causing the controller to under-admit at moderate overload where it should still be exploring freely. The binary switch is better — it maintains full explore budget until rejections are clearly established, then snaps to tight tracking.
+
+**Root cause:** The 10x gap between explore (5M) and exploit (~500K) means even small interpolation factors (t=0.1) create a 450K reduction in budget. The issue is not the transition sharpness but the magnitude of the gap.
