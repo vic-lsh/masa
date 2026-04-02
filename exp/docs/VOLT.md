@@ -102,3 +102,23 @@ Early returns (frontend ComposePost): 800: 0, 1200: 25.7/s, 1400: 364.5/s, 1800:
 **Hypothesis confirmed.** The early feasibility check was the source of the 1400 dip. `est_method_latency` tracks wall-clock time including queueing, creating the exact feedback loop v2 was designed to eliminate — just in a different layer. Removing it yields consistent gains at every load point: +67 to +232 vs v1.
 
 All three remaining v2 changes (accumulated compute cost, root_method keying, tightened Layer 1) are contributing to the improvement without introducing feedback loops.
+
+## Iteration 2: Raise probe_min from 0.05 to 0.15 (experiment volt_3)
+
+**Status:** Pending
+
+### Change
+In `policy_params.rs`, change `probe_min` from 0.05 to 0.15. This increases the exploit-mode budget headroom from 5% to 15% above observed goodput.
+
+### Hypothesis
+At 1400 RPS, ac_pred achieves 1034 vs sched-only's 1196 — the AC is still over-shedding by ~160 requests. In exploit mode, budget_rate = `goodput_rate * 1.05`. If the goodput_rate EMA lags slightly behind actual capacity (e.g., EMA still catching up after mode switch), the 5% margin is too thin and rejects requests the system could serve. Raising to 15% gives more room for the EMA to converge without starving the system.
+
+Risk: too much headroom could reduce shedding effectiveness at 1800-2500 (deeper overload). But 15% is still tight enough to shed well above saturation.
+
+### Expected outcomes if hypothesis is correct:
+1. 1400 RPS goodput increases toward 1100+ (closing gap with sched-only)
+2. 1800/2500 goodput stays within ±50 of volt_2 (1275/1346)
+3. 1200 RPS stays ≥1170
+
+### Experiment design
+Same config as volt_1 (5 RPS levels, SLO=50ms). Only `sched_pred,abort_slo,ac_pred,est_mean_var`.
