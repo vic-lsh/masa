@@ -332,12 +332,15 @@ impl AdmissionController {
             state.goodput_rate += alpha * (instant_rate - state.goodput_rate);
         }
 
-        // Blend smoothly from explore to exploit as rejection rate increases.
-        // At rejection_ema == 0, use generous initial rate (explore).
-        // At rejection_ema >= threshold, use tight goodput tracking (exploit).
-        let t = (state.rejection_ema / p.rejection_threshold).clamp(0.0, 1.0);
-        let exploit_rate = state.goodput_rate * (1.0 + p.probe_min);
-        let budget_rate = (1.0 - t) * p.initial_budget_rate + t * exploit_rate;
+        // Exploit vs explore: when rejections are happening, track observed
+        // goodput tightly; otherwise admit freely at the generous initial rate.
+        let budget_rate = if state.rejection_ema > p.rejection_threshold {
+            // Exploit mode: tight tracking of observed goodput
+            state.goodput_rate * (1.0 + p.probe_min)
+        } else {
+            // Explore mode: admit freely using generous initial budget
+            p.initial_budget_rate
+        };
 
         // Refill tokens, capped at burst limit.
         // Dynamic floor: ensure the budget can always hold at least one
