@@ -487,3 +487,19 @@ The combined effect: larger bucket absorbs micro-oscillation (reducing CoV), hig
 
 ### Experiment design (volt_12)
 Same config as volt_1. Only `sched_pred,abort_slo,ac_pred,est_mean_var`.
+
+Code commit: `dc4a97a6`
+
+### Actual Outcomes (volt_12)
+
+**Status:** Regression ❌ — REVERT
+
+| RPS  | volt_12 (burst+probe) | volt_9 (baseline) | Δ Mean | CoV volt_12 | CoV volt_9 | Δ CoV |
+|------|----------------------|-------------------|--------|-------------|------------|-------|
+| 800  | 800.0                | 800.0             | 0.0    | 0.0%        | 0.0%       | 0.0pp |
+| 1200 | 1185.3               | 1188.7            | -3.4   | 4.1%        | 2.6%       | +1.4pp |
+| 1400 | 1253.3               | 1239.3            | +14.0  | 18.0%       | 15.8%      | +2.3pp |
+| 1800 | **1351.2**           | 1402.4            | **-51.2** | 13.7%    | 11.7%      | +2.0pp |
+| 2500 | 1440.0               | 1412.7            | +27.3  | 20.5%       | 21.8%      | -1.3pp |
+
+**Regression — combined change worsened CoV at 1200-1800 and dropped 1800 mean by -51.** The larger burst window makes oscillation cycles larger amplitude, offsetting any smoothing benefit. Higher probe_min didn't compensate.
