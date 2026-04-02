@@ -92,7 +92,10 @@ impl SocialGraphService {
             .keys(doc! { "user_id": 1 })
             .options(IndexOptions::builder().unique(true).build())
             .build();
-        mongo_collection.create_index(index, None).await.expect("failed to create user_id index");
+        mongo_collection
+            .create_index(index, None)
+            .await
+            .expect("failed to create user_id index");
         info!("Created unique index on user_id field for social-graph collection.");
 
         // Initialize User Service Client
