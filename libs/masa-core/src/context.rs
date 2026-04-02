@@ -25,6 +25,8 @@ pub struct QueueLatencies {
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct ResponseMeta {
     pub compute_time_us: u64,
+    #[serde(default)]
+    pub accumulated_compute_us: u64,
     pub utilization: f32,
     pub max_downstream_util: f32,
 }
@@ -47,6 +49,8 @@ pub struct Context {
     pub hop_count: u8,
     #[serde(default = "default_tokens")]
     pub tokens: u64,
+    #[serde(default)]
+    pub root_method: u64,
 }
 
 fn default_tokens() -> u64 {
@@ -71,6 +75,7 @@ pub struct ContextBuilder {
     response_meta: Option<ResponseMeta>,
     hop_count: u8,
     tokens: u64,
+    root_method: u64,
 }
 
 impl ContextBuilder {
@@ -87,6 +92,7 @@ impl ContextBuilder {
             response_meta: None,
             hop_count: 0,
             tokens: default_tokens(),
+            root_method: 0,
         }
     }
 
@@ -103,6 +109,7 @@ impl ContextBuilder {
             response_meta: ctx.response_meta.clone(),
             hop_count: ctx.hop_count,
             tokens: ctx.tokens,
+            root_method: ctx.root_method,
         }
     }
 
@@ -151,6 +158,11 @@ impl ContextBuilder {
         self
     }
 
+    pub fn root_method(mut self, root_method: u64) -> Self {
+        self.root_method = root_method;
+        self
+    }
+
     pub fn build(self) -> Context {
         Context {
             api: self.api,
@@ -173,6 +185,7 @@ impl ContextBuilder {
             response_meta: self.response_meta,
             hop_count: self.hop_count,
             tokens: self.tokens,
+            root_method: self.root_method,
         }
     }
 }
@@ -250,6 +263,11 @@ impl Context {
     /// Get the hop count.
     pub fn hop_count(&self) -> u8 {
         self.hop_count
+    }
+
+    /// Get the root API method ID (set at ingress, propagated unchanged).
+    pub fn root_method(&self) -> u64 {
+        self.root_method
     }
 
     /// Create a new Masa context from JSON.
