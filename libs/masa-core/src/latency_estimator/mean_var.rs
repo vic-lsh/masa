@@ -1,5 +1,22 @@
 use super::LatencyEstimator;
 use serde::{Deserialize, Serialize};
+use std::sync::OnceLock;
+
+/// Global default `k` value, read once from the policy params JSON file
+/// (`MASA_POLICY_PARAMS_PATH` env var, field `pred.estimator_k`).
+/// Falls back to `0.0` (pure mean estimator) if unset or unreadable.
+static DEFAULT_K: OnceLock<f64> = OnceLock::new();
+
+fn default_k() -> f64 {
+    *DEFAULT_K.get_or_init(|| {
+        std::env::var("MASA_POLICY_PARAMS_PATH")
+            .ok()
+            .and_then(|path| std::fs::read_to_string(path).ok())
+            .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+            .and_then(|v| v.get("pred")?.get("estimator_k")?.as_f64())
+            .unwrap_or(0.0)
+    })
+}
 
 /// Exponential Moving Average (EMA) latency estimator: mean + k*stddev.
 ///
@@ -108,11 +125,12 @@ impl LatencyEstimator for LatencyMeanVar {
 
 impl Default for LatencyMeanVar {
     fn default() -> Self {
-        // k=0.0: pure mean estimator — variance term removed (PINE Iteration 2).
+        // k defaults to 0.0 (pure mean estimator) unless overridden via
+        // set_default_k(), which is called by the policy parameter loader.
         // alpha field is kept for API compatibility but the EMA update uses hardcoded
         // asymmetric values: alpha_up=0.05 (slow inflation) and alpha_down=0.2 (fast
         // deflation). See track() for rationale.
-        Self::new(0.0, 0.1)
+        Self::new(default_k(), 0.1)
     }
 }
 

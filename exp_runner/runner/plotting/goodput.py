@@ -1829,7 +1829,8 @@ def generate_plots(args, plot_data: PlotData | None = None) -> None:
             )
         )
 
-    output_dir = args.output_dir
+    summary_goodput_dir = os.path.join(args.output_dir, "summary", "goodput")
+    os.makedirs(summary_goodput_dir, exist_ok=True)
     for api in apis:
         goodputs_by_type = None
         if api == "ALL":
@@ -1841,7 +1842,7 @@ def generate_plots(args, plot_data: PlotData | None = None) -> None:
             (
                 _plot_averaged_goodput,
                 (
-                    output_dir,
+                    summary_goodput_dir,
                     api,
                     policies,
                     rps_values,
@@ -1927,7 +1928,8 @@ def generate_plots(args, plot_data: PlotData | None = None) -> None:
                     )
                 )
 
-    output_dir = args.output_dir
+    summary_er_dir = os.path.join(args.output_dir, "summary", "early_return")
+    os.makedirs(summary_er_dir, exist_ok=True)
     for api in apis:
         avg_total_early_returns = {}
         avg_breakdown = {
@@ -1979,7 +1981,7 @@ def generate_plots(args, plot_data: PlotData | None = None) -> None:
                             vals
                         )
 
-        output_path = os.path.join(output_dir, f"early_return_{api}.png")
+        output_path = os.path.join(summary_er_dir, f"early_return_{api}.png")
         future_specs.append(
             (
                 _plot_early_return_breakdown,
@@ -2050,7 +2052,7 @@ def generate_plots(args, plot_data: PlotData | None = None) -> None:
                             vals
                         ) / len(vals)
 
-        output_path = os.path.join(output_dir, f"early_return_last_child_{api}.png")
+        output_path = os.path.join(summary_er_dir, f"early_return_last_child_{api}.png")
         future_specs.append(
             (
                 _plot_early_return_breakdown,
@@ -2117,7 +2119,7 @@ def generate_plots(args, plot_data: PlotData | None = None) -> None:
                             vals
                         )
 
-        output_path = os.path.join(output_dir, f"slo_miss_{api}.png")
+        output_path = os.path.join(summary_er_dir, f"slo_miss_{api}.png")
         future_specs.append(
             (
                 _plot_slo_miss_breakdown,

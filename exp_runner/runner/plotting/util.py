@@ -150,6 +150,13 @@ def _read_request_csv(file_path: str) -> pd.DataFrame:
             "Repaired %d malformed row(s) while reading %s", repaired, file_path
         )
 
+    # Strip surrounding double quotes from the error column.
+    # The Rust request logger quotes error strings that contain commas
+    # (e.g. ",reason=LocalDeadlineExceeded"), which the custom CSV
+    # parser preserves verbatim.
+    if "error" in df.columns:
+        df["error"] = df["error"].str.strip('"')
+
     # Centralized error parsing
     df = _parse_error_columns(df)
 
@@ -167,6 +174,7 @@ def _parse_error_columns(df: pd.DataFrame) -> pd.DataFrame:
     df["er_service"] = None
     df["er_method"] = None
     df["er_last_child"] = None
+    df["er_reason"] = None
 
     if "error" not in df.columns:
         return df
@@ -181,14 +189,16 @@ def _parse_error_columns(df: pd.DataFrame) -> pd.DataFrame:
     df.loc[mask_er, "error_type"] = "EarlyReturn"
 
     # 3. Vectorized extraction using Regex
-    # Regex captures: /EarlyReturn?src=<svc>::<method>?last_rpc=<last_child>
+    # Regex captures: /EarlyReturn?src=<svc>::<method>?last_rpc=<last_child>&reason=<reason>
+    # The reason field may be separated by '&' or ',' depending on the source.
     # Pattern explanation:
     # ^/EarlyReturn\?src=         Start with literal prefix
     # (?P<er_service>.+?)         Capture service (non-greedy)
     # ::                          Literal separator
-    # (?P<er_method>[^?\s]+)        Capture method (until next ?, whitespace or end)
-    # (?:\?last_rpc=(?P<er_last_child>[^\s]*))?  Optional group: ?last_rpc= followed by anything up to space
-    pattern = r"^/EarlyReturn\?src=(?P<er_service>.+?)::(?P<er_method>[^?\s]+)(?:\?last_rpc=(?P<er_last_child>[^\s]*))?"
+    # (?P<er_method>[^?,\s]+)     Capture method (until next ?, comma, whitespace or end)
+    # (?:[?,]last_rpc=(?P<er_last_child>[^&,\s]*))?  Optional: last_rpc (until & or , or space)
+    # (?:[&,]reason=(?P<er_reason>[^\s]*))?           Optional: reason (until space or end)
+    pattern = r"^/EarlyReturn\?src=(?P<er_service>.+?)::(?P<er_method>[^?,\s]+)(?:[?,]last_rpc=(?P<er_last_child>[^&,\s]*))?(?:[&,]reason=(?P<er_reason>[^\s]*))?"
 
     extracted_data = df.loc[mask_er, "error"].str.extract(pattern)
 

@@ -1,3 +1,3 @@
 sched_fifo,ac_rajomon,abort_slo
-sched_pred,ac_pred,abort_slo,est_mean_var
+sched_pred,ac_pred,abort_slack,est_mean_var
 sched_tailclipper,abort_slo

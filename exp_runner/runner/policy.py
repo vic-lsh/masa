@@ -34,6 +34,7 @@ _EST_MAP: dict[str, str] = {
 }
 
 _DROP_MAP: dict[str, str] = {
+    "abort_slack": "slack",
     "abort_slo": "e2e_slo",
 }
 
