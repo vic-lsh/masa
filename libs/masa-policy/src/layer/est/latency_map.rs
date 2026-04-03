@@ -17,7 +17,7 @@ pub(crate) struct MethodKey(pub(crate) MethodId);
 /// Builder intermediate for [`ParentToChildKey`].
 pub(crate) struct ParentToChildKeyBuilder(MethodId);
 
-/// Parent→child RPC method pair key (for `est_after_child_latency`, `est_child_latency`).
+/// Parent→child RPC method pair key (for remaining-wallclock, child-wallclock estimates).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) struct ParentToChildKey(MethodId, MethodId);
 
