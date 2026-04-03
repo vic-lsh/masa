@@ -5,57 +5,73 @@
 // distributions and make abort decisions. Used by `PredAdmissionLayer`
 // for deadline tightening, dynamic reprioritization, and admission control.
 
+use std::fmt;
+use std::hash::Hash;
+use std::ops::Deref;
 use std::sync::{
     atomic::{AtomicU64, AtomicUsize, Ordering},
     Arc, Mutex,
 };
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use masa_core::{time_now, Context, LatencyEstimator, ResponseMeta};
 use tonic_core::{Code, CowGrpcMethod, Response, Status};
 
-use super::latency_map::{
-    spawn_method_stats_printer, spawn_pair_stats_printer, LatencyMap, MethodKey, ParentToChildKey,
-    RootToLocalKey,
-};
+use super::latency_map::{LatencyMap, MethodKey, ParentToChildKey, RootToLocalKey};
 use crate::context_ext::MasaResponseExt;
 use crate::registry::MethodId;
 use crate::MethodRegistry;
 
 /// Server-level estimation state (shared across requests on a service).
+///
+/// All maps and the print counter live behind one [`Arc`] so trackers clone a single handle.
 #[derive(Debug)]
-pub(crate) struct LatencyEstimators<E: LatencyEstimator + Default + 'static> {
+pub(crate) struct LatencyEstimatorsInner<E: LatencyEstimator + Default + 'static> {
     /// Tracks remaining duration after each child RPC completes (keyed by parent->child pair).
-    pub after_child_latency: Arc<LatencyMap<ParentToChildKey, E>>,
+    pub after_child_latency: LatencyMap<ParentToChildKey, E>,
     /// Tracks actual child RPC call latencies (keyed by parent->child pair).
-    pub child_latency: Arc<LatencyMap<ParentToChildKey, E>>,
+    pub child_latency: LatencyMap<ParentToChildKey, E>,
     /// EMA of accumulated compute cost per root API type (for Layer 2 capacity metering).
-    pub accumulated_cost: Arc<LatencyMap<MethodKey, E>>,
+    pub accumulated_cost: LatencyMap<MethodKey, E>,
     /// Total wall-clock latency per method keyed by (root API type, local method) for early feasibility.
-    pub method_latency: Arc<LatencyMap<RootToLocalKey, E>>,
+    pub method_latency: LatencyMap<RootToLocalKey, E>,
     /// Counter for periodic logging.
     pub print_counter: AtomicUsize,
 }
 
+/// Cheap clone: shares the same [`LatencyEstimatorsInner`] as other trackers on the service.
+#[derive(Debug)]
+pub(crate) struct LatencyEstimators<E: LatencyEstimator + Default + 'static>(
+    pub(crate) Arc<LatencyEstimatorsInner<E>>,
+);
+
+impl<E: LatencyEstimator + Default + 'static> Clone for LatencyEstimators<E> {
+    fn clone(&self) -> Self {
+        Self(Arc::clone(&self.0))
+    }
+}
+
+impl<E: LatencyEstimator + Default + 'static> Deref for LatencyEstimators<E> {
+    type Target = LatencyEstimatorsInner<E>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 impl<E: LatencyEstimator + Default + 'static> LatencyEstimators<E> {
     pub(crate) fn new() -> Self {
-        let after_child_latency = Arc::new(LatencyMap::new());
-        let child_latency = Arc::new(LatencyMap::new());
-        let accumulated_cost = Arc::new(LatencyMap::new());
-        let method_latency = Arc::new(LatencyMap::new());
-
-        spawn_pair_stats_printer(after_child_latency.clone(), "Est Remaining Values");
-        spawn_pair_stats_printer(child_latency.clone(), "Est Child Call Latencies");
-        spawn_method_stats_printer(accumulated_cost.clone(), "Est Accumulated Cost");
-        spawn_pair_stats_printer(method_latency.clone(), "Est Method Latency");
-
-        Self {
-            after_child_latency,
-            child_latency,
-            accumulated_cost,
-            method_latency,
+        let inner = Arc::new(LatencyEstimatorsInner {
+            after_child_latency: LatencyMap::new(),
+            child_latency: LatencyMap::new(),
+            accumulated_cost: LatencyMap::new(),
+            method_latency: LatencyMap::new(),
             print_counter: AtomicUsize::new(0),
-        }
+        });
+
+        spawn_latency_estimators_stats_printer(Arc::clone(&inner));
+
+        Self(inner)
     }
 
     /// Periodic logging of latency estimates.
@@ -81,6 +97,63 @@ impl<E: LatencyEstimator + Default + 'static> LatencyEstimators<E> {
             );
         }
     }
+}
+
+fn spawn_latency_estimators_stats_printer<E>(shared: Arc<LatencyEstimatorsInner<E>>)
+where
+    E: LatencyEstimator + Default + Send + 'static,
+{
+    if let Ok(handle) = tokio::runtime::Handle::try_current() {
+        handle.spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_secs(5));
+            loop {
+                interval.tick().await;
+
+                log_pair_map_if_non_empty("Est Remaining Values", &shared.after_child_latency);
+                log_pair_map_if_non_empty("Est Child Call Latencies", &shared.child_latency);
+                log_method_map_if_non_empty("Est Accumulated Cost", &shared.accumulated_cost);
+                log_pair_map_if_non_empty("Est Method Latency", &shared.method_latency);
+            }
+        });
+    }
+}
+
+fn log_pair_map_if_non_empty<K, E>(label: &'static str, map: &LatencyMap<K, E>)
+where
+    K: Copy + Eq + Hash + fmt::Display + 'static,
+    E: LatencyEstimator + Default + 'static,
+{
+    if map.is_empty() {
+        return;
+    }
+    let mut parts = Vec::new();
+    map.for_each(|key, distribution| {
+        if distribution.can_estimate() {
+            parts.push(format!("{}: {} us", key, distribution.estimate()));
+        } else {
+            parts.push(format!("{}: (no estimate)", key));
+        }
+    });
+    log::info!("{}: {}", label, parts.join(", "));
+}
+
+fn log_method_map_if_non_empty<E: LatencyEstimator + Default + 'static>(
+    label: &'static str,
+    map: &LatencyMap<MethodKey, E>,
+) {
+    if map.is_empty() {
+        return;
+    }
+    let mut parts = Vec::new();
+    map.for_each(|key, distribution| {
+        let name = super::latency_map::format_method_name(key.0);
+        if distribution.can_estimate() {
+            parts.push(format!("{}: {} us", name, distribution.estimate()));
+        } else {
+            parts.push(format!("{}: (no estimate)", name));
+        }
+    });
+    log::info!("{}: {}", label, parts.join(", "));
 }
 
 /// Information extracted from a child RPC response.
@@ -132,7 +205,7 @@ impl ComputeTracker {
 pub(crate) struct RequestLatencyTracker<E: LatencyEstimator + Default + 'static> {
     pub resolved_method_id: MethodId,
     pub root_method_id: Option<MethodId>,
-    pub est: Arc<LatencyEstimators<E>>,
+    pub est: LatencyEstimators<E>,
     pub child_end_times: Mutex<Vec<(ParentToChildKey, Instant)>>,
     pub compute: ComputeTracker,
     pub max_child_downstream_util: Mutex<f32>,
@@ -144,7 +217,7 @@ impl<E: LatencyEstimator + Default + 'static> RequestLatencyTracker<E> {
     pub(crate) fn new(
         resolved_method_id: MethodId,
         root_method_id: Option<MethodId>,
-        est: Arc<LatencyEstimators<E>>,
+        est: LatencyEstimators<E>,
     ) -> Self {
         Self {
             resolved_method_id,
@@ -335,14 +408,11 @@ pub(crate) struct ChildRpcPrepareResult {
 pub(crate) struct ChildRPCTracker<E: LatencyEstimator + Default + 'static> {
     pub start_time: Instant,
     pub parent_to_child_key: ParentToChildKey,
-    pub est: Arc<LatencyEstimators<E>>,
+    pub est: LatencyEstimators<E>,
 }
 
 impl<E: LatencyEstimator + Default + 'static> ChildRPCTracker<E> {
-    pub(crate) fn new(
-        parent_to_child_key: ParentToChildKey,
-        est: Arc<LatencyEstimators<E>>,
-    ) -> Self {
+    pub(crate) fn new(parent_to_child_key: ParentToChildKey, est: LatencyEstimators<E>) -> Self {
         Self {
             start_time: Instant::now(),
             parent_to_child_key,
