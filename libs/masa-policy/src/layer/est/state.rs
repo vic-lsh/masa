@@ -1,6 +1,6 @@
 // Latency estimation state for Masa scheduling policies.
 //
-// Provides `EstServerState`, `EstRequestState`, and `EstChildState` that can be
+// Provides `LatencyEstimators`, `RequestLatencyTracker`, and `ChildRPCTracker` which can be
 // embedded into any policy's Server/Parent/ChildContext to track latency
 // distributions and make abort decisions. Used by `PredAdmissionLayer`
 // for deadline tightening, dynamic reprioritization, and admission control.
@@ -24,36 +24,36 @@ use crate::MethodRegistry;
 
 /// Server-level estimation state (shared across requests on a service).
 #[derive(Debug)]
-pub(crate) struct EstServerState<E: LatencyEstimator + Default + 'static> {
+pub(crate) struct LatencyEstimators<E: LatencyEstimator + Default + 'static> {
     /// Tracks remaining duration after each child RPC completes (keyed by parent->child pair).
-    pub est_after_child_latency: Arc<LatencyMap<ParentToChildKey, E>>,
+    pub after_child_latency: Arc<LatencyMap<ParentToChildKey, E>>,
     /// Tracks actual child RPC call latencies (keyed by parent->child pair).
-    pub est_child_latency: Arc<LatencyMap<ParentToChildKey, E>>,
+    pub child_latency: Arc<LatencyMap<ParentToChildKey, E>>,
     /// EMA of accumulated compute cost per root API type (for Layer 2 capacity metering).
-    pub est_accumulated_cost: Arc<LatencyMap<MethodKey, E>>,
+    pub accumulated_cost: Arc<LatencyMap<MethodKey, E>>,
     /// Total wall-clock latency per method keyed by (root API type, local method) for early feasibility.
-    pub est_method_latency: Arc<LatencyMap<RootToLocalKey, E>>,
+    pub method_latency: Arc<LatencyMap<RootToLocalKey, E>>,
     /// Counter for periodic logging.
     pub print_counter: AtomicUsize,
 }
 
-impl<E: LatencyEstimator + Default + 'static> EstServerState<E> {
+impl<E: LatencyEstimator + Default + 'static> LatencyEstimators<E> {
     pub(crate) fn new() -> Self {
-        let est_after_child_latency = Arc::new(LatencyMap::new());
-        let est_child_latency = Arc::new(LatencyMap::new());
-        let est_accumulated_cost = Arc::new(LatencyMap::new());
-        let est_method_latency = Arc::new(LatencyMap::new());
+        let after_child_latency = Arc::new(LatencyMap::new());
+        let child_latency = Arc::new(LatencyMap::new());
+        let accumulated_cost = Arc::new(LatencyMap::new());
+        let method_latency = Arc::new(LatencyMap::new());
 
-        spawn_pair_stats_printer(est_after_child_latency.clone(), "Est Remaining Values");
-        spawn_pair_stats_printer(est_child_latency.clone(), "Est Child Call Latencies");
-        spawn_method_stats_printer(est_accumulated_cost.clone(), "Est Accumulated Cost");
-        spawn_pair_stats_printer(est_method_latency.clone(), "Est Method Latency");
+        spawn_pair_stats_printer(after_child_latency.clone(), "Est Remaining Values");
+        spawn_pair_stats_printer(child_latency.clone(), "Est Child Call Latencies");
+        spawn_method_stats_printer(accumulated_cost.clone(), "Est Accumulated Cost");
+        spawn_pair_stats_printer(method_latency.clone(), "Est Method Latency");
 
         Self {
-            est_after_child_latency,
-            est_child_latency,
-            est_accumulated_cost,
-            est_method_latency,
+            after_child_latency,
+            child_latency,
+            accumulated_cost,
+            method_latency,
             print_counter: AtomicUsize::new(0),
         }
     }
@@ -68,7 +68,7 @@ impl<E: LatencyEstimator + Default + 'static> EstServerState<E> {
     ) {
         if self.print_counter.fetch_add(1, Ordering::Relaxed) % 5000 == 0 {
             let est_child = self
-                .est_child_latency
+                .child_latency
                 .get_estimate(*parent_to_child_key)
                 .unwrap_or(0);
             log::info!(
@@ -129,10 +129,10 @@ impl ComputeTracker {
 
 /// Per-request estimation state.
 #[derive(Debug)]
-pub(crate) struct EstRequestState<E: LatencyEstimator + Default + 'static> {
+pub(crate) struct RequestLatencyTracker<E: LatencyEstimator + Default + 'static> {
     pub resolved_method_id: MethodId,
     pub root_method_id: Option<MethodId>,
-    pub server: Arc<EstServerState<E>>,
+    pub est: Arc<LatencyEstimators<E>>,
     pub child_end_times: Mutex<Vec<(ParentToChildKey, Instant)>>,
     pub compute: ComputeTracker,
     pub max_child_downstream_util: Mutex<f32>,
@@ -140,16 +140,16 @@ pub(crate) struct EstRequestState<E: LatencyEstimator + Default + 'static> {
     pub request_start: Instant,
 }
 
-impl<E: LatencyEstimator + Default + 'static> EstRequestState<E> {
+impl<E: LatencyEstimator + Default + 'static> RequestLatencyTracker<E> {
     pub(crate) fn new(
         resolved_method_id: MethodId,
         root_method_id: Option<MethodId>,
-        server: Arc<EstServerState<E>>,
+        est: Arc<LatencyEstimators<E>>,
     ) -> Self {
         Self {
             resolved_method_id,
             root_method_id,
-            server,
+            est,
             child_end_times: Mutex::new(Vec::new()),
             compute: ComputeTracker::new(),
             max_child_downstream_util: Mutex::new(0.0),
@@ -159,12 +159,12 @@ impl<E: LatencyEstimator + Default + 'static> EstRequestState<E> {
     }
 
     /// Estimated wall-clock latency for this (root API type, local method) pair.
-    pub(crate) fn est_method_latency(&self) -> Option<u64> {
+    pub(crate) fn estimate_method_latency(&self) -> Option<u64> {
         let key = self.method_latency_key()?;
-        self.server.est_method_latency.get_estimate(key)
+        self.est.method_latency.get_estimate(key)
     }
 
-    /// Compound key for tracking into `est_method_latency`.
+    /// Compound key for tracking into `method_latency`.
     fn method_latency_key(&self) -> Option<RootToLocalKey> {
         let root = self.root_method_id?;
         Some(RootToLocalKey::root_rpc_method(root).local_rpc_method(self.resolved_method_id))
@@ -177,7 +177,7 @@ impl<E: LatencyEstimator + Default + 'static> EstRequestState<E> {
         // Track remaining time after child RPC completes
         let child_end_times = std::mem::take(&mut *self.child_end_times.lock().unwrap());
         for (parent_to_child_key, child_end) in child_end_times {
-            self.server.est_after_child_latency.track(
+            self.est.after_child_latency.track(
                 parent_to_child_key,
                 parent_end.duration_since(child_end).as_micros() as u64,
             );
@@ -186,7 +186,7 @@ impl<E: LatencyEstimator + Default + 'static> EstRequestState<E> {
         // Track total wall-clock latency per (root API type, local method) for early feasibility.
         if let Some(key) = self.method_latency_key() {
             let total_wall_clock = self.request_start.elapsed().as_micros() as u64;
-            self.server.est_method_latency.track(key, total_wall_clock);
+            self.est.method_latency.track(key, total_wall_clock);
         }
     }
 
@@ -218,7 +218,7 @@ impl<E: LatencyEstimator + Default + 'static> EstRequestState<E> {
     pub(crate) fn after_child_rpc<T>(
         &self,
         response: &Result<Response<T>, Status>,
-        child_ctx: &EstChildState<E>,
+        child_tracker: &ChildRPCTracker<E>,
     ) -> ChildResponseInfo {
         let mut downstream_util = None;
         let mut accumulated_compute_us = None;
@@ -241,14 +241,14 @@ impl<E: LatencyEstimator + Default + 'static> EstRequestState<E> {
             }
         }
 
-        // When the child early-returns, track 0 into est_after_child_latency to create
+        // When the child early-returns, track 0 into after_child_latency to create
         // negative feedback. Without this, ERs prevent tracking updates, freezing the
         // estimate at a high value.
         if let Err(status) = response {
             if status.code() == Code::DeadlineExceeded {
-                self.server
-                    .est_after_child_latency
-                    .track(child_ctx.parent_to_child_key, 0);
+                self.est
+                    .after_child_latency
+                    .track(child_tracker.parent_to_child_key, 0);
             }
         }
 
@@ -257,7 +257,7 @@ impl<E: LatencyEstimator + Default + 'static> EstRequestState<E> {
             self.child_end_times
                 .lock()
                 .unwrap()
-                .push((child_ctx.parent_to_child_key, Instant::now()));
+                .push((child_tracker.parent_to_child_key, Instant::now()));
         }
 
         ChildResponseInfo {
@@ -272,38 +272,38 @@ impl<E: LatencyEstimator + Default + 'static> EstRequestState<E> {
         &self,
         ctx: &Context,
         child_method_name: &CowGrpcMethod,
-        child_est: &mut Option<EstChildState<E>>,
+        child_tracker: &mut Option<ChildRPCTracker<E>>,
     ) -> ChildRpcPrepareResult {
         let resolved_child_id = MethodRegistry::global().get_or_register(child_method_name.clone());
         let parent_to_child_key = ParentToChildKey::parent_rpc_method(self.resolved_method_id)
             .child_rpc_method(resolved_child_id);
 
-        *child_est = Some(EstChildState::new(parent_to_child_key, self.server.clone()));
+        *child_tracker = Some(ChildRPCTracker::new(parent_to_child_key, self.est.clone()));
 
         let time_left = ctx.e2e_deadline().saturating_sub(time_now());
 
         let est_remaining = self
-            .server
-            .est_after_child_latency
+            .est
+            .after_child_latency
             .get_estimate(parent_to_child_key)
             .unwrap_or(0)
             .min(time_left);
 
         let est_remaining_mean = self
-            .server
-            .est_after_child_latency
+            .est
+            .after_child_latency
             .get_mean_estimate(parent_to_child_key)
             .unwrap_or(0)
             .min(time_left);
 
         let est_remaining_floor = self
-            .server
-            .est_after_child_latency
+            .est
+            .after_child_latency
             .get_mean_floor_estimate(parent_to_child_key)
             .unwrap_or(0)
             .min(time_left);
 
-        self.server.log_estimates(
+        self.est.log_estimates(
             &parent_to_child_key,
             est_remaining,
             est_remaining_mean,
@@ -327,26 +327,26 @@ pub(crate) struct ChildRpcPrepareResult {
 
 /// Per-child-RPC estimation state.
 ///
-/// Always fully initialized — created by `EstRequestState::prepare_before_child_rpc`
+/// Always fully initialized — created by `RequestLatencyTracker::prepare_before_child_rpc`
 /// when the child method and parent→child relationship are known.
-/// `PredAdmissionChild` holds `Option<EstChildState<E>>` to represent the
+/// `PredAdmissionChild` holds `Option<ChildRPCTracker<E>>` to represent the
 /// uninitialized-vs-initialized transition.
 #[derive(Debug, Clone)]
-pub(crate) struct EstChildState<E: LatencyEstimator + Default + 'static> {
+pub(crate) struct ChildRPCTracker<E: LatencyEstimator + Default + 'static> {
     pub start_time: Instant,
     pub parent_to_child_key: ParentToChildKey,
-    pub server: Arc<EstServerState<E>>,
+    pub est: Arc<LatencyEstimators<E>>,
 }
 
-impl<E: LatencyEstimator + Default + 'static> EstChildState<E> {
+impl<E: LatencyEstimator + Default + 'static> ChildRPCTracker<E> {
     pub(crate) fn new(
         parent_to_child_key: ParentToChildKey,
-        server: Arc<EstServerState<E>>,
+        est: Arc<LatencyEstimators<E>>,
     ) -> Self {
         Self {
             start_time: Instant::now(),
             parent_to_child_key,
-            server,
+            est,
         }
     }
 
@@ -356,8 +356,8 @@ impl<E: LatencyEstimator + Default + 'static> EstChildState<E> {
         }
 
         let client_runtime = Instant::now().duration_since(self.start_time).as_micros() as u64;
-        self.server
-            .est_child_latency
+        self.est
+            .child_latency
             .track(self.parent_to_child_key, client_runtime);
     }
 }
