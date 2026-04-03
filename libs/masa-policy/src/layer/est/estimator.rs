@@ -36,25 +36,3 @@ pub(crate) type DefaultLatencyEstimator = masa_core::LatencyRms;
     )
 ))]
 pub(crate) type DefaultLatencyEstimator = masa_core::LatencyMeanVar;
-
-// --- Shared types ---
-
-/// Identifies a parent->child method pair for latency tracking.
-#[derive(Debug, Clone, Hash, Eq, PartialEq)]
-pub(crate) struct ParentToChildId {
-    pub parent_id: u64,
-    pub child_id: u64,
-}
-
-impl ParentToChildId {
-    pub(crate) fn to_key(&self) -> u64 {
-        // Simple combination of two 32-bit (effective) IDs into one 64-bit key
-        (self.parent_id << 32) | self.child_id
-    }
-}
-
-impl std::fmt::Display for ParentToChildId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}=>{}", self.parent_id, self.child_id)
-    }
-}

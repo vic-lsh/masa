@@ -6,7 +6,7 @@ mod timing;
 mod typing;
 
 pub use context::FutureSpan;
-pub use context::{Context, ContextBuilder, QueueLatencies, ResponseMeta};
+pub use context::{Context, ContextBuilder, QueueLatencies, ResponseMeta, RootMethod};
 pub use flag::{ABORT_SLO, RAJOMON, SCHED_FIFO, SCHED_PRED, SCHED_SLO, SCHED_TAILCLIPPER};
 pub use latency_estimator::{
     LatencyDistribution, LatencyEstimator, LatencyEwma, LatencyMeanVar, LatencyRms,

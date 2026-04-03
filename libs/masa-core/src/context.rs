@@ -31,6 +31,14 @@ pub struct ResponseMeta {
     pub max_downstream_util: f32,
 }
 
+/// Identifies the root (ingress) RPC method. Transported over the wire as a
+/// (service, method) pair so that method identity is stable across replicas.
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Hash)]
+pub struct RootMethod {
+    pub service: String,
+    pub method: String,
+}
+
 /// Represent a Masa context.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Context {
@@ -50,7 +58,7 @@ pub struct Context {
     #[serde(default = "default_tokens")]
     pub tokens: u64,
     #[serde(default)]
-    pub root_method: u64,
+    pub root_method: Option<RootMethod>,
 }
 
 fn default_tokens() -> u64 {
@@ -75,7 +83,7 @@ pub struct ContextBuilder {
     response_meta: Option<ResponseMeta>,
     hop_count: u8,
     tokens: u64,
-    root_method: u64,
+    root_method: Option<RootMethod>,
 }
 
 impl ContextBuilder {
@@ -92,7 +100,7 @@ impl ContextBuilder {
             response_meta: None,
             hop_count: 0,
             tokens: default_tokens(),
-            root_method: 0,
+            root_method: None,
         }
     }
 
@@ -109,7 +117,7 @@ impl ContextBuilder {
             response_meta: ctx.response_meta.clone(),
             hop_count: ctx.hop_count,
             tokens: ctx.tokens,
-            root_method: ctx.root_method,
+            root_method: ctx.root_method.clone(),
         }
     }
 
@@ -158,8 +166,8 @@ impl ContextBuilder {
         self
     }
 
-    pub fn root_method(mut self, root_method: u64) -> Self {
-        self.root_method = root_method;
+    pub fn root_method(mut self, root_method: RootMethod) -> Self {
+        self.root_method = Some(root_method);
         self
     }
 
@@ -265,9 +273,9 @@ impl Context {
         self.hop_count
     }
 
-    /// Get the root API method ID (set at ingress, propagated unchanged).
-    pub fn root_method(&self) -> u64 {
-        self.root_method
+    /// Get the root API method (set at ingress, propagated unchanged).
+    pub fn root_method(&self) -> Option<&RootMethod> {
+        self.root_method.as_ref()
     }
 
     /// Create a new Masa context from JSON.

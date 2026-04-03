@@ -14,22 +14,25 @@ use std::time::Instant;
 use masa_core::{time_now, Context, LatencyEstimator, ResponseMeta};
 use tonic_core::{Code, CowGrpcMethod, Response, Status};
 
-use super::estimator::ParentToChildId;
-use super::latency_map::{spawn_method_stats_printer, spawn_stats_printer, LatencyMap};
+use super::latency_map::{
+    spawn_method_stats_printer, spawn_pair_stats_printer, LatencyMap, MethodKey, ParentToChildKey,
+    RootToLocalKey,
+};
 use crate::context_ext::MasaResponseExt;
+use crate::registry::MethodId;
 use crate::MethodRegistry;
 
 /// Server-level estimation state (shared across requests on a service).
 #[derive(Debug)]
 pub(crate) struct EstServerState<E: LatencyEstimator + Default + 'static> {
     /// Tracks remaining duration after each child RPC completes (keyed by parent->child pair).
-    pub est_after_child_latency: Arc<LatencyMap<E>>,
+    pub est_after_child_latency: Arc<LatencyMap<ParentToChildKey, E>>,
     /// Tracks actual child RPC call latencies (keyed by parent->child pair).
-    pub est_child_latency: Arc<LatencyMap<E>>,
+    pub est_child_latency: Arc<LatencyMap<ParentToChildKey, E>>,
     /// EMA of accumulated compute cost per root API type (for Layer 2 capacity metering).
-    pub est_accumulated_cost: Arc<LatencyMap<E>>,
-    /// Total wall-clock latency per method keyed by root API type (for early feasibility).
-    pub est_method_latency: Arc<LatencyMap<E>>,
+    pub est_accumulated_cost: Arc<LatencyMap<MethodKey, E>>,
+    /// Total wall-clock latency per method keyed by (root API type, local method) for early feasibility.
+    pub est_method_latency: Arc<LatencyMap<RootToLocalKey, E>>,
     /// Counter for periodic logging.
     pub print_counter: AtomicUsize,
 }
@@ -41,10 +44,10 @@ impl<E: LatencyEstimator + Default + 'static> EstServerState<E> {
         let est_accumulated_cost = Arc::new(LatencyMap::new());
         let est_method_latency = Arc::new(LatencyMap::new());
 
-        spawn_stats_printer(est_after_child_latency.clone(), "Est Remaining Values");
-        spawn_stats_printer(est_child_latency.clone(), "Est Child Call Latencies");
+        spawn_pair_stats_printer(est_after_child_latency.clone(), "Est Remaining Values");
+        spawn_pair_stats_printer(est_child_latency.clone(), "Est Child Call Latencies");
         spawn_method_stats_printer(est_accumulated_cost.clone(), "Est Accumulated Cost");
-        spawn_method_stats_printer(est_method_latency.clone(), "Est Method Latency");
+        spawn_pair_stats_printer(est_method_latency.clone(), "Est Method Latency");
 
         Self {
             est_after_child_latency,
@@ -66,10 +69,10 @@ pub(crate) struct ChildResponseInfo {
 /// Per-request estimation state.
 #[derive(Debug)]
 pub(crate) struct EstRequestState<E: LatencyEstimator + Default + 'static> {
-    pub resolved_method_id: u64,
-    pub root_method_id: u64,
+    pub resolved_method_id: MethodId,
+    pub root_method_id: Option<MethodId>,
     pub server: Arc<EstServerState<E>>,
-    pub child_end_times: Mutex<Vec<(ParentToChildId, Instant)>>,
+    pub child_end_times: Mutex<Vec<(ParentToChildKey, Instant)>>,
     pub poll_compute_us: AtomicU64,
     pub poll_start: Mutex<Option<Instant>>,
     pub max_child_downstream_util: Mutex<f32>,
@@ -79,8 +82,8 @@ pub(crate) struct EstRequestState<E: LatencyEstimator + Default + 'static> {
 
 impl<E: LatencyEstimator + Default + 'static> EstRequestState<E> {
     pub(crate) fn new(
-        resolved_method_id: u64,
-        root_method_id: u64,
+        resolved_method_id: MethodId,
+        root_method_id: Option<MethodId>,
         server: Arc<EstServerState<E>>,
     ) -> Self {
         Self {
@@ -98,20 +101,14 @@ impl<E: LatencyEstimator + Default + 'static> EstRequestState<E> {
 
     /// Estimated wall-clock latency for this (root API type, local method) pair.
     pub(crate) fn est_method_latency(&self) -> Option<u64> {
-        if self.root_method_id == 0 {
-            return None;
-        }
-        let key = (self.root_method_id << 32) | self.resolved_method_id;
+        let key = self.method_latency_key()?;
         self.server.est_method_latency.get_estimate(key)
     }
 
     /// Compound key for tracking into `est_method_latency`.
-    fn method_latency_key(&self) -> Option<u64> {
-        if self.root_method_id != 0 {
-            Some((self.root_method_id << 32) | self.resolved_method_id)
-        } else {
-            None
-        }
+    fn method_latency_key(&self) -> Option<RootToLocalKey> {
+        let root = self.root_method_id?;
+        Some(RootToLocalKey::root_rpc_method(root).local_rpc_method(self.resolved_method_id))
     }
 
     /// Start tracking compute time for the current poll.
@@ -134,9 +131,9 @@ impl<E: LatencyEstimator + Default + 'static> EstRequestState<E> {
 
         // Track remaining time after child RPC completes
         let child_end_times = std::mem::take(&mut *self.child_end_times.lock().unwrap());
-        for (parent_to_child_id, child_end) in child_end_times {
+        for (parent_to_child_key, child_end) in child_end_times {
             self.server.est_after_child_latency.track(
-                parent_to_child_id.to_key(),
+                parent_to_child_key,
                 parent_end.duration_since(child_end).as_micros() as u64,
             );
         }
@@ -204,21 +201,19 @@ impl<E: LatencyEstimator + Default + 'static> EstRequestState<E> {
         // estimate at a high value.
         if let Err(status) = response {
             if status.code() == Code::DeadlineExceeded {
-                if let Some(parent_to_child_id) = &child_ctx.parent_to_child_id {
-                    self.server
-                        .est_after_child_latency
-                        .track(parent_to_child_id.to_key(), 0);
+                if let Some(key) = &child_ctx.parent_to_child_key {
+                    self.server.est_after_child_latency.track(*key, 0);
                 }
             }
         }
 
         // Record child end time for successful responses
         if response.is_ok() {
-            if let Some(parent_to_child_id) = &child_ctx.parent_to_child_id {
+            if let Some(key) = &child_ctx.parent_to_child_key {
                 self.child_end_times
                     .lock()
                     .unwrap()
-                    .push((parent_to_child_id.clone(), Instant::now()));
+                    .push((*key, Instant::now()));
             }
         }
 
@@ -231,17 +226,20 @@ impl<E: LatencyEstimator + Default + 'static> EstRequestState<E> {
     /// Periodic logging of latency estimates.
     pub(crate) fn log_estimates(
         &self,
-        parent_to_child_id: &ParentToChildId,
-        key: u64,
+        parent_to_child_key: &ParentToChildKey,
         est_remaining: u64,
         est_remaining_mean: u64,
         est_remaining_floor: u64,
     ) {
         if self.server.print_counter.fetch_add(1, Ordering::Relaxed) % 5000 == 0 {
-            let est_child = self.server.est_child_latency.get_estimate(key).unwrap_or(0);
+            let est_child = self
+                .server
+                .est_child_latency
+                .get_estimate(*parent_to_child_key)
+                .unwrap_or(0);
             log::info!(
                 "LAT_EST: p=>c: {}, est_child: {}, est_rem: {}, est_rem_mean: {}, est_rem_floor: {}",
-                parent_to_child_id,
+                parent_to_child_key,
                 est_child,
                 est_remaining,
                 est_remaining_mean,
@@ -260,14 +258,11 @@ impl<E: LatencyEstimator + Default + 'static> EstRequestState<E> {
     ) -> ChildRpcPrepareResult {
         let resolved_child_id = MethodRegistry::global()
             .get_or_register_method(child_method_name.service(), child_method_name.method());
-        let parent_to_child_id = ParentToChildId {
-            parent_id: self.resolved_method_id,
-            child_id: resolved_child_id,
-        };
-        let key = parent_to_child_id.to_key();
+        let parent_to_child_key = ParentToChildKey::parent_rpc_method(self.resolved_method_id)
+            .child_rpc_method(resolved_child_id);
 
         child_est.setup(
-            parent_to_child_id.clone(),
+            parent_to_child_key,
             child_method_name.clone(),
             self.server.clone(),
         );
@@ -277,33 +272,35 @@ impl<E: LatencyEstimator + Default + 'static> EstRequestState<E> {
         let est_remaining = self
             .server
             .est_after_child_latency
-            .get_estimate(key)
+            .get_estimate(parent_to_child_key)
             .unwrap_or(0)
             .min(time_left);
 
         let est_remaining_mean = self
             .server
             .est_after_child_latency
-            .get_mean_estimate(key)
+            .get_mean_estimate(parent_to_child_key)
             .unwrap_or(0)
             .min(time_left);
 
         let est_remaining_floor = self
             .server
             .est_after_child_latency
-            .get_mean_floor_estimate(key)
+            .get_mean_floor_estimate(parent_to_child_key)
             .unwrap_or(0)
             .min(time_left);
 
         self.log_estimates(
-            &parent_to_child_id,
-            key,
+            &parent_to_child_key,
             est_remaining,
             est_remaining_mean,
             est_remaining_floor,
         );
 
-        ChildRpcPrepareResult { est_remaining, key }
+        ChildRpcPrepareResult {
+            est_remaining,
+            parent_to_child_key,
+        }
     }
 }
 
@@ -312,14 +309,14 @@ impl<E: LatencyEstimator + Default + 'static> EstRequestState<E> {
 pub(crate) struct ChildRpcPrepareResult {
     pub est_remaining: u64,
     /// Parent->child key for admission control lookups.
-    pub key: u64,
+    pub parent_to_child_key: ParentToChildKey,
 }
 
 /// Per-child-RPC estimation state.
 #[derive(Debug, Clone)]
 pub(crate) struct EstChildState<E: LatencyEstimator + Default + 'static> {
     pub start_time: Option<Instant>,
-    pub parent_to_child_id: Option<ParentToChildId>,
+    pub parent_to_child_key: Option<ParentToChildKey>,
     pub child_method: Option<CowGrpcMethod>,
     pub server: Option<Arc<EstServerState<E>>>,
 }
@@ -328,7 +325,7 @@ impl<E: LatencyEstimator + Default + 'static> EstChildState<E> {
     pub(crate) fn new() -> Self {
         Self {
             start_time: None,
-            parent_to_child_id: None,
+            parent_to_child_key: None,
             child_method: None,
             server: None,
         }
@@ -336,12 +333,12 @@ impl<E: LatencyEstimator + Default + 'static> EstChildState<E> {
 
     pub(crate) fn setup(
         &mut self,
-        parent_to_child_id: ParentToChildId,
+        parent_to_child_key: ParentToChildKey,
         child_method: CowGrpcMethod,
         server: Arc<EstServerState<E>>,
     ) {
         self.start_time = Some(Instant::now());
-        self.parent_to_child_id = Some(parent_to_child_id);
+        self.parent_to_child_key = Some(parent_to_child_key);
         self.child_method = Some(child_method);
         self.server = Some(server);
     }
@@ -351,13 +348,11 @@ impl<E: LatencyEstimator + Default + 'static> EstChildState<E> {
             return;
         }
 
-        if let (Some(start_time), Some(parent_to_child_id), Some(server)) =
-            (self.start_time, &self.parent_to_child_id, &self.server)
+        if let (Some(start_time), Some(key), Some(server)) =
+            (self.start_time, &self.parent_to_child_key, &self.server)
         {
             let client_runtime = Instant::now().duration_since(start_time).as_micros() as u64;
-            server
-                .est_child_latency
-                .track(parent_to_child_id.to_key(), client_runtime);
+            server.est_child_latency.track(*key, client_runtime);
         }
     }
 }
