@@ -57,6 +57,30 @@ impl<E: LatencyEstimator + Default + 'static> EstServerState<E> {
             print_counter: AtomicUsize::new(0),
         }
     }
+
+    /// Periodic logging of latency estimates.
+    pub(crate) fn log_estimates(
+        &self,
+        parent_to_child_key: &ParentToChildKey,
+        est_remaining: u64,
+        est_remaining_mean: u64,
+        est_remaining_floor: u64,
+    ) {
+        if self.print_counter.fetch_add(1, Ordering::Relaxed) % 5000 == 0 {
+            let est_child = self
+                .est_child_latency
+                .get_estimate(*parent_to_child_key)
+                .unwrap_or(0);
+            log::info!(
+                "LAT_EST: p=>c: {}, est_child: {}, est_rem: {}, est_rem_mean: {}, est_rem_floor: {}",
+                parent_to_child_key,
+                est_child,
+                est_remaining,
+                est_remaining_mean,
+                est_remaining_floor,
+            );
+        }
+    }
 }
 
 /// Information extracted from a child RPC response.
@@ -223,31 +247,6 @@ impl<E: LatencyEstimator + Default + 'static> EstRequestState<E> {
         }
     }
 
-    /// Periodic logging of latency estimates.
-    pub(crate) fn log_estimates(
-        &self,
-        parent_to_child_key: &ParentToChildKey,
-        est_remaining: u64,
-        est_remaining_mean: u64,
-        est_remaining_floor: u64,
-    ) {
-        if self.server.print_counter.fetch_add(1, Ordering::Relaxed) % 5000 == 0 {
-            let est_child = self
-                .server
-                .est_child_latency
-                .get_estimate(*parent_to_child_key)
-                .unwrap_or(0);
-            log::info!(
-                "LAT_EST: p=>c: {}, est_child: {}, est_rem: {}, est_rem_mean: {}, est_rem_floor: {}",
-                parent_to_child_key,
-                est_child,
-                est_remaining,
-                est_remaining_mean,
-                est_remaining_floor,
-            );
-        }
-    }
-
     /// Setup child context and log estimates.
     /// Returns estimates for deadline computation and admission control lookups.
     pub(crate) fn prepare_before_child_rpc(
@@ -289,7 +288,7 @@ impl<E: LatencyEstimator + Default + 'static> EstRequestState<E> {
             .unwrap_or(0)
             .min(time_left);
 
-        self.log_estimates(
+        self.server.log_estimates(
             &parent_to_child_key,
             est_remaining,
             est_remaining_mean,
