@@ -252,14 +252,16 @@ mod tests {
         use std::sync::Arc;
         use tonic_core::masa_ext::resolve_method_name_from_http;
         use tonic_core::masa_ext::{ClientHooks, ParentHooks, ServerHooks};
-        use tonic_core::{GrpcMethod, Request, Response};
+        use tonic_core::{CowGrpcMethod, GrpcMethod, Request, Response};
 
         #[test]
         fn test_server_context_rms_integration() {
             let est = EstServerState::<LatencyRms>::new();
             let registry = MethodRegistry::global();
-            let parent_mid = registry.get_or_register_method("TestIntegration", "Parent");
-            let child_mid = registry.get_or_register_method("TestIntegration", "Child");
+            let parent_mid =
+                registry.get_or_register(CowGrpcMethod::new("TestIntegration", "Parent"));
+            let child_mid =
+                registry.get_or_register(CowGrpcMethod::new("TestIntegration", "Child"));
             let key = ParentToChildKey::parent_rpc_method(parent_mid).child_rpc_method(child_mid);
 
             // Inject an estimator with a short update interval (2) for testing.
@@ -403,8 +405,10 @@ mod tests {
 
             // Verify registry has IDs
             let registry = MethodRegistry::global();
-            let parent_id = registry.get_or_register_method("IntegrationService", "ParentMethod");
-            let child_id = registry.get_or_register_method("IntegrationService", "ChildMethod");
+            let parent_id =
+                registry.get_or_register(CowGrpcMethod::new("IntegrationService", "ParentMethod"));
+            let child_id =
+                registry.get_or_register(CowGrpcMethod::new("IntegrationService", "ChildMethod"));
 
             let key = child_ctx.policy.est.parent_to_child_key.unwrap();
             assert_eq!(key.parent(), parent_id);
@@ -421,9 +425,9 @@ mod tests {
             parent_ctx.finalize_before_serialization(&mut response_result);
 
             // 7. Verify registry names
-            let (p_s, p_m) = registry.get_method_name(parent_id).unwrap();
-            assert_eq!(p_s, "IntegrationService");
-            assert_eq!(p_m, "ParentMethod");
+            let parent_method = registry.get_method_name(parent_id).unwrap();
+            assert_eq!(parent_method.service(), "IntegrationService");
+            assert_eq!(parent_method.method(), "ParentMethod");
         }
 
         /// Verify that `PredictiveAdmission::admission_check` admits when there
@@ -447,8 +451,8 @@ mod tests {
                 .build();
 
             let registry = MethodRegistry::global();
-            let parent_mid = registry.get_or_register_method("FloorService", "Parent");
-            let child_mid = registry.get_or_register_method("FloorService", "Child");
+            let parent_mid = registry.get_or_register(CowGrpcMethod::new("FloorService", "Parent"));
+            let child_mid = registry.get_or_register(CowGrpcMethod::new("FloorService", "Child"));
             let key = ParentToChildKey::parent_rpc_method(parent_mid).child_rpc_method(child_mid);
 
             // With est_remaining_floor = 0, the floor check is: time_now > e2e_deadline.

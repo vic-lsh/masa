@@ -71,8 +71,7 @@ impl Layer for PredAdmissionLayer {
     type Child = PredAdmissionChild;
 
     fn new(method: &CowGrpcMethod, server: &PredAdmissionServer, ctx: &mut Context) -> Self {
-        let resolved_method_id =
-            MethodRegistry::global().get_or_register_method(method.service(), method.method());
+        let resolved_method_id = MethodRegistry::global().get_or_register(method.clone());
         // Set root_method at ingress (hop_count == 0)
         if ctx.hop_count() == 0 {
             ctx.root_method = Some(RootMethod {
@@ -80,9 +79,10 @@ impl Layer for PredAdmissionLayer {
                 method: method.method().to_string(),
             });
         }
-        let root_method_id = ctx
-            .root_method()
-            .map(|rm| MethodRegistry::global().get_or_register_method(&rm.service, &rm.method));
+        let root_method_id = ctx.root_method().map(|rm| {
+            MethodRegistry::global()
+                .get_or_register(CowGrpcMethod::new(rm.service.clone(), rm.method.clone()))
+        });
         Self {
             est: EstRequestState::new(resolved_method_id, root_method_id, server.est.clone()),
             pred_admission: server.pred_admission.clone(),
