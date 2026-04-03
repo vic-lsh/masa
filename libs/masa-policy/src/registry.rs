@@ -1,8 +1,9 @@
-use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
+
+use tonic_core::CowGrpcMethod;
 
 /// Opaque method identifier. Only handed out by [`MethodRegistry`].
 ///
@@ -15,8 +16,8 @@ pub struct MethodId(u64);
 /// Global registry for mapping (Service, Method) pairs to unique IDs.
 /// This allows us to use u64 IDs in the hot path instead of hashing strings.
 pub struct MethodRegistry {
-    map: Mutex<HashMap<(Cow<'static, str>, Cow<'static, str>), MethodId>>,
-    id_map: Mutex<HashMap<MethodId, (Cow<'static, str>, Cow<'static, str>)>>,
+    map: Mutex<HashMap<CowGrpcMethod, MethodId>>,
+    id_map: Mutex<HashMap<MethodId, CowGrpcMethod>>,
     next_id: AtomicU64,
 }
 
@@ -44,48 +45,34 @@ impl MethodRegistry {
     }
 
     /// Get the ID for a (Service, Method) pair, registering it if it doesn't exist.
-    pub fn get_or_register_method(&self, service: &str, method: &str) -> MethodId {
-        // Optimized path: check if exists
+    pub fn get_or_register(&self, key: CowGrpcMethod) -> MethodId {
+        // Fast path: check if already registered
         {
             let map = self.map.lock().unwrap();
-            let key_ref = (Cow::Borrowed(service), Cow::Borrowed(method));
-            if let Some(&id) = map.get(&key_ref) {
+            if let Some(&id) = map.get(&key) {
                 return id;
             }
         }
 
-        // Slow path: register (need to acquire both locks, or just sequentialize)
-        // We use a separate lock scope or just lock one then the other.
-        // Since we are single-threaded mostly, contention is low.
-        // To be safe against deadlocks (though unlikely here with simple hierarchy),
-        // we can just re-acquire map lock then id_map lock.
-
+        // Slow path: register
         let mut map = self.map.lock().unwrap();
-        // Double check
-        let key_ref = (Cow::Borrowed(service), Cow::Borrowed(method));
-        if let Some(&id) = map.get(&key_ref) {
+        // Double check after re-acquiring lock
+        if let Some(&id) = map.get(&key) {
             return id;
         }
 
         let id = MethodId(self.next_id.fetch_add(1, Ordering::Relaxed));
-        // Create owned copies for storage
-        let s_owned: Cow<'static, str> = Cow::Owned(service.to_string());
-        let m_owned: Cow<'static, str> = Cow::Owned(method.to_string());
+        map.insert(key.clone(), id);
 
-        let key = (s_owned.clone(), m_owned.clone());
-        map.insert(key, id);
-
-        // Insert into reverse map
         let mut id_map = self.id_map.lock().unwrap();
-        id_map.insert(id, (s_owned, m_owned));
+        id_map.insert(id, key);
 
         id
     }
 
     /// Reverse lookup: Get (Service, Method) from ID.
-    /// Returns owned strings (clones) because we can't return references into the lock.
-    pub fn get_method_name(&self, id: MethodId) -> Option<(String, String)> {
+    pub fn get_method_name(&self, id: MethodId) -> Option<CowGrpcMethod> {
         let map = self.id_map.lock().unwrap();
-        map.get(&id).map(|(s, m)| (s.to_string(), m.to_string()))
+        map.get(&id).cloned()
     }
 }

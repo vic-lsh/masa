@@ -183,7 +183,7 @@ where
 fn format_method_name(id: MethodId) -> String {
     MethodRegistry::global()
         .get_method_name(id)
-        .map(|(s, m)| format!("{}::{}", s, m))
+        .map(|m| format!("{}::{}", m.service(), m.method()))
         .unwrap_or_else(|| format!("{:?}", id))
 }
 
@@ -258,9 +258,10 @@ pub(crate) fn spawn_method_stats_printer<E: LatencyEstimator + Default + Send + 
 mod tests {
     use super::*;
     use masa_core::LatencyRms;
+    use tonic_core::CowGrpcMethod;
 
     fn test_method_id() -> MethodId {
-        MethodRegistry::global().get_or_register_method("TestService", "TestMethod")
+        MethodRegistry::global().get_or_register(CowGrpcMethod::new("TestService", "TestMethod"))
     }
 
     #[test]
