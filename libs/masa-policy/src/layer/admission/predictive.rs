@@ -13,15 +13,17 @@ use std::task::Poll;
 #[cfg(feature = "ac_pred")]
 use std::time::Instant;
 
-use masa_core::{Context, PriorityHint};
+use masa_core::{Context, PriorityHint, RootMethod};
 use tonic_core::{Code, CowGrpcMethod, Response, Status};
 
 use super::super::{ChildRpcContext, Layer, LayerChild, LayerServer};
 use crate::layer::est::estimator::DefaultLatencyEstimator;
+use crate::layer::est::latency_map::{MethodKey, ParentToChildKey};
 use crate::layer::est::state::{
     is_early_return_response, EstChildState, EstRequestState, EstServerState,
 };
 use crate::policy_params::PolicyParams;
+use crate::registry::MethodId;
 use crate::MethodRegistry;
 
 /// Result of the two-layer admission check.
@@ -73,9 +75,14 @@ impl Layer for PredAdmissionLayer {
             MethodRegistry::global().get_or_register_method(method.service(), method.method());
         // Set root_method at ingress (hop_count == 0)
         if ctx.hop_count() == 0 {
-            ctx.root_method = resolved_method_id;
+            ctx.root_method = Some(RootMethod {
+                service: method.service().to_string(),
+                method: method.method().to_string(),
+            });
         }
-        let root_method_id = ctx.root_method();
+        let root_method_id = ctx
+            .root_method()
+            .map(|rm| MethodRegistry::global().get_or_register_method(&rm.service, &rm.method));
         Self {
             est: EstRequestState::new(resolved_method_id, root_method_id, server.est.clone()),
             pred_admission: server.pred_admission.clone(),
@@ -136,9 +143,9 @@ impl Layer for PredAdmissionLayer {
 
             let admission = self.pred_admission.admission_check(
                 &self.est.server,
-                self.est.resolved_method_id,
                 ctx,
-                result.key,
+                result.parent_to_child_key,
+                self.est.root_method_id,
             );
             if admission != AdmissionResult::Admit {
                 return Err(Status::new(
@@ -182,9 +189,11 @@ impl Layer for PredAdmissionLayer {
         if ctx.hop_count() == 0 && response.is_ok() {
             if let Some(acc_cost) = info.accumulated_compute_us {
                 self.pred_admission.record_completion(acc_cost);
-                let root = ctx.root_method();
-                if root != 0 {
-                    self.est.server.est_accumulated_cost.track(root, acc_cost);
+                if let Some(root_mid) = self.est.root_method_id {
+                    self.est
+                        .server
+                        .est_accumulated_cost
+                        .track(MethodKey(root_mid), acc_cost);
                 }
             }
         }
@@ -410,9 +419,9 @@ impl PredictiveAdmission {
     pub(crate) fn admission_check(
         &self,
         est_server: &EstServerState<DefaultLatencyEstimator>,
-        _resolved_method_id: u64,
         ctx: &Context,
-        key: u64,
+        key: ParentToChildKey,
+        root_method_id: Option<MethodId>,
     ) -> AdmissionResult {
         use masa_core::time_now;
 
@@ -435,11 +444,10 @@ impl PredictiveAdmission {
         // Uses accumulated compute cost keyed by root API type. Falls back to
         // wall-clock child latency when root_method is not yet set (cold start).
         if ctx.hop_count() == 0 {
-            let root = ctx.root_method();
-            let est_cost = if root != 0 {
+            let est_cost = if let Some(root_mid) = root_method_id {
                 est_server
                     .est_accumulated_cost
-                    .get_estimate(root)
+                    .get_estimate(MethodKey(root_mid))
                     .unwrap_or(0)
             } else {
                 est_server.est_child_latency.get_estimate(key).unwrap_or(0)
@@ -480,9 +488,9 @@ impl PredictiveAdmission {
     pub(crate) fn admission_check(
         &self,
         est_server: &EstServerState<DefaultLatencyEstimator>,
-        _resolved_method_id: u64,
         ctx: &Context,
-        key: u64,
+        key: ParentToChildKey,
+        _root_method_id: Option<MethodId>,
     ) -> AdmissionResult {
         use masa_core::time_now;
 

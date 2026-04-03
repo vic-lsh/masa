@@ -4,11 +4,19 @@ use std::fmt;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 
+/// Opaque method identifier. Only handed out by [`MethodRegistry`].
+///
+/// Process-local: two different processes may assign different `MethodId`s to
+/// the same (service, method) pair. Use [`RootMethod`](masa_core::RootMethod)
+/// for cross-process identity.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct MethodId(u64);
+
 /// Global registry for mapping (Service, Method) pairs to unique IDs.
 /// This allows us to use u64 IDs in the hot path instead of hashing strings.
 pub struct MethodRegistry {
-    map: Mutex<HashMap<(Cow<'static, str>, Cow<'static, str>), u64>>,
-    id_map: Mutex<HashMap<u64, (Cow<'static, str>, Cow<'static, str>)>>,
+    map: Mutex<HashMap<(Cow<'static, str>, Cow<'static, str>), MethodId>>,
+    id_map: Mutex<HashMap<MethodId, (Cow<'static, str>, Cow<'static, str>)>>,
     next_id: AtomicU64,
 }
 
@@ -36,7 +44,7 @@ impl MethodRegistry {
     }
 
     /// Get the ID for a (Service, Method) pair, registering it if it doesn't exist.
-    pub fn get_or_register_method(&self, service: &str, method: &str) -> u64 {
+    pub fn get_or_register_method(&self, service: &str, method: &str) -> MethodId {
         // Optimized path: check if exists
         {
             let map = self.map.lock().unwrap();
@@ -59,7 +67,7 @@ impl MethodRegistry {
             return id;
         }
 
-        let id = self.next_id.fetch_add(1, Ordering::Relaxed);
+        let id = MethodId(self.next_id.fetch_add(1, Ordering::Relaxed));
         // Create owned copies for storage
         let s_owned: Cow<'static, str> = Cow::Owned(service.to_string());
         let m_owned: Cow<'static, str> = Cow::Owned(method.to_string());
@@ -76,7 +84,7 @@ impl MethodRegistry {
 
     /// Reverse lookup: Get (Service, Method) from ID.
     /// Returns owned strings (clones) because we can't return references into the lock.
-    pub fn get_method_name(&self, id: u64) -> Option<(String, String)> {
+    pub fn get_method_name(&self, id: MethodId) -> Option<(String, String)> {
         let map = self.id_map.lock().unwrap();
         map.get(&id).map(|(s, m)| (s.to_string(), m.to_string()))
     }
