@@ -119,7 +119,7 @@ impl Layer for PredAdmissionLayer {
             }
         }
 
-        self.est.start_compute_tracking();
+        self.est.compute.start_compute_tracking();
         Ok(())
     }
 
@@ -220,7 +220,7 @@ impl Layer for PredAdmissionLayer {
         _ctx: &Context,
         _poll: &Poll<Result<Response<Ret>, Status>>,
     ) -> Result<(), Result<Response<Ret>, Status>> {
-        self.est.stop_compute_tracking();
+        self.est.compute.stop_compute_tracking();
         Ok(())
     }
 
