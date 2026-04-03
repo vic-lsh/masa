@@ -1,4 +1,3 @@
-use log::info;
 use log::warn;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
@@ -755,17 +754,9 @@ where
         log::info!("Before Connection");
 
         let mut load_gen = {
-            let client = {
-                let mut client = C::connect_with_retry(gen_cfg.addr.clone())
-                    .await
-                    .expect(&format!("Should be able to connect to {}", gen_cfg.addr));
-                C::ping(&mut client)
-                    .await
-                    .expect("Should be able to ping to client");
-                info!("Connected to {}", gen_cfg.addr);
-                client
-            };
-
+            let client = C::connect_with_retry(gen_cfg.addr.clone())
+                .await
+                .expect(&format!("Should be able to connect to {}", gen_cfg.addr));
             log::info!("Connected to {}", gen_cfg.addr);
 
             let load_gen = LoadGenerator::new(seed, gen_cfg.clone(), *rps, client, api_handlers);
