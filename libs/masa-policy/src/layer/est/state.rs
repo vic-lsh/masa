@@ -90,6 +90,43 @@ pub(crate) struct ChildResponseInfo {
     pub accumulated_compute_us: Option<u64>,
 }
 
+/// Tracks cumulative compute time (CPU time spent in poll) for a single request.
+#[derive(Debug)]
+pub(crate) struct ComputeTracker {
+    /// Accumulated compute microseconds across all polls.
+    poll_compute_us: AtomicU64,
+    /// Start instant of the current poll (`None` when not inside a poll).
+    poll_start: Mutex<Option<Instant>>,
+}
+
+impl ComputeTracker {
+    pub(crate) fn new() -> Self {
+        Self {
+            poll_compute_us: AtomicU64::new(0),
+            poll_start: Mutex::new(None),
+        }
+    }
+
+    /// Start tracking compute time for the current poll.
+    pub(crate) fn start_compute_tracking(&self) {
+        *self.poll_start.lock().unwrap() = Some(Instant::now());
+    }
+
+    /// Stop tracking compute time and accumulate elapsed time.
+    pub(crate) fn stop_compute_tracking(&self) {
+        if let Some(start) = self.poll_start.lock().unwrap().take() {
+            let elapsed_us = start.elapsed().as_micros() as u64;
+            self.poll_compute_us
+                .fetch_add(elapsed_us, Ordering::Relaxed);
+        }
+    }
+
+    /// Read the accumulated compute time in microseconds.
+    pub(crate) fn compute_us(&self) -> u64 {
+        self.poll_compute_us.load(Ordering::Relaxed)
+    }
+}
+
 /// Per-request estimation state.
 #[derive(Debug)]
 pub(crate) struct EstRequestState<E: LatencyEstimator + Default + 'static> {
@@ -97,8 +134,7 @@ pub(crate) struct EstRequestState<E: LatencyEstimator + Default + 'static> {
     pub root_method_id: Option<MethodId>,
     pub server: Arc<EstServerState<E>>,
     pub child_end_times: Mutex<Vec<(ParentToChildKey, Instant)>>,
-    pub poll_compute_us: AtomicU64,
-    pub poll_start: Mutex<Option<Instant>>,
+    pub compute: ComputeTracker,
     pub max_child_downstream_util: Mutex<f32>,
     pub accumulated_child_compute_us: AtomicU64,
     pub request_start: Instant,
@@ -115,8 +151,7 @@ impl<E: LatencyEstimator + Default + 'static> EstRequestState<E> {
             root_method_id,
             server,
             child_end_times: Mutex::new(Vec::new()),
-            poll_compute_us: AtomicU64::new(0),
-            poll_start: Mutex::new(None),
+            compute: ComputeTracker::new(),
             max_child_downstream_util: Mutex::new(0.0),
             accumulated_child_compute_us: AtomicU64::new(0),
             request_start: Instant::now(),
@@ -133,20 +168,6 @@ impl<E: LatencyEstimator + Default + 'static> EstRequestState<E> {
     fn method_latency_key(&self) -> Option<RootToLocalKey> {
         let root = self.root_method_id?;
         Some(RootToLocalKey::root_rpc_method(root).local_rpc_method(self.resolved_method_id))
-    }
-
-    /// Start tracking compute time for the current poll.
-    pub(crate) fn start_compute_tracking(&self) {
-        *self.poll_start.lock().unwrap() = Some(Instant::now());
-    }
-
-    /// Stop tracking compute time and accumulate elapsed time.
-    pub(crate) fn stop_compute_tracking(&self) {
-        if let Some(start) = self.poll_start.lock().unwrap().take() {
-            let elapsed_us = start.elapsed().as_micros() as u64;
-            self.poll_compute_us
-                .fetch_add(elapsed_us, Ordering::Relaxed);
-        }
     }
 
     /// Track latency observations for completed request.
@@ -174,7 +195,7 @@ impl<E: LatencyEstimator + Default + 'static> EstRequestState<E> {
     /// The caller is responsible for serializing `ctx` into the response;
     /// this method only mutates the in-memory context.
     pub(crate) fn inject_response_meta(&self, ctx: &mut Context) {
-        let compute_time_us = self.poll_compute_us.load(Ordering::Relaxed);
+        let compute_time_us = self.compute.compute_us();
         let accumulated_compute_us =
             compute_time_us + self.accumulated_child_compute_us.load(Ordering::Relaxed);
         let utilization = tokio::task::current_utilization() as f32;
@@ -345,5 +366,36 @@ pub(crate) fn is_early_return_response<T>(response: &Result<Response<T>, Status>
     match response {
         Ok(_) => false,
         Err(status) => status.code() == Code::DeadlineExceeded,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn compute_tracker_accumulates_across_polls() {
+        let tracker = ComputeTracker::new();
+        assert_eq!(tracker.compute_us(), 0);
+
+        tracker.start_compute_tracking();
+        std::thread::sleep(std::time::Duration::from_millis(1));
+        tracker.stop_compute_tracking();
+
+        assert!(tracker.compute_us() > 0);
+
+        let first = tracker.compute_us();
+        tracker.start_compute_tracking();
+        std::thread::sleep(std::time::Duration::from_millis(1));
+        tracker.stop_compute_tracking();
+
+        assert!(tracker.compute_us() > first);
+    }
+
+    #[test]
+    fn compute_tracker_stop_without_start_is_noop() {
+        let tracker = ComputeTracker::new();
+        tracker.stop_compute_tracking();
+        assert_eq!(tracker.compute_us(), 0);
     }
 }
