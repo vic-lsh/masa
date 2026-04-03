@@ -264,7 +264,8 @@ def generate_plots(args, plot_data: PlotData | None = None) -> None:
     futures = []
 
     for i in range(repeats):
-        output_dir = os.path.join(args.output_dir, str(i))
+        queueing_dir = os.path.join(args.output_dir, str(i), "queueing")
+        os.makedirs(queueing_dir, exist_ok=True)
         for api in apis:
             has_component_data = False
 
@@ -282,7 +283,7 @@ def generate_plots(args, plot_data: PlotData | None = None) -> None:
                     (
                         _plot_queueing_breakdown,
                         (
-                            os.path.join(output_dir, f"queueing_breakdown_{api}.png"),
+                            os.path.join(queueing_dir, f"queueing_breakdown_{api}.png"),
                             api,
                             policies,
                             rps_values,
@@ -296,7 +297,7 @@ def generate_plots(args, plot_data: PlotData | None = None) -> None:
                     (
                         _plot_total_queueing_latency,
                         (
-                            os.path.join(output_dir, f"queueing_total_{api}.png"),
+                            os.path.join(queueing_dir, f"queueing_total_{api}.png"),
                             api,
                             policies,
                             rps_values,
