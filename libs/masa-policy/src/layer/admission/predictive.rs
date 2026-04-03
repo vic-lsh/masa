@@ -42,14 +42,14 @@ pub(crate) enum AdmissionResult {
 /// Server-level predictive layer state (shared across requests).
 #[derive(Debug)]
 pub(crate) struct PredAdmissionServer {
-    est: Arc<LatencyEstimators<DefaultLatencyEstimator>>,
+    est: LatencyEstimators<DefaultLatencyEstimator>,
     pred_admission: Arc<PredictiveAdmission>,
 }
 
 impl LayerServer for PredAdmissionServer {
     fn new() -> Self {
         Self {
-            est: Arc::new(LatencyEstimators::new()),
+            est: LatencyEstimators::new(),
             pred_admission: Arc::new(PredictiveAdmission::new()),
         }
     }
@@ -185,27 +185,33 @@ impl Layer for PredAdmissionLayer {
         response: &mut Result<Response<T>, Status>,
         child_ctx: &PredAdmissionChild,
     ) -> Result<(), Status> {
-        let child_tracker = child_ctx
-            .child_tracker
-            .as_ref()
-            .expect("ChildRPCTracker must be initialized via before_child_rpc");
-        child_tracker.finalize(response);
-        let info = self
-            .latency_tracker
-            .after_child_rpc(response, child_tracker);
+        // Normal path: `before_child_rpc` initialized `child_tracker`. Tests (and any
+        // unusual call order) may invoke `after_child_rpc` without it — skip estimator
+        // bookkeeping but still run `sched_pred` error propagation below.
+        let info = if let Some(child_tracker) = child_ctx.child_tracker.as_ref() {
+            child_tracker.finalize(response);
+            Some(
+                self.latency_tracker
+                    .after_child_rpc(response, child_tracker),
+            )
+        } else {
+            None
+        };
 
         // Accumulate completed cost for goodput tracking (ingress only, success only).
         // Uses accumulated compute cost from the child's entire subtree instead of
         // wall-clock child latency to avoid conflating queueing with compute.
         #[cfg(feature = "ac_pred")]
         if ctx.hop_count() == 0 && response.is_ok() {
-            if let Some(acc_cost) = info.accumulated_compute_us {
-                self.pred_admission.record_completion(acc_cost);
-                if let Some(root_mid) = self.latency_tracker.root_method_id {
-                    self.latency_tracker
-                        .est
-                        .accumulated_cost
-                        .track(MethodKey(root_mid), acc_cost);
+            if let Some(ref info) = info {
+                if let Some(acc_cost) = info.accumulated_compute_us {
+                    self.pred_admission.record_completion(acc_cost);
+                    if let Some(root_mid) = self.latency_tracker.root_method_id {
+                        self.latency_tracker
+                            .est
+                            .accumulated_cost
+                            .track(MethodKey(root_mid), acc_cost);
+                    }
                 }
             }
         }
