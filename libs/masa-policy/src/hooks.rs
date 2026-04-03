@@ -117,13 +117,6 @@ pub struct ParentContext {
     pub(crate) queue_latency: QueueLatencyLayer,
 }
 
-impl ParentContext {
-    #[cfg(all(feature = "estimator", test))]
-    pub(crate) fn ctx(&self) -> &Context {
-        &self.ctx
-    }
-}
-
 impl ParentHooks<ChildContext, ServerContext> for ParentContext {
     fn begin<B>(
         method: GrpcMethod,
@@ -252,52 +245,54 @@ mod tests {
     mod est_tests {
         use super::super::{ChildContext, ParentContext, ServerContext};
         use crate::context_ext::MASA_CONTEXT_HEADER;
-        use crate::layer::est::estimator::ParentToChildId;
-        use crate::layer::est::state::EstServerState;
+        use crate::layer::est::latency_map::ParentToChildKey;
+        use crate::layer::est::state::LatencyEstimators;
+        use crate::MethodRegistry;
         use masa_core::{ContextBuilder, LatencyRms};
         use std::sync::Arc;
         use tonic_core::masa_ext::resolve_method_name_from_http;
         use tonic_core::masa_ext::{ClientHooks, ParentHooks, ServerHooks};
-        use tonic_core::{GrpcMethod, Request, Response};
+        use tonic_core::{CowGrpcMethod, GrpcMethod, Request, Response};
 
         #[test]
         fn test_server_context_rms_integration() {
-            let est = EstServerState::<LatencyRms>::new();
-            let method = ParentToChildId {
-                parent_id: 1,
-                child_id: 2,
-            };
-            let key = method.to_key();
+            let est = LatencyEstimators::<LatencyRms>::new();
+            let registry = MethodRegistry::global();
+            let parent_mid =
+                registry.get_or_register(CowGrpcMethod::new("TestIntegration", "Parent"));
+            let child_mid =
+                registry.get_or_register(CowGrpcMethod::new("TestIntegration", "Child"));
+            let key = ParentToChildKey::parent_rpc_method(parent_mid).child_rpc_method(child_mid);
 
             // Inject an estimator with a short update interval (2) for testing.
             // By default, LatencyRms has a large update interval (512), which makes testing hard.
             {
-                est.est_child_latency.insert(key, LatencyRms::new(2));
+                est.child_wallclock_map().insert(key, LatencyRms::new(2));
             }
 
             // 1st track: sum_sq=100, count=1, since_update=1. No update yet.
-            est.est_child_latency.track(key, 10);
+            est.track_child_wallclock(key, 10);
 
             // Estimate uses cached RMS value (initially 0).
-            let val = est.est_child_latency.get_estimate(key);
+            let val = est.est_child_wallclock(key);
             assert_eq!(val, Some(0));
 
             // 2nd track: sum_sq=200, count=2, since_update=2. Update triggers.
             // RMS = sqrt( (10^2 + 10^2) / 2 ) = 10.
-            est.est_child_latency.track(key, 10);
+            est.track_child_wallclock(key, 10);
 
-            let val = est.est_child_latency.get_estimate(key);
+            let val = est.est_child_wallclock(key);
             assert_eq!(val, Some(10));
 
             // 3rd track: sum_sq=200+400=600, count=3, since_update=1. No update yet.
-            est.est_child_latency.track(key, 20);
-            let val = est.est_child_latency.get_estimate(key);
+            est.track_child_wallclock(key, 20);
+            let val = est.est_child_wallclock(key);
             assert_eq!(val, Some(10)); // Still 10
 
             // 4th track: sum_sq=600+400=1000, count=4, since_update=2. Update triggers.
             // RMS = sqrt( (100 + 100 + 400 + 400) / 4 ) = sqrt(250) ~ 15.
-            est.est_child_latency.track(key, 20);
-            let val = est.est_child_latency.get_estimate(key);
+            est.track_child_wallclock(key, 20);
+            let val = est.est_child_wallclock(key);
             // integer_sqrt(250) is 15 (15*15=225, 16*16=256)
             assert_eq!(val, Some(15));
         }
@@ -404,35 +399,23 @@ mod tests {
                 .before_child_rpc(child_method, &mut child_req, &mut child_ctx)
                 .unwrap();
 
-            // Verify child context has ID and Server
-            assert!(child_ctx.policy.est.parent_to_child_id.is_some());
-            assert!(child_ctx.policy.est.server.is_some());
+            // Verify child context was initialized by before_child_rpc
+            let child_tracker = child_ctx
+                .policy
+                .child_tracker
+                .as_ref()
+                .expect("child_tracker should be initialized after before_child_rpc");
 
             // Verify registry has IDs
             let registry = MethodRegistry::global();
-            let parent_id = registry.get_or_register_method("IntegrationService", "ParentMethod");
-            let child_id = registry.get_or_register_method("IntegrationService", "ChildMethod");
+            let parent_id =
+                registry.get_or_register(CowGrpcMethod::new("IntegrationService", "ParentMethod"));
+            let child_id =
+                registry.get_or_register(CowGrpcMethod::new("IntegrationService", "ChildMethod"));
 
-            assert_eq!(
-                child_ctx
-                    .policy
-                    .est
-                    .parent_to_child_id
-                    .clone()
-                    .unwrap()
-                    .parent_id,
-                parent_id
-            );
-            assert_eq!(
-                child_ctx
-                    .policy
-                    .est
-                    .parent_to_child_id
-                    .clone()
-                    .unwrap()
-                    .child_id,
-                child_id
-            );
+            let key = child_tracker.key;
+            assert_eq!(key.parent(), parent_id);
+            assert_eq!(key.child(), child_id);
 
             // 5. Simulate Child Response
             let mut response = Ok(Response::new(()));
@@ -445,16 +428,20 @@ mod tests {
             parent_ctx.finalize_before_serialization(&mut response_result);
 
             // 7. Verify registry names
-            let (p_s, p_m) = registry.get_method_name(parent_id).unwrap();
-            assert_eq!(p_s, "IntegrationService");
-            assert_eq!(p_m, "ParentMethod");
+            let parent_method = registry.get_method_name(parent_id).unwrap();
+            assert_eq!(parent_method.service(), "IntegrationService");
+            assert_eq!(parent_method.method(), "ParentMethod");
         }
 
-        /// Verify that `admission_check` uses the floor-based check.
-        /// The floor check should admit when there is plenty of time left (no shed).
+        /// Verify that `PredictiveAdmission::admission_check` admits when there
+        /// is plenty of time left (floor-based Layer 1 check).
         #[test]
         fn test_admission_check_floor_based_admits_with_budget() {
-            let server_ctx = Arc::new(ServerContext::new("FloorService"));
+            use crate::layer::admission::predictive::{AdmissionResult, PredictiveAdmission};
+            use crate::layer::est::estimator::DefaultLatencyEstimator;
+
+            let est = LatencyEstimators::<DefaultLatencyEstimator>::new();
+            let pred = PredictiveAdmission::new();
 
             // Generous deadline: 100ms from now.
             let slo_us = 100_000u64;
@@ -466,18 +453,19 @@ mod tests {
                 .deadline(deadline)
                 .build();
 
-            let req = http::Request::builder()
-                .header(MASA_CONTEXT_HEADER, ctx.to_header_string())
-                .body(())
-                .unwrap();
+            let registry = MethodRegistry::global();
+            let parent_mid = registry.get_or_register(CowGrpcMethod::new("FloorService", "Parent"));
+            let child_mid = registry.get_or_register(CowGrpcMethod::new("FloorService", "Child"));
+            let key = ParentToChildKey::parent_rpc_method(parent_mid).child_rpc_method(child_mid);
 
-            let method = GrpcMethod::new("FloorService", "ParentMethod");
-            let parent_ctx = ParentContext::begin(method, &req, server_ctx.clone());
-
-            // With est_remaining_floor = 0, the floor check is: time_now > e2e_deadline - 0 = e2e_deadline.
+            // With est_remaining_floor = 0, the floor check is: time_now > e2e_deadline.
             // Since e2e_deadline is 100ms in the future, this should NOT shed.
-            let shed = parent_ctx.policy.est.admission_check(parent_ctx.ctx(), 0);
-            assert!(!shed, "should admit when plenty of time remains");
+            let result = pred.admission_check(&est, &ctx, key, None);
+            assert_eq!(
+                result,
+                AdmissionResult::Admit,
+                "should admit when plenty of time remains"
+            );
         }
     }
 }
