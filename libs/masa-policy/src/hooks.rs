@@ -267,32 +267,32 @@ mod tests {
             // Inject an estimator with a short update interval (2) for testing.
             // By default, LatencyRms has a large update interval (512), which makes testing hard.
             {
-                est.child_latency.insert(key, LatencyRms::new(2));
+                est.child_wallclock_map().insert(key, LatencyRms::new(2));
             }
 
             // 1st track: sum_sq=100, count=1, since_update=1. No update yet.
-            est.child_latency.track(key, 10);
+            est.track_child_wallclock(key, 10);
 
             // Estimate uses cached RMS value (initially 0).
-            let val = est.child_latency.get_estimate(key);
+            let val = est.est_child_wallclock(key);
             assert_eq!(val, Some(0));
 
             // 2nd track: sum_sq=200, count=2, since_update=2. Update triggers.
             // RMS = sqrt( (10^2 + 10^2) / 2 ) = 10.
-            est.child_latency.track(key, 10);
+            est.track_child_wallclock(key, 10);
 
-            let val = est.child_latency.get_estimate(key);
+            let val = est.est_child_wallclock(key);
             assert_eq!(val, Some(10));
 
             // 3rd track: sum_sq=200+400=600, count=3, since_update=1. No update yet.
-            est.child_latency.track(key, 20);
-            let val = est.child_latency.get_estimate(key);
+            est.track_child_wallclock(key, 20);
+            let val = est.est_child_wallclock(key);
             assert_eq!(val, Some(10)); // Still 10
 
             // 4th track: sum_sq=600+400=1000, count=4, since_update=2. Update triggers.
             // RMS = sqrt( (100 + 100 + 400 + 400) / 4 ) = sqrt(250) ~ 15.
-            est.child_latency.track(key, 20);
-            let val = est.child_latency.get_estimate(key);
+            est.track_child_wallclock(key, 20);
+            let val = est.est_child_wallclock(key);
             // integer_sqrt(250) is 15 (15*15=225, 16*16=256)
             assert_eq!(val, Some(15));
         }
@@ -413,7 +413,7 @@ mod tests {
             let child_id =
                 registry.get_or_register(CowGrpcMethod::new("IntegrationService", "ChildMethod"));
 
-            let key = child_tracker.parent_to_child_key;
+            let key = child_tracker.key;
             assert_eq!(key.parent(), parent_id);
             assert_eq!(key.child(), child_id);
 
