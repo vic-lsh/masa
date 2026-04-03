@@ -20,7 +20,8 @@ use super::super::{ChildRpcContext, Layer, LayerChild, LayerServer};
 use crate::layer::est::estimator::DefaultLatencyEstimator;
 use crate::layer::est::latency_map::{MethodKey, ParentToChildKey};
 use crate::layer::est::state::{
-    is_early_return_response, ChildRPCTracker, LatencyEstimators, RequestLatencyTracker,
+    is_early_return_response, ChildRPCTracker, EstimationTracker, LatencyEstimators,
+    RequestMetadataTracker,
 };
 use crate::policy_params::PolicyParams;
 use crate::registry::MethodId;
@@ -60,7 +61,8 @@ impl LayerServer for PredAdmissionServer {
 /// Per-request predictive layer state.
 #[derive(Debug)]
 pub(crate) struct PredAdmissionLayer {
-    pub(crate) latency_tracker: RequestLatencyTracker<DefaultLatencyEstimator>,
+    estimation: EstimationTracker<DefaultLatencyEstimator>,
+    request_metadata: RequestMetadataTracker,
     pred_admission: Arc<PredictiveAdmission>,
     rpc: CowGrpcMethod,
     feasibility_checked: AtomicBool,
@@ -84,11 +86,12 @@ impl Layer for PredAdmissionLayer {
                 .get_or_register(CowGrpcMethod::new(rm.service.clone(), rm.method.clone()))
         });
         Self {
-            latency_tracker: RequestLatencyTracker::new(
+            estimation: EstimationTracker::new(
                 resolved_method_id,
                 root_method_id,
                 server.est.clone(),
             ),
+            request_metadata: RequestMetadataTracker::new(),
             pred_admission: server.pred_admission.clone(),
             rpc: method.clone(),
             feasibility_checked: AtomicBool::new(false),
@@ -109,7 +112,7 @@ impl Layer for PredAdmissionLayer {
         // exceeds remaining time. Only checked once — after the first poll the
         // request is in-flight and should not be killed by this coarse check.
         if !self.feasibility_checked.swap(true, Ordering::Relaxed) {
-            if let Some(est) = self.latency_tracker.estimate_method_latency() {
+            if let Some(est) = self.estimation.est_method_wallclock() {
                 if masa_core::time_now() + est > ctx.e2e_deadline() {
                     return Err(Err(Status::new(
                         Code::DeadlineExceeded,
@@ -123,7 +126,7 @@ impl Layer for PredAdmissionLayer {
             }
         }
 
-        self.latency_tracker.compute.start_compute_tracking();
+        self.request_metadata.start_poll();
         Ok(())
     }
 
@@ -140,38 +143,41 @@ impl Layer for PredAdmissionLayer {
         _request: &mut tonic_core::Request<T>,
         child_rpc: &mut ChildRpcContext,
     ) -> Result<(), Status> {
-        let est_remaining = {
-            let result = self.latency_tracker.prepare_before_child_rpc(
-                ctx,
-                child_method_name,
-                &mut child_ctx.child_tracker,
-            );
+        let child_tracker = self.estimation.begin_child(child_method_name);
+        let time_left = ctx.e2e_deadline().saturating_sub(masa_core::time_now());
+        let remaining = self
+            .estimation
+            .est
+            .est_after_child_wallclock(child_tracker.key, time_left);
 
-            let admission = self.pred_admission.admission_check(
-                &self.latency_tracker.est,
-                ctx,
-                result.parent_to_child_key,
-                self.latency_tracker.root_method_id,
-            );
-            if admission != AdmissionResult::Admit {
-                return Err(Status::new(
-                    Code::DeadlineExceeded,
-                    format!(
-                        "/EarlyReturn?src={}::{}?last_rpc={}::{}",
-                        self.rpc.service(),
-                        self.rpc.method(),
-                        child_method_name.service(),
-                        child_method_name.method(),
-                    ),
-                ));
-            }
+        self.estimation
+            .est
+            .log_estimates(&child_tracker.key, &remaining);
 
-            result.est_remaining
-        };
+        let admission = self.pred_admission.admission_check(
+            &self.estimation.est,
+            ctx,
+            child_tracker.key,
+            self.estimation.root_method_id,
+        );
+        if admission != AdmissionResult::Admit {
+            return Err(Status::new(
+                Code::DeadlineExceeded,
+                format!(
+                    "/EarlyReturn?src={}::{}?last_rpc={}::{}",
+                    self.rpc.service(),
+                    self.rpc.method(),
+                    child_method_name.service(),
+                    child_method_name.method(),
+                ),
+            ));
+        }
 
-        let (deadline, prio_hint) = Self::child_deadline_and_prio(ctx, est_remaining);
+        let (deadline, prio_hint) = Self::child_deadline_and_prio(ctx, remaining.full);
         child_rpc.deadline = deadline;
         child_rpc.prio_hint = prio_hint;
+
+        child_ctx.child_tracker = Some(child_tracker);
 
         Ok(())
     }
@@ -189,11 +195,9 @@ impl Layer for PredAdmissionLayer {
         // unusual call order) may invoke `after_child_rpc` without it — skip estimator
         // bookkeeping but still run `sched_pred` error propagation below.
         let info = if let Some(child_tracker) = child_ctx.child_tracker.as_ref() {
-            child_tracker.finalize(response);
-            Some(
-                self.latency_tracker
-                    .after_child_rpc(response, child_tracker),
-            )
+            self.estimation
+                .record_child_complete(child_tracker, response);
+            Some(self.request_metadata.absorb_child_meta(response))
         } else {
             None
         };
@@ -206,11 +210,10 @@ impl Layer for PredAdmissionLayer {
             if let Some(ref info) = info {
                 if let Some(acc_cost) = info.accumulated_compute_us {
                     self.pred_admission.record_completion(acc_cost);
-                    if let Some(root_mid) = self.latency_tracker.root_method_id {
-                        self.latency_tracker
+                    if let Some(root_mid) = self.estimation.root_method_id {
+                        self.estimation
                             .est
-                            .accumulated_cost
-                            .track(MethodKey(root_mid), acc_cost);
+                            .track_subtree_compute(MethodKey(root_mid), acc_cost);
                     }
                 }
             }
@@ -234,19 +237,19 @@ impl Layer for PredAdmissionLayer {
         _ctx: &Context,
         _poll: &Poll<Result<Response<Ret>, Status>>,
     ) -> Result<(), Result<Response<Ret>, Status>> {
-        self.latency_tracker.compute.stop_compute_tracking();
+        self.request_metadata.end_poll();
         Ok(())
     }
 
-    /// Track latencies and inject response metadata at finalization.
+    /// Flush estimation observations and build response metadata at finalization.
     ///
     /// Sets `response_meta` on the shared `ctx`; the caller serializes once.
     #[inline]
     fn finalize<Ret>(&self, ctx: &mut Context, result: &mut Result<Response<Ret>, Status>) {
         if !is_early_return_response(result) {
-            self.latency_tracker.track_latencies();
+            self.estimation.flush();
         }
-        self.latency_tracker.inject_response_meta(ctx);
+        self.request_metadata.inject_response_meta(ctx);
     }
 }
 
@@ -277,11 +280,11 @@ impl PredAdmissionLayer {
 
 /// Per-child-RPC predictive layer state.
 ///
-/// `child_tracker` is `None` until `before_child_rpc` calls `prepare_before_child_rpc`,
-/// which creates a fully-initialized `ChildRPCTracker`.
+/// `child_tracker` is `None` until `before_child_rpc` calls `begin_child`,
+/// which creates a `ChildRPCTracker`.
 #[derive(Debug, Clone)]
 pub(crate) struct PredAdmissionChild {
-    pub(crate) child_tracker: Option<ChildRPCTracker<DefaultLatencyEstimator>>,
+    pub(crate) child_tracker: Option<ChildRPCTracker>,
 }
 
 impl LayerChild for PredAdmissionChild {
@@ -430,12 +433,12 @@ impl PredictiveAdmission {
         }
     }
 
-    /// Two-layer admission check reading estimation maps from `est`.
+    /// Two-layer admission check using the estimation facade.
     ///
     /// - Layer 1 (every hop): floor-based deadline feasibility — reject if
     ///   estimated remaining wall-clock time exceeds deadline.
     /// - Layer 2 (ingress only, hop_count==0): compute-capacity admission via
-    ///   token-bucket, using the child's wall-clock latency as cost.
+    ///   token-bucket, using estimated subtree compute cost.
     #[inline]
     pub(crate) fn admission_check(
         &self,
@@ -451,13 +454,9 @@ impl PredictiveAdmission {
         // Layer 1: floor-based deadline feasibility
         // Includes estimated child call duration so requests that will spend
         // most of their remaining budget on the child RPC are caught early.
-        let est_remaining_floor = est
-            .after_child_latency
-            .get_mean_floor_estimate(key)
-            .unwrap_or(0)
-            .min(time_left);
-        let est_child = est.child_latency.get_estimate(key).unwrap_or(0);
-        if time_now() + est_child + est_remaining_floor > ctx.e2e_deadline() {
+        let remaining = est.est_after_child_wallclock(key, time_left);
+        let est_child = est.est_child_wallclock(key).unwrap_or(0);
+        if time_now() + est_child + remaining.floor > ctx.e2e_deadline() {
             return AdmissionResult::ShedLayer1;
         }
 
@@ -466,11 +465,9 @@ impl PredictiveAdmission {
         // wall-clock child latency when root_method is not yet set (cold start).
         if ctx.hop_count() == 0 {
             let est_cost = if let Some(root_mid) = root_method_id {
-                est.accumulated_cost
-                    .get_estimate(MethodKey(root_mid))
-                    .unwrap_or(0)
+                est.est_subtree_compute(MethodKey(root_mid)).unwrap_or(0)
             } else {
-                est.child_latency.get_estimate(key).unwrap_or(0)
+                est.est_child_wallclock(key).unwrap_or(0)
             };
             if !self.controller.should_admit(est_cost) {
                 return AdmissionResult::ShedLayer2;
@@ -515,13 +512,9 @@ impl PredictiveAdmission {
         use masa_core::time_now;
 
         let time_left = ctx.e2e_deadline().saturating_sub(time_now());
-        let est_remaining_floor = est
-            .after_child_latency
-            .get_mean_floor_estimate(key)
-            .unwrap_or(0)
-            .min(time_left);
-        let est_child = est.child_latency.get_estimate(key).unwrap_or(0);
-        if time_now() + est_child + est_remaining_floor > ctx.e2e_deadline() {
+        let remaining = est.est_after_child_wallclock(key, time_left);
+        let est_child = est.est_child_wallclock(key).unwrap_or(0);
+        if time_now() + est_child + remaining.floor > ctx.e2e_deadline() {
             AdmissionResult::ShedLayer1
         } else {
             AdmissionResult::Admit
