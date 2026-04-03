@@ -19,7 +19,7 @@ pub use context_ext::{
     MasaResponseExt, MasaStatusExt, MASA_CONTEXT_HEADER,
 };
 pub use hooks::{ChildContext, ParentContext, PolicyHooks, ServerContext};
-pub use registry::MethodRegistry;
+pub use registry::{MethodId, MethodRegistry};
 
 pub use policy_params::PolicyParams;
 
