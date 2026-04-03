@@ -38,24 +38,15 @@ Moved `Option` from inside `EstChildState` to outside it: `PredAdmissionChild` n
 
 ---
 
-## TODO
+### 4. `EstRequestState` has too many responsibilities (partial)
 
-### 4. `EstRequestState` has too many responsibilities
+Extracted compute time tracking into a self-contained `ComputeTracker` struct (owns `poll_compute_us` and `poll_start`, exposes `start_compute_tracking()`, `stop_compute_tracking()`, and `compute_us()` getter). `EstRequestState` now embeds `ComputeTracker` as its `compute` field. Added unit tests for `ComputeTracker`.
 
-**File:** `state.rs:67-325`
-
-`EstRequestState` is a ~260-line struct handling six distinct concerns:
-
-1. **Compute time tracking** — `start_compute_tracking()`, `stop_compute_tracking()`, `poll_compute_us`, `poll_start`
-2. **Child RPC preparation** — `prepare_before_child_rpc()` (method resolution, estimate lookups, child state setup)
-3. **Child response processing** — `after_child_rpc()` (extract `ResponseMeta`, utilization tracking, 0-injection, end-time recording)
-4. **Response meta injection** — `inject_response_meta()`
-5. **Latency tracking on finalization** — `track_latencies()`
-6. **Periodic logging** — `log_estimates()` (using `print_counter` from `EstServerState`)
-
-The `prepare_before_child_rpc` method is the most overloaded: it resolves method IDs via `MethodRegistry`, constructs a `ParentToChildId`, looks up three different estimates (`est_after_child_latency` with mean, floor, and full), sets up the child state, logs, and returns a result struct. If any of these concerns need to change independently, the whole struct is in the blast radius.
-
-**Proposed fix:** Extract compute tracking into a small `ComputeTracker` struct (owns `poll_compute_us` and `poll_start`). Consider whether child RPC handling (`prepare_before_child_rpc` + `after_child_rpc`) could be a standalone helper that takes `&EstServerState` and `&mut EstChildState` without needing the full `EstRequestState`. This would make each piece independently testable.
+The remaining concerns (child RPC handling, response meta injection, latency tracking) stay in `EstRequestState` — they share tighter coupling through `inject_response_meta` reading from both child metrics and compute tracking, and through the shared `server` field.
 
 ---
+
+## TODO
+
+(none)
 
