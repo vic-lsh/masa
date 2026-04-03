@@ -116,7 +116,6 @@ impl Layer for PredAdmissionLayer {
             }
         }
 
-
         #[cfg(feature = "sched_pred")]
         {
             let remaining = ctx.deadline().saturating_sub(masa_core::time_now());
