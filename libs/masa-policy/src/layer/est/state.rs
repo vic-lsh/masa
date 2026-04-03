@@ -256,8 +256,7 @@ impl<E: LatencyEstimator + Default + 'static> EstRequestState<E> {
         child_method_name: &CowGrpcMethod,
         child_est: &mut EstChildState<E>,
     ) -> ChildRpcPrepareResult {
-        let resolved_child_id = MethodRegistry::global()
-            .get_or_register_method(child_method_name.service(), child_method_name.method());
+        let resolved_child_id = MethodRegistry::global().get_or_register(child_method_name.clone());
         let parent_to_child_key = ParentToChildKey::parent_rpc_method(self.resolved_method_id)
             .child_rpc_method(resolved_child_id);
 
