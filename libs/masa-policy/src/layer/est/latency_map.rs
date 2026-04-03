@@ -1,5 +1,5 @@
 use std::hash::Hash;
-use std::{collections::HashMap, fmt, sync::Arc, sync::Mutex, time::Duration};
+use std::{collections::HashMap, fmt, sync::Mutex};
 
 use masa_core::LatencyEstimator;
 
@@ -180,84 +180,18 @@ where
 // Stats printers
 // ---------------------------------------------------------------------------
 
-fn format_method_name(id: MethodId) -> String {
+pub(crate) fn format_method_name(id: MethodId) -> String {
     MethodRegistry::global()
         .get_method_name(id)
         .map(|m| format!("{}::{}", m.service(), m.method()))
         .unwrap_or_else(|| format!("{:?}", id))
 }
 
-/// Spawns a background task to periodically print latency estimates for
-/// pair-keyed maps (parent→child or root→local).
-pub(crate) fn spawn_pair_stats_printer<K, E>(
-    distributions: Arc<LatencyMap<K, E>>,
-    label: &'static str,
-) where
-    K: Copy + Eq + Hash + fmt::Display + Send + 'static,
-    E: LatencyEstimator + Default + Send + 'static,
-{
-    if let Ok(handle) = tokio::runtime::Handle::try_current() {
-        handle.spawn(async move {
-            let mut interval = tokio::time::interval(Duration::from_secs(5));
-            loop {
-                interval.tick().await;
-
-                if distributions.is_empty() {
-                    continue;
-                }
-
-                let mut parts = Vec::new();
-                distributions.for_each(|key, distribution| {
-                    if distribution.can_estimate() {
-                        parts.push(format!("{}: {} us", key, distribution.estimate()));
-                    } else {
-                        parts.push(format!("{}: (no estimate)", key));
-                    }
-                });
-                log::info!("{}: {}", label, parts.join(", "));
-            }
-        });
-    }
-}
-
-/// Spawns a background task to periodically print latency estimates for
-/// single-method-keyed maps.
-pub(crate) fn spawn_method_stats_printer<E: LatencyEstimator + Default + Send + 'static>(
-    distributions: Arc<LatencyMap<MethodKey, E>>,
-    label: &'static str,
-) {
-    if let Ok(handle) = tokio::runtime::Handle::try_current() {
-        handle.spawn(async move {
-            let mut interval = tokio::time::interval(Duration::from_secs(5));
-            loop {
-                interval.tick().await;
-
-                if distributions.is_empty() {
-                    continue;
-                }
-
-                let mut parts = Vec::new();
-                distributions.for_each(|key, distribution| {
-                    if distribution.can_estimate() {
-                        parts.push(format!(
-                            "{}: {} us",
-                            format_method_name(key.0),
-                            distribution.estimate()
-                        ));
-                    } else {
-                        parts.push(format!("{}: (no estimate)", format_method_name(key.0)));
-                    }
-                });
-                log::info!("{}: {}", label, parts.join(", "));
-            }
-        });
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use masa_core::LatencyRms;
+    use std::sync::Arc;
     use tonic_core::CowGrpcMethod;
 
     fn test_method_id() -> MethodId {
