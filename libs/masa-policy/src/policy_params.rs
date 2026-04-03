@@ -86,6 +86,9 @@ pub struct PredParams {
     pub er_threshold: f64,
     /// Slow EMA alpha for ER tracker (averages over oscillation cycles).
     pub er_alpha: f64,
+    /// Variance multiplier for the LatencyMeanVar estimator.
+    /// estimate = mean + k * stddev. 0.0 = pure mean estimator (default).
+    pub estimator_k: f64,
 }
 
 impl Default for PredParams {
@@ -100,6 +103,7 @@ impl Default for PredParams {
             prob_smooth: 1.0,
             er_threshold: 0.2,
             er_alpha: 0.05,
+            estimator_k: 0.0,
         }
     }
 }
