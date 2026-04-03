@@ -49,15 +49,14 @@ pub enum ArrivalProcess {
 pub struct ArrivalTimer {
     arrival_process: ArrivalProcess,
     rps: u64,
-    warm_at: Instant,
     exp_dist: Option<Exp<f64>>,
     rng: StdRng,
     elapse: f64,
 }
 
 impl ArrivalTimer {
-    /// Create a new arrival timer with the specified arrival process, RPS, warmup time, and RNG seed.
-    pub fn new(arrival_process: ArrivalProcess, rps: u64, warm_at: Instant, rng: StdRng) -> Self {
+    /// Create a new arrival timer with the specified arrival process, RPS, and RNG seed.
+    pub fn new(arrival_process: ArrivalProcess, rps: u64, rng: StdRng) -> Self {
         let exp_dist = match arrival_process {
             ArrivalProcess::Exp => {
                 Some(Exp::new(rps as f64).expect("Failed to create exponential distribution"))
@@ -68,7 +67,6 @@ impl ArrivalTimer {
         Self {
             arrival_process,
             rps,
-            warm_at,
             exp_dist,
             rng,
             elapse: 0.0,
@@ -76,26 +74,19 @@ impl ArrivalTimer {
     }
 
     /// Advance the timer and return the next inter-arrival time in seconds.
-    /// During warmup, returns a fixed small interval for faster ramp-up.
     pub fn tick(&mut self) -> f64 {
-        let now = Instant::now();
-        let interval = if now < self.warm_at {
-            // During warmup, use fixed small interval for faster ramp-up
-            0.01
-        } else {
-            match self.arrival_process {
-                ArrivalProcess::Const => {
-                    // Constant inter-arrival time (fixed interval)
-                    1f64 / self.rps as f64
-                }
-                ArrivalProcess::Exp => {
-                    // Sample exponential inter-arrival time for Poisson process
-                    // The exponential distribution with rate λ has mean 1/λ
-                    self.exp_dist
-                        .as_ref()
-                        .expect("Exponential distribution should be initialized")
-                        .sample(&mut self.rng)
-                }
+        let interval = match self.arrival_process {
+            ArrivalProcess::Const => {
+                // Constant inter-arrival time (fixed interval)
+                1f64 / self.rps as f64
+            }
+            ArrivalProcess::Exp => {
+                // Sample exponential inter-arrival time for Poisson process
+                // The exponential distribution with rate λ has mean 1/λ
+                self.exp_dist
+                    .as_ref()
+                    .expect("Exponential distribution should be initialized")
+                    .sample(&mut self.rng)
             }
         };
         self.elapse += interval;
@@ -578,7 +569,6 @@ where
 
     async fn run(&mut self, output_path: &Path) -> Result<(), Box<dyn Error>> {
         let init_at = Instant::now();
-        let warm_at = init_at + Duration::from_secs_f64(self.gen_cfg.warmup_secs as f64 / 2.0);
         let trace_at = init_at + Duration::from_secs(self.gen_cfg.warmup_secs);
         let pause_at =
             init_at + Duration::from_secs(self.gen_cfg.warmup_secs + self.gen_cfg.duration_secs);
@@ -588,7 +578,7 @@ where
 
         let h = tokio::task::spawn(stats_logger(Arc::clone(&counters), pause_at));
 
-        self.generate_load(counters, init_at, trace_at, warm_at, pause_at)
+        self.generate_load(counters, init_at, trace_at, pause_at)
             .await;
 
         let _ = h.await;
@@ -613,7 +603,6 @@ where
         counters: Arc<Counters>,
         init_at: Instant,
         trace_at: Instant,
-        warm_at: Instant,
         pause_at: Instant,
     ) {
         let mut set = JoinSet::new();
@@ -629,7 +618,7 @@ where
 
         // Create arrival timer to manage inter-arrival times
         let mut arrival_timer =
-            ArrivalTimer::new(self.gen_cfg.gap, self.rps, warm_at, self.rng.clone());
+            ArrivalTimer::new(self.gen_cfg.gap, self.rps, self.rng.clone());
 
         while Instant::now() < pause_at {
             // XXX: tokio's sleep has millisecond granularity, so for small intervals this may be
