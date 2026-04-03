@@ -149,9 +149,7 @@ def _plot_abort_reason_stacked(
 
     ax.set_xlabel("Requests Per Second (RPS)")
     ax.set_ylabel("Abort Count")
-    ax.set_title(
-        f"Abort Reasons for {api} API - {get_policy_display_name(policy)}"
-    )
+    ax.set_title(f"Abort Reasons for {api} API - {get_policy_display_name(policy)}")
     ax.set_xticks(x)
     ax.set_xticklabels([str(r) for r in rps_values])
     ax.legend()

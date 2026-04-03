@@ -74,8 +74,7 @@ class TestErrorParsing:
         assert df.iloc[0]["er_service"] == "frontend.Frontend"
         assert df.iloc[0]["er_method"] == "HandleSearch"
         assert (
-            df.iloc[0]["er_last_child"]
-            == "reservation.Reservation::CheckAvailability"
+            df.iloc[0]["er_last_child"] == "reservation.Reservation::CheckAvailability"
         )
         assert df.iloc[0]["er_reason"] == "Layer1"
 
