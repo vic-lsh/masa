@@ -32,6 +32,12 @@ Moved `log_estimates` from `EstRequestState` to `EstServerState`, co-locating th
 
 ---
 
+### 5. `EstChildState` two-phase initialization
+
+Moved `Option` from inside `EstChildState` to outside it: `PredAdmissionChild` now holds `Option<EstChildState<E>>`, while `EstChildState` itself has no `Option` fields — it is always fully initialized. Replaced `new()` + `setup()` with a single constructor. `after_child_rpc` uses `expect()` to catch invariant violations (a missed `before_child_rpc` call) rather than silently degrading. Also removed the dead `child_method` field (was written but never read).
+
+---
+
 ## TODO
 
 ### 4. `EstRequestState` has too many responsibilities
@@ -50,40 +56,6 @@ Moved `log_estimates` from `EstRequestState` to `EstServerState`, co-locating th
 The `prepare_before_child_rpc` method is the most overloaded: it resolves method IDs via `MethodRegistry`, constructs a `ParentToChildId`, looks up three different estimates (`est_after_child_latency` with mean, floor, and full), sets up the child state, logs, and returns a result struct. If any of these concerns need to change independently, the whole struct is in the blast radius.
 
 **Proposed fix:** Extract compute tracking into a small `ComputeTracker` struct (owns `poll_compute_us` and `poll_start`). Consider whether child RPC handling (`prepare_before_child_rpc` + `after_child_rpc`) could be a standalone helper that takes `&EstServerState` and `&mut EstChildState` without needing the full `EstRequestState`. This would make each piece independently testable.
-
----
-
-### 5. `EstChildState` two-phase initialization
-
-**File:** `state.rs:336-381`
-
-`EstChildState` is constructed fully empty, then populated later via `setup()`:
-
-```rust
-// Construction — all None
-pub(crate) fn new() -> Self {
-    Self {
-        start_time: None,
-        parent_to_child_id: None,
-        child_method: None,
-        server: None,
-    }
-}
-
-// Populated later
-pub(crate) fn setup(&mut self, parent_to_child_id, child_method, server) {
-    self.start_time = Some(Instant::now());
-    self.parent_to_child_id = Some(parent_to_child_id);
-    self.child_method = Some(child_method);
-    self.server = Some(server);
-}
-```
-
-Then `finalize()` pattern-matches on `(self.start_time, &self.parent_to_child_id, &self.server)` to check if all three are `Some`. If `setup()` was never called, `finalize()` silently does nothing — no error, no log, just a dropped observation. This means a bug in the call sequence (forgetting to call `setup`) would silently degrade estimate quality without any signal.
-
-This two-phase pattern exists because `ChildContext` (hooks.rs:223) is created by `ClientHooks::new()` before the parent knows which child is being called — `setup()` happens later in `before_child_rpc`.
-
-**Proposed fix:** Split into two types: an opaque `UninitEstChild` (or just `()`) returned by `ClientHooks::new()`, and a fully-initialized `EstChildState` produced by `setup()`. This requires the `Layer` trait's `Child` associated type to accommodate the transition, which may be more refactoring than it's worth. A lighter alternative: add a `debug_assert!` in `finalize()` that `start_time.is_some()`, so missed `setup()` calls are caught in testing.
 
 ---
 

@@ -399,9 +399,12 @@ mod tests {
                 .before_child_rpc(child_method, &mut child_req, &mut child_ctx)
                 .unwrap();
 
-            // Verify child context has key and Server
-            assert!(child_ctx.policy.est.parent_to_child_key.is_some());
-            assert!(child_ctx.policy.est.server.is_some());
+            // Verify child context was initialized by before_child_rpc
+            let est = child_ctx
+                .policy
+                .est
+                .as_ref()
+                .expect("est should be initialized after before_child_rpc");
 
             // Verify registry has IDs
             let registry = MethodRegistry::global();
@@ -410,7 +413,7 @@ mod tests {
             let child_id =
                 registry.get_or_register(CowGrpcMethod::new("IntegrationService", "ChildMethod"));
 
-            let key = child_ctx.policy.est.parent_to_child_key.unwrap();
+            let key = est.parent_to_child_key;
             assert_eq!(key.parent(), parent_id);
             assert_eq!(key.child(), child_id);
 
