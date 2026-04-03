@@ -246,7 +246,7 @@ mod tests {
         use super::super::{ChildContext, ParentContext, ServerContext};
         use crate::context_ext::MASA_CONTEXT_HEADER;
         use crate::layer::est::latency_map::ParentToChildKey;
-        use crate::layer::est::state::EstServerState;
+        use crate::layer::est::state::LatencyEstimators;
         use crate::MethodRegistry;
         use masa_core::{ContextBuilder, LatencyRms};
         use std::sync::Arc;
@@ -256,7 +256,7 @@ mod tests {
 
         #[test]
         fn test_server_context_rms_integration() {
-            let est = EstServerState::<LatencyRms>::new();
+            let est = LatencyEstimators::<LatencyRms>::new();
             let registry = MethodRegistry::global();
             let parent_mid =
                 registry.get_or_register(CowGrpcMethod::new("TestIntegration", "Parent"));
@@ -267,32 +267,32 @@ mod tests {
             // Inject an estimator with a short update interval (2) for testing.
             // By default, LatencyRms has a large update interval (512), which makes testing hard.
             {
-                est.est_child_latency.insert(key, LatencyRms::new(2));
+                est.child_latency.insert(key, LatencyRms::new(2));
             }
 
             // 1st track: sum_sq=100, count=1, since_update=1. No update yet.
-            est.est_child_latency.track(key, 10);
+            est.child_latency.track(key, 10);
 
             // Estimate uses cached RMS value (initially 0).
-            let val = est.est_child_latency.get_estimate(key);
+            let val = est.child_latency.get_estimate(key);
             assert_eq!(val, Some(0));
 
             // 2nd track: sum_sq=200, count=2, since_update=2. Update triggers.
             // RMS = sqrt( (10^2 + 10^2) / 2 ) = 10.
-            est.est_child_latency.track(key, 10);
+            est.child_latency.track(key, 10);
 
-            let val = est.est_child_latency.get_estimate(key);
+            let val = est.child_latency.get_estimate(key);
             assert_eq!(val, Some(10));
 
             // 3rd track: sum_sq=200+400=600, count=3, since_update=1. No update yet.
-            est.est_child_latency.track(key, 20);
-            let val = est.est_child_latency.get_estimate(key);
+            est.child_latency.track(key, 20);
+            let val = est.child_latency.get_estimate(key);
             assert_eq!(val, Some(10)); // Still 10
 
             // 4th track: sum_sq=600+400=1000, count=4, since_update=2. Update triggers.
             // RMS = sqrt( (100 + 100 + 400 + 400) / 4 ) = sqrt(250) ~ 15.
-            est.est_child_latency.track(key, 20);
-            let val = est.est_child_latency.get_estimate(key);
+            est.child_latency.track(key, 20);
+            let val = est.child_latency.get_estimate(key);
             // integer_sqrt(250) is 15 (15*15=225, 16*16=256)
             assert_eq!(val, Some(15));
         }
@@ -400,11 +400,11 @@ mod tests {
                 .unwrap();
 
             // Verify child context was initialized by before_child_rpc
-            let est = child_ctx
+            let child_tracker = child_ctx
                 .policy
-                .est
+                .child_tracker
                 .as_ref()
-                .expect("est should be initialized after before_child_rpc");
+                .expect("child_tracker should be initialized after before_child_rpc");
 
             // Verify registry has IDs
             let registry = MethodRegistry::global();
@@ -413,7 +413,7 @@ mod tests {
             let child_id =
                 registry.get_or_register(CowGrpcMethod::new("IntegrationService", "ChildMethod"));
 
-            let key = est.parent_to_child_key;
+            let key = child_tracker.parent_to_child_key;
             assert_eq!(key.parent(), parent_id);
             assert_eq!(key.child(), child_id);
 
@@ -440,7 +440,7 @@ mod tests {
             use crate::layer::admission::predictive::{AdmissionResult, PredictiveAdmission};
             use crate::layer::est::estimator::DefaultLatencyEstimator;
 
-            let est_server = EstServerState::<DefaultLatencyEstimator>::new();
+            let est = LatencyEstimators::<DefaultLatencyEstimator>::new();
             let pred = PredictiveAdmission::new();
 
             // Generous deadline: 100ms from now.
@@ -460,7 +460,7 @@ mod tests {
 
             // With est_remaining_floor = 0, the floor check is: time_now > e2e_deadline.
             // Since e2e_deadline is 100ms in the future, this should NOT shed.
-            let result = pred.admission_check(&est_server, &ctx, key, None);
+            let result = pred.admission_check(&est, &ctx, key, None);
             assert_eq!(
                 result,
                 AdmissionResult::Admit,

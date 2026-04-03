@@ -20,7 +20,7 @@ use super::super::{ChildRpcContext, Layer, LayerChild, LayerServer};
 use crate::layer::est::estimator::DefaultLatencyEstimator;
 use crate::layer::est::latency_map::{MethodKey, ParentToChildKey};
 use crate::layer::est::state::{
-    is_early_return_response, EstChildState, EstRequestState, EstServerState,
+    is_early_return_response, ChildRPCTracker, LatencyEstimators, RequestLatencyTracker,
 };
 use crate::policy_params::PolicyParams;
 use crate::registry::MethodId;
@@ -42,14 +42,14 @@ pub(crate) enum AdmissionResult {
 /// Server-level predictive layer state (shared across requests).
 #[derive(Debug)]
 pub(crate) struct PredAdmissionServer {
-    est: Arc<EstServerState<DefaultLatencyEstimator>>,
+    est: Arc<LatencyEstimators<DefaultLatencyEstimator>>,
     pred_admission: Arc<PredictiveAdmission>,
 }
 
 impl LayerServer for PredAdmissionServer {
     fn new() -> Self {
         Self {
-            est: Arc::new(EstServerState::new()),
+            est: Arc::new(LatencyEstimators::new()),
             pred_admission: Arc::new(PredictiveAdmission::new()),
         }
     }
@@ -60,7 +60,7 @@ impl LayerServer for PredAdmissionServer {
 /// Per-request predictive layer state.
 #[derive(Debug)]
 pub(crate) struct PredAdmissionLayer {
-    pub(crate) est: EstRequestState<DefaultLatencyEstimator>,
+    pub(crate) latency_tracker: RequestLatencyTracker<DefaultLatencyEstimator>,
     pred_admission: Arc<PredictiveAdmission>,
     rpc: CowGrpcMethod,
     feasibility_checked: AtomicBool,
@@ -84,7 +84,11 @@ impl Layer for PredAdmissionLayer {
                 .get_or_register(CowGrpcMethod::new(rm.service.clone(), rm.method.clone()))
         });
         Self {
-            est: EstRequestState::new(resolved_method_id, root_method_id, server.est.clone()),
+            latency_tracker: RequestLatencyTracker::new(
+                resolved_method_id,
+                root_method_id,
+                server.est.clone(),
+            ),
             pred_admission: server.pred_admission.clone(),
             rpc: method.clone(),
             feasibility_checked: AtomicBool::new(false),
@@ -105,7 +109,7 @@ impl Layer for PredAdmissionLayer {
         // exceeds remaining time. Only checked once — after the first poll the
         // request is in-flight and should not be killed by this coarse check.
         if !self.feasibility_checked.swap(true, Ordering::Relaxed) {
-            if let Some(est) = self.est.est_method_latency() {
+            if let Some(est) = self.latency_tracker.estimate_method_latency() {
                 if masa_core::time_now() + est > ctx.e2e_deadline() {
                     return Err(Err(Status::new(
                         Code::DeadlineExceeded,
@@ -119,7 +123,7 @@ impl Layer for PredAdmissionLayer {
             }
         }
 
-        self.est.compute.start_compute_tracking();
+        self.latency_tracker.compute.start_compute_tracking();
         Ok(())
     }
 
@@ -137,15 +141,17 @@ impl Layer for PredAdmissionLayer {
         child_rpc: &mut ChildRpcContext,
     ) -> Result<(), Status> {
         let est_remaining = {
-            let result =
-                self.est
-                    .prepare_before_child_rpc(ctx, child_method_name, &mut child_ctx.est);
+            let result = self.latency_tracker.prepare_before_child_rpc(
+                ctx,
+                child_method_name,
+                &mut child_ctx.child_tracker,
+            );
 
             let admission = self.pred_admission.admission_check(
-                &self.est.server,
+                &self.latency_tracker.est,
                 ctx,
                 result.parent_to_child_key,
-                self.est.root_method_id,
+                self.latency_tracker.root_method_id,
             );
             if admission != AdmissionResult::Admit {
                 return Err(Status::new(
@@ -179,12 +185,14 @@ impl Layer for PredAdmissionLayer {
         response: &mut Result<Response<T>, Status>,
         child_ctx: &PredAdmissionChild,
     ) -> Result<(), Status> {
-        let est = child_ctx
-            .est
+        let child_tracker = child_ctx
+            .child_tracker
             .as_ref()
-            .expect("EstChildState must be initialized via before_child_rpc");
-        est.finalize(response);
-        let info = self.est.after_child_rpc(response, est);
+            .expect("ChildRPCTracker must be initialized via before_child_rpc");
+        child_tracker.finalize(response);
+        let info = self
+            .latency_tracker
+            .after_child_rpc(response, child_tracker);
 
         // Accumulate completed cost for goodput tracking (ingress only, success only).
         // Uses accumulated compute cost from the child's entire subtree instead of
@@ -193,10 +201,10 @@ impl Layer for PredAdmissionLayer {
         if ctx.hop_count() == 0 && response.is_ok() {
             if let Some(acc_cost) = info.accumulated_compute_us {
                 self.pred_admission.record_completion(acc_cost);
-                if let Some(root_mid) = self.est.root_method_id {
-                    self.est
-                        .server
-                        .est_accumulated_cost
+                if let Some(root_mid) = self.latency_tracker.root_method_id {
+                    self.latency_tracker
+                        .est
+                        .accumulated_cost
                         .track(MethodKey(root_mid), acc_cost);
                 }
             }
@@ -220,7 +228,7 @@ impl Layer for PredAdmissionLayer {
         _ctx: &Context,
         _poll: &Poll<Result<Response<Ret>, Status>>,
     ) -> Result<(), Result<Response<Ret>, Status>> {
-        self.est.compute.stop_compute_tracking();
+        self.latency_tracker.compute.stop_compute_tracking();
         Ok(())
     }
 
@@ -230,9 +238,9 @@ impl Layer for PredAdmissionLayer {
     #[inline]
     fn finalize<Ret>(&self, ctx: &mut Context, result: &mut Result<Response<Ret>, Status>) {
         if !is_early_return_response(result) {
-            self.est.track_latencies();
+            self.latency_tracker.track_latencies();
         }
-        self.est.inject_response_meta(ctx);
+        self.latency_tracker.inject_response_meta(ctx);
     }
 }
 
@@ -263,16 +271,18 @@ impl PredAdmissionLayer {
 
 /// Per-child-RPC predictive layer state.
 ///
-/// `est` is `None` until `before_child_rpc` calls `prepare_before_child_rpc`,
-/// which creates a fully-initialized `EstChildState`.
+/// `child_tracker` is `None` until `before_child_rpc` calls `prepare_before_child_rpc`,
+/// which creates a fully-initialized `ChildRPCTracker`.
 #[derive(Debug, Clone)]
 pub(crate) struct PredAdmissionChild {
-    pub(crate) est: Option<EstChildState<DefaultLatencyEstimator>>,
+    pub(crate) child_tracker: Option<ChildRPCTracker<DefaultLatencyEstimator>>,
 }
 
 impl LayerChild for PredAdmissionChild {
     fn new() -> Self {
-        Self { est: None }
+        Self {
+            child_tracker: None,
+        }
     }
 }
 
@@ -414,7 +424,7 @@ impl PredictiveAdmission {
         }
     }
 
-    /// Two-layer admission check reading estimation maps from `est_server`.
+    /// Two-layer admission check reading estimation maps from `est`.
     ///
     /// - Layer 1 (every hop): floor-based deadline feasibility — reject if
     ///   estimated remaining wall-clock time exceeds deadline.
@@ -423,7 +433,7 @@ impl PredictiveAdmission {
     #[inline]
     pub(crate) fn admission_check(
         &self,
-        est_server: &EstServerState<DefaultLatencyEstimator>,
+        est: &LatencyEstimators<DefaultLatencyEstimator>,
         ctx: &Context,
         key: ParentToChildKey,
         root_method_id: Option<MethodId>,
@@ -435,12 +445,12 @@ impl PredictiveAdmission {
         // Layer 1: floor-based deadline feasibility
         // Includes estimated child call duration so requests that will spend
         // most of their remaining budget on the child RPC are caught early.
-        let est_remaining_floor = est_server
-            .est_after_child_latency
+        let est_remaining_floor = est
+            .after_child_latency
             .get_mean_floor_estimate(key)
             .unwrap_or(0)
             .min(time_left);
-        let est_child = est_server.est_child_latency.get_estimate(key).unwrap_or(0);
+        let est_child = est.child_latency.get_estimate(key).unwrap_or(0);
         if time_now() + est_child + est_remaining_floor > ctx.e2e_deadline() {
             return AdmissionResult::ShedLayer1;
         }
@@ -450,12 +460,11 @@ impl PredictiveAdmission {
         // wall-clock child latency when root_method is not yet set (cold start).
         if ctx.hop_count() == 0 {
             let est_cost = if let Some(root_mid) = root_method_id {
-                est_server
-                    .est_accumulated_cost
+                est.accumulated_cost
                     .get_estimate(MethodKey(root_mid))
                     .unwrap_or(0)
             } else {
-                est_server.est_child_latency.get_estimate(key).unwrap_or(0)
+                est.child_latency.get_estimate(key).unwrap_or(0)
             };
             if !self.controller.should_admit(est_cost) {
                 return AdmissionResult::ShedLayer2;
@@ -492,7 +501,7 @@ impl PredictiveAdmission {
     #[inline]
     pub(crate) fn admission_check(
         &self,
-        est_server: &EstServerState<DefaultLatencyEstimator>,
+        est: &LatencyEstimators<DefaultLatencyEstimator>,
         ctx: &Context,
         key: ParentToChildKey,
         _root_method_id: Option<MethodId>,
@@ -500,12 +509,12 @@ impl PredictiveAdmission {
         use masa_core::time_now;
 
         let time_left = ctx.e2e_deadline().saturating_sub(time_now());
-        let est_remaining_floor = est_server
-            .est_after_child_latency
+        let est_remaining_floor = est
+            .after_child_latency
             .get_mean_floor_estimate(key)
             .unwrap_or(0)
             .min(time_left);
-        let est_child = est_server.est_child_latency.get_estimate(key).unwrap_or(0);
+        let est_child = est.child_latency.get_estimate(key).unwrap_or(0);
         if time_now() + est_child + est_remaining_floor > ctx.e2e_deadline() {
             AdmissionResult::ShedLayer1
         } else {
