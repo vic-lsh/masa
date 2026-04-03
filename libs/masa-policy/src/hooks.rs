@@ -245,8 +245,9 @@ mod tests {
     mod est_tests {
         use super::super::{ChildContext, ParentContext, ServerContext};
         use crate::context_ext::MASA_CONTEXT_HEADER;
-        use crate::layer::est::estimator::ParentToChildId;
+        use crate::layer::est::latency_map::ParentToChildKey;
         use crate::layer::est::state::EstServerState;
+        use crate::MethodRegistry;
         use masa_core::{ContextBuilder, LatencyRms};
         use std::sync::Arc;
         use tonic_core::masa_ext::resolve_method_name_from_http;
@@ -256,11 +257,10 @@ mod tests {
         #[test]
         fn test_server_context_rms_integration() {
             let est = EstServerState::<LatencyRms>::new();
-            let method = ParentToChildId {
-                parent_id: 1,
-                child_id: 2,
-            };
-            let key = method.to_key();
+            let registry = MethodRegistry::global();
+            let parent_mid = registry.get_or_register_method("TestIntegration", "Parent");
+            let child_mid = registry.get_or_register_method("TestIntegration", "Child");
+            let key = ParentToChildKey::parent_rpc_method(parent_mid).child_rpc_method(child_mid);
 
             // Inject an estimator with a short update interval (2) for testing.
             // By default, LatencyRms has a large update interval (512), which makes testing hard.
@@ -397,8 +397,8 @@ mod tests {
                 .before_child_rpc(child_method, &mut child_req, &mut child_ctx)
                 .unwrap();
 
-            // Verify child context has ID and Server
-            assert!(child_ctx.policy.est.parent_to_child_id.is_some());
+            // Verify child context has key and Server
+            assert!(child_ctx.policy.est.parent_to_child_key.is_some());
             assert!(child_ctx.policy.est.server.is_some());
 
             // Verify registry has IDs
@@ -406,26 +406,9 @@ mod tests {
             let parent_id = registry.get_or_register_method("IntegrationService", "ParentMethod");
             let child_id = registry.get_or_register_method("IntegrationService", "ChildMethod");
 
-            assert_eq!(
-                child_ctx
-                    .policy
-                    .est
-                    .parent_to_child_id
-                    .clone()
-                    .unwrap()
-                    .parent_id,
-                parent_id
-            );
-            assert_eq!(
-                child_ctx
-                    .policy
-                    .est
-                    .parent_to_child_id
-                    .clone()
-                    .unwrap()
-                    .child_id,
-                child_id
-            );
+            let key = child_ctx.policy.est.parent_to_child_key.unwrap();
+            assert_eq!(key.parent(), parent_id);
+            assert_eq!(key.child(), child_id);
 
             // 5. Simulate Child Response
             let mut response = Ok(Response::new(()));
@@ -463,9 +446,14 @@ mod tests {
                 .deadline(deadline)
                 .build();
 
+            let registry = MethodRegistry::global();
+            let parent_mid = registry.get_or_register_method("FloorService", "Parent");
+            let child_mid = registry.get_or_register_method("FloorService", "Child");
+            let key = ParentToChildKey::parent_rpc_method(parent_mid).child_rpc_method(child_mid);
+
             // With est_remaining_floor = 0, the floor check is: time_now > e2e_deadline.
             // Since e2e_deadline is 100ms in the future, this should NOT shed.
-            let result = pred.admission_check(&est_server, 0, &ctx, 0);
+            let result = pred.admission_check(&est_server, &ctx, key, None);
             assert_eq!(
                 result,
                 AdmissionResult::Admit,
