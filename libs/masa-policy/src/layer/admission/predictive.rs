@@ -179,8 +179,12 @@ impl Layer for PredAdmissionLayer {
         response: &mut Result<Response<T>, Status>,
         child_ctx: &PredAdmissionChild,
     ) -> Result<(), Status> {
-        child_ctx.est.finalize(response);
-        let info = self.est.after_child_rpc(response, &child_ctx.est);
+        let est = child_ctx
+            .est
+            .as_ref()
+            .expect("EstChildState must be initialized via before_child_rpc");
+        est.finalize(response);
+        let info = self.est.after_child_rpc(response, est);
 
         // Accumulate completed cost for goodput tracking (ingress only, success only).
         // Uses accumulated compute cost from the child's entire subtree instead of
@@ -258,16 +262,17 @@ impl PredAdmissionLayer {
 // ── Per-Child-RPC ───────────────────────────────────────────────────────
 
 /// Per-child-RPC predictive layer state.
+///
+/// `est` is `None` until `before_child_rpc` calls `prepare_before_child_rpc`,
+/// which creates a fully-initialized `EstChildState`.
 #[derive(Debug, Clone)]
 pub(crate) struct PredAdmissionChild {
-    pub(crate) est: EstChildState<DefaultLatencyEstimator>,
+    pub(crate) est: Option<EstChildState<DefaultLatencyEstimator>>,
 }
 
 impl LayerChild for PredAdmissionChild {
     fn new() -> Self {
-        Self {
-            est: EstChildState::new(),
-        }
+        Self { est: None }
     }
 }
 

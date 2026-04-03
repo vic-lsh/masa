@@ -225,20 +225,18 @@ impl<E: LatencyEstimator + Default + 'static> EstRequestState<E> {
         // estimate at a high value.
         if let Err(status) = response {
             if status.code() == Code::DeadlineExceeded {
-                if let Some(key) = &child_ctx.parent_to_child_key {
-                    self.server.est_after_child_latency.track(*key, 0);
-                }
+                self.server
+                    .est_after_child_latency
+                    .track(child_ctx.parent_to_child_key, 0);
             }
         }
 
         // Record child end time for successful responses
         if response.is_ok() {
-            if let Some(key) = &child_ctx.parent_to_child_key {
-                self.child_end_times
-                    .lock()
-                    .unwrap()
-                    .push((*key, Instant::now()));
-            }
+            self.child_end_times
+                .lock()
+                .unwrap()
+                .push((child_ctx.parent_to_child_key, Instant::now()));
         }
 
         ChildResponseInfo {
@@ -253,17 +251,13 @@ impl<E: LatencyEstimator + Default + 'static> EstRequestState<E> {
         &self,
         ctx: &Context,
         child_method_name: &CowGrpcMethod,
-        child_est: &mut EstChildState<E>,
+        child_est: &mut Option<EstChildState<E>>,
     ) -> ChildRpcPrepareResult {
         let resolved_child_id = MethodRegistry::global().get_or_register(child_method_name.clone());
         let parent_to_child_key = ParentToChildKey::parent_rpc_method(self.resolved_method_id)
             .child_rpc_method(resolved_child_id);
 
-        child_est.setup(
-            parent_to_child_key,
-            child_method_name.clone(),
-            self.server.clone(),
-        );
+        *child_est = Some(EstChildState::new(parent_to_child_key, self.server.clone()));
 
         let time_left = ctx.e2e_deadline().saturating_sub(time_now());
 
@@ -311,34 +305,28 @@ pub(crate) struct ChildRpcPrepareResult {
 }
 
 /// Per-child-RPC estimation state.
+///
+/// Always fully initialized — created by `EstRequestState::prepare_before_child_rpc`
+/// when the child method and parent→child relationship are known.
+/// `PredAdmissionChild` holds `Option<EstChildState<E>>` to represent the
+/// uninitialized-vs-initialized transition.
 #[derive(Debug, Clone)]
 pub(crate) struct EstChildState<E: LatencyEstimator + Default + 'static> {
-    pub start_time: Option<Instant>,
-    pub parent_to_child_key: Option<ParentToChildKey>,
-    pub child_method: Option<CowGrpcMethod>,
-    pub server: Option<Arc<EstServerState<E>>>,
+    pub start_time: Instant,
+    pub parent_to_child_key: ParentToChildKey,
+    pub server: Arc<EstServerState<E>>,
 }
 
 impl<E: LatencyEstimator + Default + 'static> EstChildState<E> {
-    pub(crate) fn new() -> Self {
-        Self {
-            start_time: None,
-            parent_to_child_key: None,
-            child_method: None,
-            server: None,
-        }
-    }
-
-    pub(crate) fn setup(
-        &mut self,
+    pub(crate) fn new(
         parent_to_child_key: ParentToChildKey,
-        child_method: CowGrpcMethod,
         server: Arc<EstServerState<E>>,
-    ) {
-        self.start_time = Some(Instant::now());
-        self.parent_to_child_key = Some(parent_to_child_key);
-        self.child_method = Some(child_method);
-        self.server = Some(server);
+    ) -> Self {
+        Self {
+            start_time: Instant::now(),
+            parent_to_child_key,
+            server,
+        }
     }
 
     pub(crate) fn finalize<T>(&self, response: &Result<Response<T>, Status>) {
@@ -346,12 +334,10 @@ impl<E: LatencyEstimator + Default + 'static> EstChildState<E> {
             return;
         }
 
-        if let (Some(start_time), Some(key), Some(server)) =
-            (self.start_time, &self.parent_to_child_key, &self.server)
-        {
-            let client_runtime = Instant::now().duration_since(start_time).as_micros() as u64;
-            server.est_child_latency.track(*key, client_runtime);
-        }
+        let client_runtime = Instant::now().duration_since(self.start_time).as_micros() as u64;
+        self.server
+            .est_child_latency
+            .track(self.parent_to_child_key, client_runtime);
     }
 }
 
