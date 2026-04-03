@@ -95,6 +95,9 @@ pub struct PredParams {
     pub rejection_threshold: f64,
     /// EMA time constant in seconds for the goodput rate estimator.
     pub tau: f64,
+    /// Variance multiplier for the LatencyMeanVar estimator.
+    /// estimate = mean + k * stddev. 0.0 = pure mean estimator (default).
+    pub estimator_k: f64,
 }
 
 impl Default for PredParams {
@@ -107,6 +110,7 @@ impl Default for PredParams {
             rejection_alpha: 0.05,
             rejection_threshold: 0.10,
             tau: 2.0,
+            estimator_k: 0.0,
         }
     }
 }

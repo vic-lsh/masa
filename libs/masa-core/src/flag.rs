@@ -8,6 +8,8 @@ pub const SCHED_PRED: bool = cfg!(feature = "sched_pred");
 
 pub const ABORT_SLO: bool = cfg!(feature = "abort_slo");
 
+pub const ABORT_SLACK: bool = cfg!(feature = "abort_slack");
+
 #[allow(dead_code)]
 pub const RAJOMON: bool = cfg!(feature = "ac_rajomon");
 
@@ -43,6 +45,23 @@ compile_error!(
 // control strategies. Only one can be active at a time.
 #[cfg(all(feature = "ac_pred", feature = "ac_rajomon"))]
 compile_error!("Enable at most one admission control strategy: ac_pred | ac_rajomon");
+
+// === Abort constraints ===
+// abort_slack and abort_slo are independent, mutually exclusive abort strategies.
+// abort_slack requires estimator for predictive abort checks.
+#[cfg(all(feature = "abort_slack", feature = "abort_slo"))]
+compile_error!("Enable at most one abort strategy: abort_slo | abort_slack");
+
+#[cfg(all(feature = "abort_slack", not(feature = "estimator")))]
+compile_error!("'abort_slack' requires 'estimator' for predictive abort checks");
+
+// === Estimator constraints ===
+// sched_pred and ac_pred require the estimator infrastructure.
+#[cfg(all(feature = "sched_pred", not(feature = "estimator")))]
+compile_error!("'sched_pred' requires 'estimator'");
+
+#[cfg(all(feature = "ac_pred", not(feature = "estimator")))]
+compile_error!("'ac_pred' requires 'estimator'");
 
 // Admission control requires a scheduling policy to be active, otherwise
 // DefaultHooks resolves to NoopHooks and the layer is never invoked.

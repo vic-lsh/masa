@@ -99,6 +99,72 @@ def _plot_latency_histogram(
     plt.close(fig)
 
 
+def _plot_abort_reason_stacked(
+    output_dir: str, api: str, policy: str, rps_values: list, data: dict
+) -> None:
+    """Generate stacked bar chart of abort reasons across RPS levels."""
+    reason_colors = {
+        "LocalDeadlineExceeded": "#e74c3c",
+        "Layer1": "#f39c12",
+        "Layer2": "#3498db",
+        "E2EDeadline": "#95a5a6",
+    }
+
+    # Collect reason counts per RPS
+    all_reasons: set[str] = set()
+    counts_per_rps: dict[int, dict[str, int]] = {}
+    for rps in rps_values:
+        df = data[policy][rps]
+        if df.empty or "error_type" not in df.columns or "er_reason" not in df.columns:
+            continue
+        df_er = df[df["error_type"] == "EarlyReturn"].copy()
+        if df_er.empty:
+            continue
+        df_er["er_reason"] = df_er["er_reason"].fillna("E2EDeadline")
+        counts = df_er["er_reason"].value_counts().to_dict()
+        counts_per_rps[rps] = counts
+        all_reasons.update(counts.keys())
+
+    if not counts_per_rps:
+        return
+
+    # Stable order: known reasons first, then any unexpected ones
+    known_order = ["E2EDeadline", "LocalDeadlineExceeded", "Layer1", "Layer2"]
+    reasons = [r for r in known_order if r in all_reasons]
+    reasons += sorted(all_reasons - set(known_order))
+
+    fig, ax = plt.subplots(figsize=(12, 6))
+    x = np.arange(len(rps_values))
+    bar_width = 0.6
+    bottoms = np.zeros(len(rps_values))
+
+    for reason in reasons:
+        values = np.array(
+            [counts_per_rps.get(rps, {}).get(reason, 0) for rps in rps_values],
+            dtype=float,
+        )
+        color = reason_colors.get(reason, "#7f8c8d")
+        ax.bar(x, values, bar_width, bottom=bottoms, label=reason, color=color)
+        bottoms += values
+
+    ax.set_xlabel("Requests Per Second (RPS)")
+    ax.set_ylabel("Abort Count")
+    ax.set_title(f"Abort Reasons for {api} API - {get_policy_display_name(policy)}")
+    ax.set_xticks(x)
+    ax.set_xticklabels([str(r) for r in rps_values])
+    ax.legend()
+    ax.grid(axis="y", alpha=0.3)
+
+    fig.tight_layout()
+    dir = os.path.join(output_dir, policy)
+    os.makedirs(dir, exist_ok=True)
+    fig.savefig(
+        os.path.join(dir, f"abort_reason_{api}.png"),
+        dpi=300,
+    )
+    plt.close(fig)
+
+
 def _plot_p99_latency(
     output_dir: str,
     api: str,
@@ -296,15 +362,31 @@ def generate_plots(args, plot_data: PlotData | None = None) -> None:
                 )
             )
 
+            # Submit abort reason stacked bar for each policy
+            for policy in policies:
+                futures.append(
+                    (
+                        _plot_abort_reason_stacked,
+                        (
+                            output_dir,
+                            api,
+                            policy,
+                            rps_values,
+                            data,
+                        ),
+                    )
+                )
+
     percentiles = [0.80, 0.90, 0.99]
-    output_dir = args.output_dir
+    summary_latency_dir = os.path.join(args.output_dir, "summary", "tail_latency")
+    os.makedirs(summary_latency_dir, exist_ok=True)
     for percentile in percentiles:
         for api in apis:
             futures.append(
                 (
                     _plot_averaged_percentile_latency,
                     (
-                        output_dir,
+                        summary_latency_dir,
                         api,
                         percentile,
                         policies,
@@ -320,7 +402,7 @@ def generate_plots(args, plot_data: PlotData | None = None) -> None:
             (
                 _save_latency_summary_csv,
                 (
-                    output_dir,
+                    summary_latency_dir,
                     api,
                     policies,
                     rps_values,

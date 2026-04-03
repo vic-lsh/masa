@@ -17,6 +17,7 @@ sched_fifo  = ["masa-core/sched_fifo",  "tokio/sched_fifo",  "tonic/sched_fifo",
 sched_pred = ["masa-core/sched_pred", "tonic/sched_pred", "sched_slo", "masa-policy/sched_pred"]
 
 abort_slo = ["masa-core/abort_slo", "tonic/abort_slo", "masa-policy/abort_slo"]
+abort_slack = ["estimator", "masa-core/abort_slack", "tonic/abort_slack", "masa-policy/abort_slack"]
 estimator = ["masa-core/estimator", "tonic/estimator", "masa-policy/estimator"]
 
 est_rms = ["tonic/est_rms", "masa-policy/est_rms"]

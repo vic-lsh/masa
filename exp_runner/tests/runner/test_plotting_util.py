@@ -228,7 +228,7 @@ def test_generate_all_plots_loads_request_data_once(tmp_path, monkeypatch):
     def fake_cpu_plot(data_dir, output_dir, policies=None):
         calls["cpu"] += 1
         assert data_dir == args.data_dir
-        assert output_dir == args.output_dir
+        assert output_dir == args.output_dir / "summary" / "cpu"
         assert policies == ["sched_fifo"]
 
     monkeypatch.setattr(plotting_all, "load_plot_data", fake_load_plot_data)
