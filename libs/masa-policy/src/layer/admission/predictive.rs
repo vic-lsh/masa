@@ -13,7 +13,7 @@ use std::task::Poll;
 #[cfg(feature = "ac_pred")]
 use std::time::Instant;
 
-use masa_core::{Context, PriorityHint, RootMethod};
+use masa_core::{Context, PriorityHint, RootMethod, ABORT_SLACK};
 use tonic_core::{Code, CowGrpcMethod, Response, Status};
 
 use super::super::{ChildRpcContext, Layer, LayerChild, LayerServer};
@@ -102,6 +102,20 @@ impl Layer for PredAdmissionLayer {
     /// On first poll, reject if estimated method latency exceeds remaining time.
     #[inline]
     fn before_poll<Ret>(&self, ctx: &Context) -> Result<(), Result<Response<Ret>, Status>> {
+        if ABORT_SLACK {
+            let local_deadline = ctx.deadline();
+            if local_deadline != 0 && masa_core::time_now() > local_deadline {
+                return Err(Err(Status::new(
+                    Code::DeadlineExceeded,
+                    format!(
+                        "/EarlyReturn?src={}::{},reason=LocalDeadlineExceeded",
+                        self.rpc.service(),
+                        self.rpc.method(),
+                    ),
+                )));
+            }
+        }
+
         #[cfg(feature = "sched_pred")]
         {
             let remaining = ctx.deadline().saturating_sub(masa_core::time_now());
@@ -160,17 +174,32 @@ impl Layer for PredAdmissionLayer {
             child_tracker.key,
             self.estimation.root_method_id,
         );
-        if admission != AdmissionResult::Admit {
-            return Err(Status::new(
-                Code::DeadlineExceeded,
-                format!(
-                    "/EarlyReturn?src={}::{}?last_rpc={}::{}",
-                    self.rpc.service(),
-                    self.rpc.method(),
-                    child_method_name.service(),
-                    child_method_name.method(),
-                ),
-            ));
+        match admission {
+            AdmissionResult::Admit => {}
+            AdmissionResult::ShedLayer1 => {
+                return Err(Status::new(
+                    Code::DeadlineExceeded,
+                    format!(
+                        "/EarlyReturn?src={}::{}?last_rpc={}::{}&reason=Layer1",
+                        self.rpc.service(),
+                        self.rpc.method(),
+                        child_method_name.service(),
+                        child_method_name.method(),
+                    ),
+                ));
+            }
+            AdmissionResult::ShedLayer2 => {
+                return Err(Status::new(
+                    Code::DeadlineExceeded,
+                    format!(
+                        "/EarlyReturn?src={}::{}?last_rpc={}::{}&reason=Layer2",
+                        self.rpc.service(),
+                        self.rpc.method(),
+                        child_method_name.service(),
+                        child_method_name.method(),
+                    ),
+                ));
+            }
         }
 
         let (deadline, prio_hint) = Self::child_deadline_and_prio(ctx, remaining.full);
@@ -230,14 +259,29 @@ impl Layer for PredAdmissionLayer {
         Ok(())
     }
 
-    /// Stop compute tracking after a poll.
+    /// Stop compute tracking after a poll, and check local deadline on Pending.
     #[inline]
     fn after_poll<Ret>(
         &self,
-        _ctx: &Context,
-        _poll: &Poll<Result<Response<Ret>, Status>>,
+        ctx: &Context,
+        poll: &Poll<Result<Response<Ret>, Status>>,
     ) -> Result<(), Result<Response<Ret>, Status>> {
         self.request_metadata.end_poll();
+        if let Poll::Pending = poll {
+            if ABORT_SLACK {
+                let local_deadline = ctx.deadline();
+                if local_deadline != 0 && masa_core::time_now() > local_deadline {
+                    return Err(Err(Status::new(
+                        Code::DeadlineExceeded,
+                        format!(
+                            "/EarlyReturn?src={}::{},reason=LocalDeadlineExceeded",
+                            self.rpc.service(),
+                            self.rpc.method(),
+                        ),
+                    )));
+                }
+            }
+        }
         Ok(())
     }
 
