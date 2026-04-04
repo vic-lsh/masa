@@ -4,14 +4,14 @@
 // `for_each_layer!` macro that composes multiple layers into the generated
 // `ParentContext`, `ServerContext`, `ChildContext`, and hook impls.
 //
-// Three layer categories:
+// Four layer categories:
 // - **Guard**: `E2eDeadlineGuardLayer` — rejects past-deadline requests.
-// - **Policy** (mutually exclusive, compile-time selected):
-//   - `predictive` (feature `estimator`): latency estimation, deadline tightening,
-//     predictive admission control.
-//   - `rajomon` (feature `ac_rajomon`): token-based admission control with
-//     server-side price signals.
-//   - `noop`: when neither is enabled, compiles away to nothing.
+// - **Estimation** (feature `estimator`): `EstimationLayer` — latency tracking,
+//   deadline tightening, reprioritization, feasibility checks.
+// - **Admission** (mutually exclusive, compile-time selected):
+//   - `predictive` (feature `ac_pred`): goodput-tracking token-bucket AC.
+//   - `rajomon` (feature `ac_rajomon`): token-based AC with price signals.
+//   - `noop`: when neither AC is enabled, compiles away to nothing.
 // - **Observer**: `QueueLatencyLayer` — tracks queue latencies.
 //
 // All dispatch is monomorphic — zero runtime cost.
@@ -27,6 +27,9 @@ pub(crate) mod admission;
 
 #[cfg(feature = "estimator")]
 pub(crate) mod est;
+
+#[cfg(feature = "estimator")]
+pub(crate) mod estimation;
 
 mod e2e_deadline_guard;
 mod queue_latency;
@@ -53,8 +56,8 @@ pub(crate) struct ChildRpcContext {
 
 impl ChildRpcContext {
     pub fn from_parent(ctx: &Context) -> Self {
-        // hop_count is only incremented when estimation-based admission control
-        // is active — it uses hop_count to distinguish ingress from internal hops.
+        // hop_count is only incremented when estimation is active — it uses
+        // hop_count to distinguish ingress from internal hops.
         let hop_count = if cfg!(feature = "estimator") {
             ctx.hop_count().saturating_add(1)
         } else {
@@ -140,8 +143,54 @@ pub(crate) trait LayerChild: Send + Sync + Clone + std::fmt::Debug {
     fn new() -> Self;
 }
 
+// ── Estimation layer type alias ────────────────────────────────────────
+
+#[cfg(feature = "estimator")]
+pub(crate) use estimation::EstimationLayer;
+
+#[cfg(not(feature = "estimator"))]
+pub(crate) use self::est_noop::NoopEstLayer as EstimationLayer;
+
+#[cfg(not(feature = "estimator"))]
+mod est_noop {
+    use masa_core::Context;
+    use tonic_core::CowGrpcMethod;
+
+    use super::{Layer, LayerChild, LayerServer};
+
+    #[derive(Debug)]
+    pub(crate) struct NoopEstServer;
+
+    impl LayerServer for NoopEstServer {
+        fn new() -> Self {
+            Self
+        }
+    }
+
+    #[derive(Debug)]
+    pub(crate) struct NoopEstLayer;
+
+    impl Layer for NoopEstLayer {
+        type Server = NoopEstServer;
+        type Child = NoopEstChild;
+
+        fn new(_method: &CowGrpcMethod, _server: &NoopEstServer, _ctx: &mut Context) -> Self {
+            Self
+        }
+    }
+
+    #[derive(Debug, Clone)]
+    pub(crate) struct NoopEstChild;
+
+    impl LayerChild for NoopEstChild {
+        fn new() -> Self {
+            Self
+        }
+    }
+}
+
 // ── Re-exports ──────────────────────────────────────────────────────────
 
-pub(crate) use admission::PolicyLayer;
+pub(crate) use admission::AdmissionLayer;
 pub(crate) use e2e_deadline_guard::E2eDeadlineGuardLayer;
 pub(crate) use queue_latency::QueueLatencyLayer;
