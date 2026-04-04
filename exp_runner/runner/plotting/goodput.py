@@ -1634,11 +1634,18 @@ def plot_early_return_timeline(
 _REASON_COLORS = {
     "E2EDeadline": "#95a5a6",
     "LocalDeadlineExceeded": "#e74c3c",
-    "Layer1": "#f39c12",
-    "Layer2": "#3498db",
+    "BeforePollFeasibility": "#e67e22",
+    "BeforeChildFeasibility": "#f39c12",
+    "TokenBucketRej": "#3498db",
 }
 # Stable order: known reasons first, then any unexpected ones alphabetically.
-_KNOWN_REASON_ORDER = ["E2EDeadline", "LocalDeadlineExceeded", "Layer1", "Layer2"]
+_KNOWN_REASON_ORDER = [
+    "E2EDeadline",
+    "LocalDeadlineExceeded",
+    "BeforePollFeasibility",
+    "BeforeChildFeasibility",
+    "TokenBucketRej",
+]
 
 
 def plot_abort_reason_timeline(
