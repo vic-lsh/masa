@@ -1,56 +1,35 @@
-// Predictive admission control layer — latency estimation, deadline
-// tightening, and predictive admission control.
+// Predictive admission control layer — goodput-tracking token-bucket AC.
 //
-// When `estimator` is enabled, this layer tracks latency distributions,
-// tightens child deadlines (when `sched_pred` is also enabled), and runs
-// predictive admission control.
+// When `ac_pred` is enabled, this layer runs compute-capacity admission
+// control via a goodput-tracking token bucket. It sits after the
+// estimation layer which handles latency tracking, deadline tightening,
+// and feasibility checks independently.
 
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
-#[cfg(feature = "ac_pred")]
-use std::sync::{atomic::AtomicU64, Mutex};
-use std::task::Poll;
-#[cfg(feature = "ac_pred")]
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
-use masa_core::{Context, PriorityHint, RootMethod, ABORT_SLACK};
+use masa_core::Context;
 use tonic_core::{Code, CowGrpcMethod, Response, Status};
 
 use super::super::{ChildRpcContext, Layer, LayerChild, LayerServer};
 use crate::layer::est::estimator::DefaultLatencyEstimator;
 use crate::layer::est::latency_map::{MethodKey, ParentToChildKey};
-use crate::layer::est::state::{
-    is_early_return_response, ChildRPCTracker, EstimationTracker, LatencyEstimators,
-    RequestMetadataTracker,
-};
+use crate::layer::est::state::LatencyEstimators;
 use crate::policy_params::PolicyParams;
 use crate::registry::MethodId;
-use crate::MethodRegistry;
-
-/// Result of the two-layer admission check.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum AdmissionResult {
-    /// Request admitted.
-    Admit,
-    /// Shed by Layer 1 (deadline feasibility).
-    ShedLayer1,
-    /// Shed by Layer 2 (token bucket capacity).
-    ShedLayer2,
-}
 
 // ── Server ──────────────────────────────────────────────────────────────
 
-/// Server-level predictive layer state (shared across requests).
+/// Server-level predictive admission state (shared across requests).
 #[derive(Debug)]
 pub(crate) struct PredAdmissionServer {
-    est: LatencyEstimators<DefaultLatencyEstimator>,
     pred_admission: Arc<PredictiveAdmission>,
 }
 
 impl LayerServer for PredAdmissionServer {
     fn new() -> Self {
         Self {
-            est: LatencyEstimators::new(),
             pred_admission: Arc::new(PredictiveAdmission::new()),
         }
     }
@@ -58,14 +37,18 @@ impl LayerServer for PredAdmissionServer {
 
 // ── Per-Request ─────────────────────────────────────────────────────────
 
-/// Per-request predictive layer state.
+/// Per-request predictive admission layer state.
+///
+/// Accesses the estimation layer's shared `LatencyEstimators` (via the
+/// server-level `EstimationServer`) for cost estimates used by the
+/// goodput-tracking admission controller.
 #[derive(Debug)]
 pub(crate) struct PredAdmissionLayer {
-    estimation: EstimationTracker<DefaultLatencyEstimator>,
-    request_metadata: RequestMetadataTracker,
     pred_admission: Arc<PredictiveAdmission>,
+    /// Reference to the shared estimators for cost lookups.
+    est: LatencyEstimators<DefaultLatencyEstimator>,
+    root_method_id: Option<MethodId>,
     rpc: CowGrpcMethod,
-    feasibility_checked: AtomicBool,
 }
 
 impl Layer for PredAdmissionLayer {
@@ -73,126 +56,71 @@ impl Layer for PredAdmissionLayer {
     type Child = PredAdmissionChild;
 
     fn new(method: &CowGrpcMethod, server: &PredAdmissionServer, ctx: &mut Context) -> Self {
-        let resolved_method_id = MethodRegistry::global().get_or_register(method.clone());
-        // Set root_method at ingress (hop_count == 0)
-        if ctx.hop_count() == 0 {
-            ctx.root_method = Some(RootMethod {
-                service: method.service().to_string(),
-                method: method.method().to_string(),
-            });
-        }
         let root_method_id = ctx.root_method().map(|rm| {
-            MethodRegistry::global()
+            crate::MethodRegistry::global()
                 .get_or_register(CowGrpcMethod::new(rm.service.clone(), rm.method.clone()))
         });
         Self {
-            estimation: EstimationTracker::new(
-                resolved_method_id,
-                root_method_id,
-                server.est.clone(),
-            ),
-            request_metadata: RequestMetadataTracker::new(),
             pred_admission: server.pred_admission.clone(),
+            est: crate::layer::estimation::global_estimators(),
+            root_method_id,
             rpc: method.clone(),
-            feasibility_checked: AtomicBool::new(false),
         }
     }
 
-    /// Reprioritize the current task based on remaining time to deadline.
-    /// On first poll, reject if estimated method latency exceeds remaining time.
-    #[inline]
-    fn before_poll<Ret>(&self, ctx: &Context) -> Result<(), Result<Response<Ret>, Status>> {
-        if ABORT_SLACK {
-            let local_deadline = ctx.deadline();
-            if local_deadline != 0 && masa_core::time_now() > local_deadline {
-                return Err(Err(Status::new(
-                    Code::DeadlineExceeded,
-                    format!(
-                        "/EarlyReturn?src={}::{},reason=LocalDeadlineExceeded",
-                        self.rpc.service(),
-                        self.rpc.method(),
-                    ),
-                )));
-            }
-        }
-
-        #[cfg(feature = "sched_pred")]
-        {
-            let remaining = ctx.deadline().saturating_sub(masa_core::time_now());
-            tokio::task::reprioritize(PriorityHint::new(remaining));
-        }
-
-        // Early feasibility: on first poll, reject if estimated method latency
-        // exceeds remaining time. Only checked once — after the first poll the
-        // request is in-flight and should not be killed by this coarse check.
-        if !self.feasibility_checked.swap(true, Ordering::Relaxed) {
-            if let Some(est) = self.estimation.est_method_wallclock() {
-                if masa_core::time_now() + est > ctx.e2e_deadline() {
-                    return Err(Err(Status::new(
-                        Code::DeadlineExceeded,
-                        format!(
-                            "/EarlyReturn?src={}::{}?reason=early_feasibility",
-                            self.rpc.service(),
-                            self.rpc.method(),
-                        ),
-                    )));
-                }
-            }
-        }
-
-        self.request_metadata.start_poll();
-        Ok(())
-    }
-
-    /// Compute child deadline and priority, run predictive admission control,
-    /// and set the child request context.
+    /// Two-layer admission check before child RPC.
     ///
-    /// Returns `Err` if the request should be shed.
+    /// - Layer 1 (every hop): floor-based deadline feasibility — reject if
+    ///   estimated remaining wall-clock time exceeds deadline.
+    /// - Layer 2 (ingress only, hop_count==0): compute-capacity admission
+    ///   via goodput-tracking token bucket.
     #[inline]
     fn before_child_rpc<T>(
         &self,
         ctx: &Context,
         child_method_name: &CowGrpcMethod,
-        child_ctx: &mut PredAdmissionChild,
+        _child_ctx: &mut PredAdmissionChild,
         _request: &mut tonic_core::Request<T>,
-        child_rpc: &mut ChildRpcContext,
+        _child_rpc: &mut ChildRpcContext,
     ) -> Result<(), Status> {
-        let child_tracker = self.estimation.begin_child(child_method_name);
-        let time_left = ctx.e2e_deadline().saturating_sub(masa_core::time_now());
-        let remaining = self
-            .estimation
-            .est
-            .est_after_child_wallclock(child_tracker.key, time_left);
+        use masa_core::time_now;
 
-        self.estimation
-            .est
-            .log_estimates(&child_tracker.key, &remaining);
+        let child_id = crate::MethodRegistry::global().get_or_register(child_method_name.clone());
+        let key = ParentToChildKey::parent_rpc_method(
+            crate::MethodRegistry::global().get_or_register(self.rpc.clone()),
+        )
+        .child_rpc_method(child_id);
 
-        let admission = self.pred_admission.admission_check(
-            &self.estimation.est,
-            ctx,
-            child_tracker.key,
-            self.estimation.root_method_id,
-        );
-        match admission {
-            AdmissionResult::Admit => {}
-            AdmissionResult::ShedLayer1 => {
+        let time_left = ctx.e2e_deadline().saturating_sub(time_now());
+
+        // Layer 1: floor-based deadline feasibility
+        let remaining = self.est.est_after_child_wallclock(key, time_left);
+        let est_child = self.est.est_child_wallclock(key).unwrap_or(0);
+        if time_now() + est_child + remaining.floor > ctx.e2e_deadline() {
+            return Err(Status::new(
+                Code::DeadlineExceeded,
+                format!(
+                    "/EarlyReturn?src={}::{}?last_rpc={}::{}&reason=BeforeChildFeasibility",
+                    self.rpc.service(),
+                    self.rpc.method(),
+                    child_method_name.service(),
+                    child_method_name.method(),
+                ),
+            ));
+        }
+
+        // Layer 2: compute-capacity admission (ingress only)
+        if ctx.hop_count() == 0 {
+            let est_cost = if let Some(root_mid) = self.root_method_id {
+                self.est.est_subtree_compute(MethodKey(root_mid)).unwrap_or(0)
+            } else {
+                self.est.est_child_wallclock(key).unwrap_or(0)
+            };
+            if !self.pred_admission.should_admit(est_cost) {
                 return Err(Status::new(
                     Code::DeadlineExceeded,
                     format!(
-                        "/EarlyReturn?src={}::{}?last_rpc={}::{}&reason=Layer1",
-                        self.rpc.service(),
-                        self.rpc.method(),
-                        child_method_name.service(),
-                        child_method_name.method(),
-                    ),
-                ));
-            }
-            AdmissionResult::ShedLayer2 => {
-                return Err(Status::new(
-                    Code::DeadlineExceeded,
-                    format!(
-                        "/EarlyReturn?src={}::{}?last_rpc={}::{}&reason=Layer2",
+                        "/EarlyReturn?src={}::{}?last_rpc={}::{}&reason=TokenBucketRej",
                         self.rpc.service(),
                         self.rpc.method(),
                         child_method_name.service(),
@@ -202,150 +130,52 @@ impl Layer for PredAdmissionLayer {
             }
         }
 
-        let (deadline, prio_hint) = Self::child_deadline_and_prio(ctx, remaining.full);
-        child_rpc.deadline = deadline;
-        child_rpc.prio_hint = prio_hint;
-
-        child_ctx.child_tracker = Some(child_tracker);
-
         Ok(())
     }
 
-    /// Process a child RPC response: track latencies, accumulate goodput.
+    /// Record goodput on successful child RPC completion (ingress only).
     #[inline]
     fn after_child_rpc<T>(
         &self,
         ctx: &Context,
         _child_method: &CowGrpcMethod,
         response: &mut Result<Response<T>, Status>,
-        child_ctx: &PredAdmissionChild,
+        _child_ctx: &PredAdmissionChild,
     ) -> Result<(), Status> {
-        // Normal path: `before_child_rpc` initialized `child_tracker`. Tests (and any
-        // unusual call order) may invoke `after_child_rpc` without it — skip estimator
-        // bookkeeping but still run `sched_pred` error propagation below.
-        let info = if let Some(child_tracker) = child_ctx.child_tracker.as_ref() {
-            self.estimation
-                .record_child_complete(child_tracker, response);
-            Some(self.request_metadata.absorb_child_meta(response))
-        } else {
-            None
-        };
+        use crate::context_ext::MasaResponseExt;
 
-        // Accumulate completed cost for goodput tracking (ingress only, success only).
-        // Uses accumulated compute cost from the child's entire subtree instead of
-        // wall-clock child latency to avoid conflating queueing with compute.
-        #[cfg(feature = "ac_pred")]
-        if ctx.hop_count() == 0 && response.is_ok() {
-            if let Some(ref info) = info {
-                if let Some(acc_cost) = info.accumulated_compute_us {
-                    self.pred_admission.record_completion(acc_cost);
-                    if let Some(root_mid) = self.estimation.root_method_id {
-                        self.estimation
-                            .est
-                            .track_subtree_compute(MethodKey(root_mid), acc_cost);
+        if ctx.hop_count() == 0 {
+            if let Ok(resp) = response {
+                if let Some(child_ctx_resp) = resp.get_masa_context() {
+                    if let Some(meta) = child_ctx_resp.response_meta() {
+                        self.pred_admission.record_completion(meta.accumulated_compute_us);
+                        if let Some(root_mid) = self.root_method_id {
+                            self.est
+                                .track_subtree_compute(MethodKey(root_mid), meta.accumulated_compute_us);
+                        }
                     }
                 }
             }
         }
-
-        #[cfg(not(feature = "ac_pred"))]
-        let _ = (ctx, info);
-
-        #[cfg(feature = "sched_pred")]
-        if let Err(status) = response {
-            return Err(status.clone());
-        }
-
         Ok(())
-    }
-
-    /// Stop compute tracking after a poll, and check local deadline on Pending.
-    #[inline]
-    fn after_poll<Ret>(
-        &self,
-        ctx: &Context,
-        poll: &Poll<Result<Response<Ret>, Status>>,
-    ) -> Result<(), Result<Response<Ret>, Status>> {
-        self.request_metadata.end_poll();
-        if let Poll::Pending = poll {
-            if ABORT_SLACK {
-                let local_deadline = ctx.deadline();
-                if local_deadline != 0 && masa_core::time_now() > local_deadline {
-                    return Err(Err(Status::new(
-                        Code::DeadlineExceeded,
-                        format!(
-                            "/EarlyReturn?src={}::{},reason=LocalDeadlineExceeded",
-                            self.rpc.service(),
-                            self.rpc.method(),
-                        ),
-                    )));
-                }
-            }
-        }
-        Ok(())
-    }
-
-    /// Flush estimation observations and build response metadata at finalization.
-    ///
-    /// Sets `response_meta` on the shared `ctx`; the caller serializes once.
-    #[inline]
-    fn finalize<Ret>(&self, ctx: &mut Context, result: &mut Result<Response<Ret>, Status>) {
-        if !is_early_return_response(result) {
-            self.estimation.flush();
-        }
-        self.request_metadata.inject_response_meta(ctx);
-    }
-}
-
-impl PredAdmissionLayer {
-    /// Compute child deadline and priority hint.
-    ///
-    /// When `sched_pred` is enabled, tightens the deadline by subtracting
-    /// `est_remaining`.  Uses deadline alone as `prio_hint` (not
-    /// `deadline - est_child`) to avoid priority inversions under load.
-    ///
-    /// When `sched_pred` is disabled, passes through the parent values.
-    #[inline]
-    fn child_deadline_and_prio(ctx: &Context, est_remaining: u64) -> (u64, PriorityHint) {
-        #[cfg(feature = "sched_pred")]
-        {
-            let d = ctx.deadline().saturating_sub(est_remaining);
-            (d, PriorityHint::new(d))
-        }
-        #[cfg(not(feature = "sched_pred"))]
-        {
-            let _ = est_remaining;
-            (ctx.deadline(), ctx.prio_hint())
-        }
     }
 }
 
 // ── Per-Child-RPC ───────────────────────────────────────────────────────
 
-/// Per-child-RPC predictive layer state.
-///
-/// `child_tracker` is `None` until `before_child_rpc` calls `begin_child`,
-/// which creates a `ChildRPCTracker`.
 #[derive(Debug, Clone)]
-pub(crate) struct PredAdmissionChild {
-    pub(crate) child_tracker: Option<ChildRPCTracker>,
-}
+pub(crate) struct PredAdmissionChild;
 
 impl LayerChild for PredAdmissionChild {
     fn new() -> Self {
-        Self {
-            child_tracker: None,
-        }
+        Self
     }
 }
 
 // ══════════════════════════════════════════════════════════════════════════
-// Goodput-tracking admission control
+// Goodput-tracking admission controller
 // ══════════════════════════════════════════════════════════════════════════
 
-// ── Admission Controller ────────────────────────────────────────────────
-
-#[cfg(feature = "ac_pred")]
 struct BudgetState {
     /// EMA of cost-weighted goodput (µs/s).
     goodput_rate: f64,
@@ -357,7 +187,6 @@ struct BudgetState {
     rejection_ema: f64,
 }
 
-#[cfg(feature = "ac_pred")]
 impl std::fmt::Debug for BudgetState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("BudgetState")
@@ -370,20 +199,15 @@ impl std::fmt::Debug for BudgetState {
 /// Goodput-tracking admission controller.
 ///
 /// Sets the token-bucket refill rate to slightly above observed goodput
-/// (successful completion throughput in µs/s). This eliminates the
-/// observer effect of the previous utilization-based controller: goodput
-/// reflects actual system output, not the controller's own actions.
-#[cfg(feature = "ac_pred")]
+/// (successful completion throughput in µs/s).
 #[derive(Debug)]
-pub(crate) struct AdmissionController {
+pub(crate) struct PredictiveAdmission {
     state: Mutex<BudgetState>,
     /// Lock-free accumulator for completed child RPC costs (µs).
-    /// Drained by `should_admit` to compute the instantaneous goodput rate.
     completed_cost_us: AtomicU64,
 }
 
-#[cfg(feature = "ac_pred")]
-impl AdmissionController {
+impl PredictiveAdmission {
     pub(crate) fn new() -> Self {
         let p = &PolicyParams::global().pred;
         Self {
@@ -404,14 +228,10 @@ impl AdmissionController {
     }
 
     /// Returns true if the request should be admitted.
-    ///
-    /// Uses a token-bucket where tokens are microseconds of compute budget.
-    /// The refill rate tracks observed goodput plus a probe margin.
     pub(crate) fn should_admit(&self, est_child_cost: u64) -> bool {
         let p = &PolicyParams::global().pred;
         let cost = est_child_cost as f64;
 
-        // Drain the completion accumulator (lock-free swap).
         let drained = self.completed_cost_us.swap(0, Ordering::Relaxed) as f64;
 
         let mut state = self.state.lock().unwrap();
@@ -419,34 +239,24 @@ impl AdmissionController {
         let elapsed = now.duration_since(state.last_update).as_secs_f64();
         state.last_update = now;
 
-        // Update goodput EMA from accumulated completions.
         if elapsed > 0.0 {
             let instant_rate = drained / elapsed;
             let alpha = 1.0 - (-elapsed / p.tau).exp();
             state.goodput_rate += alpha * (instant_rate - state.goodput_rate);
         }
 
-        // Exploit vs explore: when rejections are happening, track observed
-        // goodput tightly; otherwise admit freely at the generous initial rate.
         let budget_rate = if state.rejection_ema > p.rejection_threshold {
-            // Exploit mode: tight tracking of observed goodput
             state.goodput_rate * (1.0 + p.probe_min)
         } else {
-            // Explore mode: admit freely using generous initial budget
             p.initial_budget_rate
         };
 
-        // Refill tokens, capped at burst limit.
-        // Dynamic floor: ensure the budget can always hold at least one
-        // request (cost × 2), so no request is permanently inadmissible
-        // regardless of how large est_child is (e.g., I/O-heavy Hotel calls).
         state.budget_us += budget_rate * elapsed;
         let max_budget = (budget_rate * p.max_burst_secs).max(cost * 2.0);
         if state.budget_us > max_budget {
             state.budget_us = max_budget;
         }
 
-        // Admission decision + rejection EMA update.
         let rejected = if state.budget_us >= cost {
             state.budget_us -= cost;
             false
@@ -459,136 +269,19 @@ impl AdmissionController {
     }
 }
 
-// ── PredictiveAdmission ────────────────────────────────────────────────────────
-
-// ac_pred ENABLED
-
-#[cfg(feature = "ac_pred")]
-#[derive(Debug)]
-pub(crate) struct PredictiveAdmission {
-    controller: AdmissionController,
-}
-
-#[cfg(feature = "ac_pred")]
-impl PredictiveAdmission {
-    pub(crate) fn new() -> Self {
-        Self {
-            controller: AdmissionController::new(),
-        }
-    }
-
-    /// Two-layer admission check using the estimation facade.
-    ///
-    /// - Layer 1 (every hop): floor-based deadline feasibility — reject if
-    ///   estimated remaining wall-clock time exceeds deadline.
-    /// - Layer 2 (ingress only, hop_count==0): compute-capacity admission via
-    ///   token-bucket, using estimated subtree compute cost.
-    #[inline]
-    pub(crate) fn admission_check(
-        &self,
-        est: &LatencyEstimators<DefaultLatencyEstimator>,
-        ctx: &Context,
-        key: ParentToChildKey,
-        root_method_id: Option<MethodId>,
-    ) -> AdmissionResult {
-        use masa_core::time_now;
-
-        let time_left = ctx.e2e_deadline().saturating_sub(time_now());
-
-        // Layer 1: floor-based deadline feasibility
-        // Includes estimated child call duration so requests that will spend
-        // most of their remaining budget on the child RPC are caught early.
-        let remaining = est.est_after_child_wallclock(key, time_left);
-        let est_child = est.est_child_wallclock(key).unwrap_or(0);
-        if time_now() + est_child + remaining.floor > ctx.e2e_deadline() {
-            return AdmissionResult::ShedLayer1;
-        }
-
-        // Layer 2: compute-capacity admission (ingress only)
-        // Uses accumulated compute cost keyed by root API type. Falls back to
-        // wall-clock child latency when root_method is not yet set (cold start).
-        if ctx.hop_count() == 0 {
-            let est_cost = if let Some(root_mid) = root_method_id {
-                est.est_subtree_compute(MethodKey(root_mid)).unwrap_or(0)
-            } else {
-                est.est_child_wallclock(key).unwrap_or(0)
-            };
-            if !self.controller.should_admit(est_cost) {
-                return AdmissionResult::ShedLayer2;
-            }
-        }
-
-        AdmissionResult::Admit
-    }
-
-    /// Record a successful child RPC completion for goodput tracking.
-    #[inline]
-    pub(crate) fn record_completion(&self, est_child_cost: u64) {
-        self.controller.record_completion(est_child_cost);
-    }
-}
-
-// ac_pred DISABLED
-
-#[cfg(not(feature = "ac_pred"))]
-#[derive(Debug)]
-pub(crate) struct PredictiveAdmission;
-
-#[cfg(not(feature = "ac_pred"))]
-impl PredictiveAdmission {
-    #[inline]
-    pub(crate) fn new() -> Self {
-        Self
-    }
-
-    /// Floor-based deadline feasibility check using latency estimates.
-    ///
-    /// When `ac_pred` is disabled, this is the only admission check that runs.
-    /// Returns `ShedLayer1` or `Admit` (never `ShedLayer2`).
-    #[inline]
-    pub(crate) fn admission_check(
-        &self,
-        est: &LatencyEstimators<DefaultLatencyEstimator>,
-        ctx: &Context,
-        key: ParentToChildKey,
-        _root_method_id: Option<MethodId>,
-    ) -> AdmissionResult {
-        use masa_core::time_now;
-
-        let time_left = ctx.e2e_deadline().saturating_sub(time_now());
-        let remaining = est.est_after_child_wallclock(key, time_left);
-        let est_child = est.est_child_wallclock(key).unwrap_or(0);
-        if time_now() + est_child + remaining.floor > ctx.e2e_deadline() {
-            AdmissionResult::ShedLayer1
-        } else {
-            AdmissionResult::Admit
-        }
-    }
-
-    #[inline]
-    pub(crate) fn record_completion(&self, _est_child_cost: u64) {}
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn test_admission_controller_admits_with_budget() {
-        let ac = AdmissionController::new();
-        // With initial budget (goodput_rate = 5M, budget = 25K µs),
-        // a small compute cost should be admitted.
+        let ac = PredictiveAdmission::new();
         assert!(ac.should_admit(1000));
     }
 
     #[test]
     fn test_admission_controller_rejects_when_budget_exhausted() {
-        let ac = AdmissionController::new();
-        // Exhaust the budget by admitting requests with large compute costs.
-        // Initial budget = 5M * 0.005 = 25K µs. With no completions,
-        // goodput_rate decays toward 0 and budget won't refill meaningfully.
-        // Dynamic burst floor: max(budget_rate * 0.005, cost * 2) = 200K us.
-        // Each request costs 100K, so ~2 requests exhaust the budget.
+        let ac = PredictiveAdmission::new();
         let mut rejected = false;
         for _ in 0..20 {
             if !ac.should_admit(100_000) {
@@ -604,18 +297,14 @@ mod tests {
 
     #[test]
     fn test_goodput_tracking_refills_budget() {
-        let ac = AdmissionController::new();
-        // Exhaust budget
+        let ac = PredictiveAdmission::new();
         while ac.should_admit(100_000) {}
 
-        // Simulate completions
         ac.record_completion(100_000);
         ac.record_completion(100_000);
 
-        // Sleep to let elapsed time accumulate for refill
         std::thread::sleep(std::time::Duration::from_millis(50));
 
-        // Should be able to admit again after completions refill the budget
         assert!(
             ac.should_admit(1000),
             "should admit after completions refill the budget"
