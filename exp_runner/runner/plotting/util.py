@@ -189,16 +189,15 @@ def _parse_error_columns(df: pd.DataFrame) -> pd.DataFrame:
     df.loc[mask_er, "error_type"] = "EarlyReturn"
 
     # 3. Vectorized extraction using Regex
-    # Regex captures: /EarlyReturn?src=<svc>::<method>?last_rpc=<last_child>&reason=<reason>
-    # The reason field may be separated by '&' or ',' depending on the source.
+    # Regex captures: /EarlyReturn?src=<svc>::<method>[?last_rpc=<child>][&reason=<reason>]
     # Pattern explanation:
     # ^/EarlyReturn\?src=         Start with literal prefix
     # (?P<er_service>.+?)         Capture service (non-greedy)
     # ::                          Literal separator
-    # (?P<er_method>[^?,\s]+)     Capture method (until next ?, comma, whitespace or end)
-    # (?:[?,]last_rpc=(?P<er_last_child>[^&,\s]*))?  Optional: last_rpc (until & or , or space)
-    # (?:[&,]reason=(?P<er_reason>[^\s]*))?           Optional: reason (until space or end)
-    pattern = r"^/EarlyReturn\?src=(?P<er_service>.+?)::(?P<er_method>[^?,\s]+)(?:[?,]last_rpc=(?P<er_last_child>[^&,\s]*))?(?:[&,]reason=(?P<er_reason>[^\s]*))?"
+    # (?P<er_method>[^?&,\s]+)    Capture method (until next delimiter or end)
+    # (?:[?,]last_rpc=(?P<er_last_child>[^&,\s]*))?  Optional: last_rpc
+    # (?:[&?,]reason=(?P<er_reason>[^\s]*))?          Optional: reason (& or ? or , separator)
+    pattern = r"^/EarlyReturn\?src=(?P<er_service>.+?)::(?P<er_method>[^?&,\s]+)(?:[?,]last_rpc=(?P<er_last_child>[^&,\s]*))?(?:[&?,]reason=(?P<er_reason>[^\s]*))?"
 
     extracted_data = df.loc[mask_er, "error"].str.extract(pattern)
 
