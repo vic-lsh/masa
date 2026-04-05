@@ -1671,9 +1671,7 @@ def plot_abort_reason_timeline(
             df = rps_data.get(rps, pd.DataFrame())
             if df.empty or "er_reason" not in df.columns:
                 continue
-            er_mask = (
-                df.get("error_type", pd.Series(dtype=str)) == "EarlyReturn"
-            )
+            er_mask = df.get("error_type", pd.Series(dtype=str)) == "EarlyReturn"
             reasons = df.loc[er_mask, "er_reason"].fillna("E2EDeadline").unique()
             all_reasons.update(reasons)
 
@@ -1768,15 +1766,22 @@ def plot_abort_reason_timeline(
             if i > 0:
                 step_t.append(t_start)
                 step_rps.append(float(rps))
-                ax.axvline(t_start, linestyle="--", color="grey", alpha=0.4, linewidth=1)
+                ax.axvline(
+                    t_start, linestyle="--", color="grey", alpha=0.4, linewidth=1
+                )
             step_t.append(t_start + effective_duration)
             step_rps.append(float(rps))
         ax.fill_between(
             step_t, step_rps, step=None, color="grey", alpha=0.12, label="Offered RPS"
         )
         ax.step(
-            step_t, step_rps, where="post",
-            color="grey", linewidth=1.5, linestyle="-", alpha=0.5,
+            step_t,
+            step_rps,
+            where="post",
+            color="grey",
+            linewidth=1.5,
+            linestyle="-",
+            alpha=0.5,
         )
 
         ax.set_ylabel("RPS")
@@ -2077,9 +2082,7 @@ def generate_plots(args, plot_data: PlotData | None = None) -> None:
                 early_returns_last_child_by_type is not None
                 and total_early_returns_last_child is not None
             ):
-                output_path = os.path.join(
-                    er_dir, f"early_return_last_child_{api}.png"
-                )
+                output_path = os.path.join(er_dir, f"early_return_last_child_{api}.png")
                 future_specs.append(
                     (
                         _plot_early_return_breakdown,

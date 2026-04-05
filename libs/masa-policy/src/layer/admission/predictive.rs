@@ -112,7 +112,9 @@ impl Layer for PredAdmissionLayer {
         // Layer 2: compute-capacity admission (ingress only)
         if ctx.hop_count() == 0 {
             let est_cost = if let Some(root_mid) = self.root_method_id {
-                self.est.est_subtree_compute(MethodKey(root_mid)).unwrap_or(0)
+                self.est
+                    .est_subtree_compute(MethodKey(root_mid))
+                    .unwrap_or(0)
             } else {
                 self.est.est_child_wallclock(key).unwrap_or(0)
             };
@@ -148,10 +150,13 @@ impl Layer for PredAdmissionLayer {
             if let Ok(resp) = response {
                 if let Some(child_ctx_resp) = resp.get_masa_context() {
                     if let Some(meta) = child_ctx_resp.response_meta() {
-                        self.pred_admission.record_completion(meta.accumulated_compute_us);
+                        self.pred_admission
+                            .record_completion(meta.accumulated_compute_us);
                         if let Some(root_mid) = self.root_method_id {
-                            self.est
-                                .track_subtree_compute(MethodKey(root_mid), meta.accumulated_compute_us);
+                            self.est.track_subtree_compute(
+                                MethodKey(root_mid),
+                                meta.accumulated_compute_us,
+                            );
                         }
                     }
                 }
