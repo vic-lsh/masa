@@ -147,10 +147,8 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
 
         let e2e_deadline_guard =
             E2eDeadlineGuardLayer::new(&resolved_method, &server_ctx.e2e_deadline_guard, &mut ctx);
-        let estimation =
-            EstimationLayer::new(&resolved_method, &server_ctx.estimation, &mut ctx);
-        let admission =
-            AdmissionLayer::new(&resolved_method, &server_ctx.admission, &mut ctx);
+        let estimation = EstimationLayer::new(&resolved_method, &server_ctx.estimation, &mut ctx);
+        let admission = AdmissionLayer::new(&resolved_method, &server_ctx.admission, &mut ctx);
         let queue_latency =
             QueueLatencyLayer::new(&resolved_method, &server_ctx.queue_latency, &mut ctx);
 
