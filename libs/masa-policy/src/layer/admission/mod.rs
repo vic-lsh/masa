@@ -1,10 +1,15 @@
-// Admission control layers — mutually exclusive, compile-time selected.
+// Admission control layers — compile-time selected.
 //
-// - `predictive` (feature `estimator`): latency estimation + predictive AC.
+// - `predictive` (feature `ac_pred`): goodput-tracking token-bucket AC.
 // - `rajomon` (feature `ac_rajomon`): token-based AC with price signals.
 // - `NoopLayer`: when neither is enabled, compiles away to nothing.
+//
+// `ac_pred` and `ac_rajomon` are mutually exclusive (two admission
+// controllers cannot coexist). Estimation (latency tracking, deadline
+// tightening, feasibility checks) is handled by the separate
+// `EstimationLayer` and does not conflict with either AC layer.
 
-#[cfg(feature = "estimator")]
+#[cfg(feature = "ac_pred")]
 pub(crate) mod predictive;
 
 #[cfg(feature = "ac_rajomon")]
@@ -12,31 +17,26 @@ pub mod rajomon;
 
 // ── Mutual exclusion ────────────────────────────────────────────────────
 
-#[cfg(all(feature = "estimator", feature = "ac_rajomon"))]
+#[cfg(all(feature = "ac_pred", feature = "ac_rajomon"))]
 compile_error!(
-    "Features `estimator` and `ac_rajomon` are mutually exclusive. Use one layer at a time."
+    "Features `ac_pred` and `ac_rajomon` are mutually exclusive. Use one admission controller at a time."
 );
 
-// ── Compile-time policy layer selection ─────────────────────────────────
+// ── Compile-time admission layer selection ──────────────────────────────
 
-#[cfg(feature = "ac_rajomon")]
-pub(crate) use rajomon::RajomonLayer as PolicyLayer;
+#[cfg(feature = "ac_pred")]
+pub(crate) use predictive::PredAdmissionLayer as AdmissionLayer;
 
-#[cfg(all(feature = "estimator", not(feature = "ac_rajomon")))]
-pub(crate) use predictive::PredAdmissionLayer as PolicyLayer;
+#[cfg(all(feature = "ac_rajomon", not(feature = "ac_pred")))]
+pub(crate) use rajomon::RajomonLayer as AdmissionLayer;
 
-#[cfg(not(any(feature = "estimator", feature = "ac_rajomon")))]
-pub(crate) use self::noop::NoopLayer as PolicyLayer;
+#[cfg(not(any(feature = "ac_pred", feature = "ac_rajomon")))]
+pub(crate) use self::noop::NoopLayer as AdmissionLayer;
 
 // ── Noop layer (inline) ─────────────────────────────────────────────────
 
-#[cfg(not(any(feature = "estimator", feature = "ac_rajomon")))]
+#[cfg(not(any(feature = "ac_pred", feature = "ac_rajomon")))]
 mod noop {
-    // No-op layer — used when neither `estimator` nor `ac_rajomon` is enabled.
-    //
-    // All methods use the default no-op implementations from the trait, so
-    // they compile away entirely.
-
     use masa_core::Context;
     use tonic_core::CowGrpcMethod;
 
@@ -61,8 +61,6 @@ mod noop {
         fn new(_method: &CowGrpcMethod, _server: &NoopServer, _ctx: &mut Context) -> Self {
             Self
         }
-
-        // All other methods use default no-op impls from the trait.
     }
 
     #[derive(Debug, Clone)]
