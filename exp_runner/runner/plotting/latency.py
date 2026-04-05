@@ -105,8 +105,9 @@ def _plot_abort_reason_stacked(
     """Generate stacked bar chart of abort reasons across RPS levels."""
     reason_colors = {
         "LocalDeadlineExceeded": "#e74c3c",
-        "Layer1": "#f39c12",
-        "Layer2": "#3498db",
+        "BeforePollFeasibility": "#e67e22",
+        "BeforeChildFeasibility": "#f39c12",
+        "TokenBucketRej": "#3498db",
         "E2EDeadline": "#95a5a6",
     }
 
@@ -129,7 +130,13 @@ def _plot_abort_reason_stacked(
         return
 
     # Stable order: known reasons first, then any unexpected ones
-    known_order = ["E2EDeadline", "LocalDeadlineExceeded", "Layer1", "Layer2"]
+    known_order = [
+        "E2EDeadline",
+        "LocalDeadlineExceeded",
+        "BeforePollFeasibility",
+        "BeforeChildFeasibility",
+        "TokenBucketRej",
+    ]
     reasons = [r for r in known_order if r in all_reasons]
     reasons += sorted(all_reasons - set(known_order))
 
@@ -328,7 +335,10 @@ def generate_plots(args, plot_data: PlotData | None = None) -> None:
 
     # Submit CDF plots for each (repeat, api, rps)
     for i in range(repeats):
-        output_dir = os.path.join(args.output_dir, str(i))
+        latency_dir = os.path.join(args.output_dir, str(i), "latency")
+        er_dir = os.path.join(args.output_dir, str(i), "early_return")
+        os.makedirs(latency_dir, exist_ok=True)
+        os.makedirs(er_dir, exist_ok=True)
         for api in apis:
             data = results[i][api]
             slo = data[policies[0]][rps_values[0]]["slo"].max() / MS_TO_US
@@ -339,7 +349,7 @@ def generate_plots(args, plot_data: PlotData | None = None) -> None:
                     (
                         _plot_latency_cdf,
                         (
-                            output_dir,
+                            latency_dir,
                             api,
                             rps,
                             policies,
@@ -352,7 +362,7 @@ def generate_plots(args, plot_data: PlotData | None = None) -> None:
                 (
                     _plot_p99_latency,
                     (
-                        output_dir,
+                        latency_dir,
                         api,
                         policies,
                         rps_values,
@@ -368,7 +378,7 @@ def generate_plots(args, plot_data: PlotData | None = None) -> None:
                     (
                         _plot_abort_reason_stacked,
                         (
-                            output_dir,
+                            er_dir,
                             api,
                             policy,
                             rps_values,

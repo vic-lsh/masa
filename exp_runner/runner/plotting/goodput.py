@@ -1630,6 +1630,178 @@ def plot_early_return_timeline(
     plt.close(fig)
 
 
+# Stable color for each abort reason (matches latency.py stacked bar chart).
+_REASON_COLORS = {
+    "E2EDeadline": "#95a5a6",
+    "LocalDeadlineExceeded": "#e74c3c",
+    "BeforePollFeasibility": "#e67e22",
+    "BeforeChildFeasibility": "#f39c12",
+    "TokenBucketRej": "#3498db",
+}
+# Stable order: known reasons first, then any unexpected ones alphabetically.
+_KNOWN_REASON_ORDER = [
+    "E2EDeadline",
+    "LocalDeadlineExceeded",
+    "BeforePollFeasibility",
+    "BeforeChildFeasibility",
+    "TokenBucketRej",
+]
+
+
+def plot_abort_reason_timeline(
+    output_path: str,
+    rps_sequence: list[int],
+    policies: list[str],
+    policy_data_by_rps: dict[str, dict[int, pd.DataFrame]],
+    *,
+    duration_sec: float,
+    warmup_sec: float = 0,
+    window_sec: float = 2.0,
+) -> None:
+    """Plot per-second early-return rate by abort reason over time.
+
+    One subplot per policy; within each subplot one line per abort reason.
+    Mirrors ``plot_early_return_timeline`` but splits by ``er_reason``.
+    """
+    # First pass: discover all reasons across all policies.
+    all_reasons: set[str] = set()
+    for policy in policies:
+        rps_data = policy_data_by_rps.get(policy, {})
+        for rps in rps_sequence:
+            df = rps_data.get(rps, pd.DataFrame())
+            if df.empty or "er_reason" not in df.columns:
+                continue
+            er_mask = df.get("error_type", pd.Series(dtype=str)) == "EarlyReturn"
+            reasons = df.loc[er_mask, "er_reason"].fillna("E2EDeadline").unique()
+            all_reasons.update(reasons)
+
+    if not all_reasons:
+        return
+
+    reasons = [r for r in _KNOWN_REASON_ORDER if r in all_reasons]
+    reasons += sorted(all_reasons - set(_KNOWN_REASON_ORDER))
+
+    n_policies = len(policies)
+    fig, axes = plt.subplots(
+        n_policies, 1, figsize=(14, 5 * n_policies), squeeze=False, sharex=True
+    )
+    effective_duration = duration_sec - warmup_sec
+    csv_rows: list[dict[str, object]] = []
+
+    for p_idx, policy in enumerate(policies):
+        ax = axes[p_idx, 0]
+        rps_data = policy_data_by_rps.get(policy, {})
+
+        # Build per-reason time series.
+        reason_times: dict[str, list[float]] = {r: [] for r in reasons}
+        reason_rates: dict[str, list[float]] = {r: [] for r in reasons}
+
+        for period_idx, rps in enumerate(rps_sequence):
+            df = rps_data.get(rps, pd.DataFrame())
+            if df.empty:
+                continue
+
+            start_at = pd.to_numeric(df["start_at"], errors="coerce")
+            if start_at.dropna().empty:
+                continue
+
+            t_min = start_at.min()
+            rel_sec = (start_at - t_min) / 1_000_000.0
+
+            if warmup_sec > 0:
+                keep = rel_sec >= warmup_sec
+                rel_sec = rel_sec[keep] - warmup_sec
+                df = df.loc[keep]
+
+            abs_sec = rel_sec + period_idx * effective_duration
+
+            # Classify each request's reason (non-ER → None).
+            if "error_type" in df.columns and "er_reason" in df.columns:
+                er_mask = df["error_type"] == "EarlyReturn"
+                req_reason = df["er_reason"].where(er_mask).fillna("E2EDeadline")
+                req_reason = req_reason.where(er_mask)  # non-ER stays NaN
+            else:
+                req_reason = pd.Series(np.nan, index=df.index)
+
+            order = np.argsort(abs_sec.values)
+            t_arr = abs_sec.values[order]
+            reason_arr = req_reason.values[order]
+
+            step = 0.5
+            t_centers = np.arange(
+                period_idx * effective_duration + window_sec / 2,
+                (period_idx + 1) * effective_duration - window_sec / 2 + step,
+                step,
+            )
+            for tc in t_centers:
+                lo, hi = tc - window_sec / 2, tc + window_sec / 2
+                mask = (t_arr >= lo) & (t_arr < hi)
+                window_reasons = reason_arr[mask]
+                for reason in reasons:
+                    count = int(np.sum(window_reasons == reason))
+                    reason_times[reason].append(tc)
+                    reason_rates[reason].append(count / window_sec)
+
+        for reason in reasons:
+            if not reason_times[reason]:
+                continue
+            color = _REASON_COLORS.get(reason, "#7f8c8d")
+            ax.plot(
+                reason_times[reason],
+                reason_rates[reason],
+                label=reason,
+                color=color,
+                linewidth=1.5,
+            )
+            for t, rate in zip(reason_times[reason], reason_rates[reason]):
+                csv_rows.append(
+                    {"Time": t, "Policy": policy, "Reason": reason, "Rate": rate}
+                )
+
+        # Offered RPS step area.
+        step_t = [0.0]
+        step_rps: list[float] = [float(rps_sequence[0])]
+        for i, rps in enumerate(rps_sequence):
+            t_start = i * effective_duration
+            if i > 0:
+                step_t.append(t_start)
+                step_rps.append(float(rps))
+                ax.axvline(
+                    t_start, linestyle="--", color="grey", alpha=0.4, linewidth=1
+                )
+            step_t.append(t_start + effective_duration)
+            step_rps.append(float(rps))
+        ax.fill_between(
+            step_t, step_rps, step=None, color="grey", alpha=0.12, label="Offered RPS"
+        )
+        ax.step(
+            step_t,
+            step_rps,
+            where="post",
+            color="grey",
+            linewidth=1.5,
+            linestyle="-",
+            alpha=0.5,
+        )
+
+        ax.set_ylabel("RPS")
+        ax.set_title(get_policy_display_name(policy))
+        ax.set_ylim(bottom=0)
+        ax.grid(True, which="both", linestyle="--", alpha=0.4)
+        ax.legend(loc="upper left")
+
+    axes[-1, 0].set_xlabel("Time (s)")
+    axes[-1, 0].set_xlim(left=0, right=len(rps_sequence) * effective_duration)
+    fig.suptitle(f"Abort-reason timeline ({window_sec:g}s window)", fontsize=14, y=1.0)
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=300)
+    plt.close(fig)
+
+    if csv_rows:
+        csv_path = output_path.replace(".png", ".csv")
+        pd.DataFrame(csv_rows).to_csv(csv_path, index=False)
+
+
 def generate_plots(args, plot_data: PlotData | None = None) -> None:
     prepare_output_dir(args)
 
@@ -1767,7 +1939,8 @@ def generate_plots(args, plot_data: PlotData | None = None) -> None:
     future_specs = []
 
     for i in range(repeats):
-        output_dir = os.path.join(args.output_dir, str(i))
+        goodput_dir = os.path.join(args.output_dir, str(i), "goodput")
+        os.makedirs(goodput_dir, exist_ok=True)
         for api in apis:
             goodputs_by_type = None
             if api == "ALL" and i < len(policy_goodputs_by_type):
@@ -1777,7 +1950,7 @@ def generate_plots(args, plot_data: PlotData | None = None) -> None:
                 (
                     _plot_policy_goodput_comparison,
                     (
-                        output_dir,
+                        goodput_dir,
                         api,
                         policies,
                         rps_values,
@@ -1791,13 +1964,13 @@ def generate_plots(args, plot_data: PlotData | None = None) -> None:
 
     # Add goodput timeline plots (per iteration, ALL api only)
     for i in range(repeats):
-        output_dir = os.path.join(args.output_dir, str(i))
+        goodput_dir = os.path.join(args.output_dir, str(i), "goodput")
         policy_data_by_rps = {policy: results[i]["ALL"][policy] for policy in policies}
         future_specs.append(
             (
                 plot_goodput_timeline,
                 (
-                    os.path.join(output_dir, "goodput_timeline.png"),
+                    os.path.join(goodput_dir, "goodput_timeline.png"),
                     rps_sequence,
                     policies,
                     policy_data_by_rps,
@@ -1811,13 +1984,35 @@ def generate_plots(args, plot_data: PlotData | None = None) -> None:
 
     # Add early-return timeline plots (per iteration, ALL api only)
     for i in range(repeats):
-        output_dir = os.path.join(args.output_dir, str(i))
+        er_dir = os.path.join(args.output_dir, str(i), "early_return")
+        os.makedirs(er_dir, exist_ok=True)
         policy_data_by_rps = {policy: results[i]["ALL"][policy] for policy in policies}
         future_specs.append(
             (
                 plot_early_return_timeline,
                 (
-                    os.path.join(output_dir, "early_return_timeline.png"),
+                    os.path.join(er_dir, "early_return_timeline.png"),
+                    rps_sequence,
+                    policies,
+                    policy_data_by_rps,
+                ),
+                {
+                    "duration_sec": duration_sec,
+                    "warmup_sec": warmup_sec,
+                },
+            )
+        )
+
+    # Add abort-reason timeline plots (per iteration, ALL api only)
+    for i in range(repeats):
+        er_dir = os.path.join(args.output_dir, str(i), "early_return")
+        os.makedirs(er_dir, exist_ok=True)
+        policy_data_by_rps = {policy: results[i]["ALL"][policy] for policy in policies}
+        future_specs.append(
+            (
+                plot_abort_reason_timeline,
+                (
+                    os.path.join(er_dir, "abort_reason_timeline.png"),
                     rps_sequence,
                     policies,
                     policy_data_by_rps,
@@ -1856,12 +2051,13 @@ def generate_plots(args, plot_data: PlotData | None = None) -> None:
         )
 
     for i in range(repeats):
-        output_dir = os.path.join(args.output_dir, str(i))
+        er_dir = os.path.join(args.output_dir, str(i), "early_return")
+        os.makedirs(er_dir, exist_ok=True)
         for api in apis:
             early_returns_by_type = policy_early_returns_by_type[i].get(api)
             total_early_returns = policy_total_early_returns[i].get(api)
             if early_returns_by_type is not None and total_early_returns is not None:
-                output_path = os.path.join(output_dir, f"early_return_{api}.png")
+                output_path = os.path.join(er_dir, f"early_return_{api}.png")
                 future_specs.append(
                     (
                         _plot_early_return_breakdown,
@@ -1886,9 +2082,7 @@ def generate_plots(args, plot_data: PlotData | None = None) -> None:
                 early_returns_last_child_by_type is not None
                 and total_early_returns_last_child is not None
             ):
-                output_path = os.path.join(
-                    output_dir, f"early_return_last_child_{api}.png"
-                )
+                output_path = os.path.join(er_dir, f"early_return_last_child_{api}.png")
                 future_specs.append(
                     (
                         _plot_early_return_breakdown,
@@ -1904,7 +2098,8 @@ def generate_plots(args, plot_data: PlotData | None = None) -> None:
                 )
 
     for i in range(repeats):
-        output_dir = os.path.join(args.output_dir, str(i))
+        er_dir = os.path.join(args.output_dir, str(i), "early_return")
+        os.makedirs(er_dir, exist_ok=True)
         for api in apis:
             if api != "ALL":
                 continue
@@ -1912,7 +2107,7 @@ def generate_plots(args, plot_data: PlotData | None = None) -> None:
             slo_misses_by_type = policy_slo_misses_by_type[i].get(api)
             total_slo_misses = policy_total_slo_misses[i].get(api)
             if slo_misses_by_type is not None and total_slo_misses is not None:
-                output_path = os.path.join(output_dir, f"slo_miss_{api}.png")
+                output_path = os.path.join(er_dir, f"slo_miss_{api}.png")
                 future_specs.append(
                     (
                         _plot_slo_miss_breakdown,

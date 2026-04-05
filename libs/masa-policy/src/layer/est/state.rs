@@ -137,12 +137,8 @@ impl<E: LatencyEstimator + Default + 'static> LatencyEstimators<E> {
         self.child_wallclock.get_estimate(key)
     }
 
-    /// Estimated total wall-clock latency for a (root API, local method) pair.
-    pub(crate) fn est_method_wallclock(&self, key: RootToLocalKey) -> Option<u64> {
-        self.method_wallclock.get_estimate(key)
-    }
-
     /// Estimated accumulated CPU compute cost for a request subtree (root API key).
+    #[cfg(feature = "ac_pred")]
     pub(crate) fn est_subtree_compute(&self, key: MethodKey) -> Option<u64> {
         self.subtree_compute.get_estimate(key)
     }
@@ -165,6 +161,7 @@ impl<E: LatencyEstimator + Default + 'static> LatencyEstimators<E> {
     }
 
     /// Track accumulated CPU compute cost for a request subtree (root API key).
+    #[cfg(feature = "ac_pred")]
     pub(crate) fn track_subtree_compute(&self, key: MethodKey, cost_us: u64) {
         self.subtree_compute.track(key, cost_us);
     }
@@ -280,12 +277,6 @@ impl<E: LatencyEstimator + Default + 'static> EstimationTracker<E> {
             child_end_times: Mutex::new(Vec::new()),
             request_start: Instant::now(),
         }
-    }
-
-    /// Estimated total wall-clock latency for this (root API type, local method) pair.
-    pub(crate) fn est_method_wallclock(&self) -> Option<u64> {
-        let key = self.method_wallclock_key()?;
-        self.est.est_method_wallclock(key)
     }
 
     /// Create a child RPC tracker for the given child method.

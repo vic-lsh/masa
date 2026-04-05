@@ -17,11 +17,23 @@ The experiment runner replaces the previous bash script system with a well-struc
 
 ## Installation
 
-The experiment runner is part of the MASA repository. Ensure you have Python 3.10+ and the required dependencies:
+The experiment runner is part of the MASA repository. Ensure you have Python 3.10+ and the required dependencies.
+
+### Ubuntu System Dependencies
 
 ```bash
-# The runner uses existing Python dependencies from pyproject.toml
-# No additional installation required
+sudo apt update
+sudo apt install build-essential graphviz libgraphviz-dev
+```
+
+### Python Dependencies
+
+```bash
+# Install uv if not already present
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Install Python dependencies
+uv sync
 ```
 
 ## Quick Start
