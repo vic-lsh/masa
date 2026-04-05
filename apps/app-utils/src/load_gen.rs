@@ -617,8 +617,7 @@ where
         };
 
         // Create arrival timer to manage inter-arrival times
-        let mut arrival_timer =
-            ArrivalTimer::new(self.gen_cfg.gap, self.rps, self.rng.clone());
+        let mut arrival_timer = ArrivalTimer::new(self.gen_cfg.gap, self.rps, self.rng.clone());
 
         while Instant::now() < pause_at {
             // XXX: tokio's sleep has millisecond granularity, so for small intervals this may be
