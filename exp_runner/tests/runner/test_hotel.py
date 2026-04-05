@@ -16,6 +16,7 @@ from unittest.mock import Mock, patch
 from exp_runner.runner.apps.hotel import (
     HotelApp,
     HotelBuilder,
+    resolve_policy_params,
 )
 from exp_runner.runner.apps.utils import normalize_features_to_tag
 
@@ -329,6 +330,86 @@ class TestEdgeCases:
         result = normalize_features_to_tag("Zebra,apple,BANANA")
         # After lowercase conversion and sorting
         assert result == "apple-banana-zebra"
+
+
+class TestResolvePolicyParams:
+    """Tests for resolve_policy_params — per-policy parameter selection."""
+
+    def test_flat_params_pass_through(self):
+        """Non-nested rajomon params are unchanged."""
+        params = {"rajomon": {"price_cap": 60, "init_price": 0}}
+        result = resolve_policy_params(params, "sched_fifo,ac_rajomon,abort_slo")
+        assert result["rajomon"] == {"price_cap": 60, "init_price": 0}
+
+    def test_selects_matching_nested_sched_key(self):
+        params = {
+            "rajomon": {
+                "sched_fifo": {"price_cap": 10},
+                "sched_slo": {"price_cap": 30, "init_price": 3},
+            }
+        }
+        result = resolve_policy_params(params, "sched_slo,ac_rajomon,abort_slo")
+        assert result["rajomon"] == {"price_cap": 30, "init_price": 3}
+
+    def test_selects_fifo_variant(self):
+        params = {
+            "rajomon": {
+                "sched_fifo": {"price_cap": 10},
+                "sched_slo": {"price_cap": 30},
+            }
+        }
+        result = resolve_policy_params(params, "sched_fifo,ac_rajomon,abort_slo")
+        assert result["rajomon"] == {"price_cap": 10}
+
+    def test_no_match_removes_section(self):
+        """When nested keys exist but none match, section is removed."""
+        params = {
+            "rajomon": {
+                "sched_slo": {"price_cap": 30},
+            }
+        }
+        result = resolve_policy_params(params, "sched_fifo,ac_rajomon,abort_slo")
+        assert "rajomon" not in result
+
+    def test_pred_section_also_resolved(self):
+        params = {
+            "pred": {
+                "sched_pred": {"tau": 1.0, "probe_min": 0.05},
+                "sched_slo": {"tau": 2.0},
+            }
+        }
+        result = resolve_policy_params(
+            params, "sched_pred,ac_pred,abort_slo,est_mean_var"
+        )
+        assert result["pred"] == {"tau": 1.0, "probe_min": 0.05}
+
+    def test_empty_params(self):
+        result = resolve_policy_params({}, "sched_fifo,ac_rajomon,abort_slo")
+        assert result == {}
+
+    def test_unrelated_keys_preserved(self):
+        params = {
+            "rajomon": {
+                "sched_slo": {"price_cap": 30},
+            },
+            "custom_key": {"foo": "bar"},
+        }
+        result = resolve_policy_params(params, "sched_slo,ac_rajomon,abort_slo")
+        assert result["custom_key"] == {"foo": "bar"}
+        assert result["rajomon"] == {"price_cap": 30}
+
+    def test_mixed_nested_and_flat(self):
+        """rajomon nested, pred flat — both handled correctly."""
+        params = {
+            "rajomon": {
+                "sched_fifo": {"price_cap": 10},
+                "sched_slo": {"price_cap": 30},
+            },
+            "pred": {"tau": 2.0, "probe_min": 0.15},
+        }
+        result = resolve_policy_params(params, "sched_slo,ac_rajomon,abort_slo")
+        assert result["rajomon"] == {"price_cap": 30}
+        assert result["pred"] == {"tau": 2.0, "probe_min": 0.15}
 
 
 if __name__ == "__main__":

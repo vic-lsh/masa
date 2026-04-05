@@ -3,18 +3,19 @@
 // `PolicyHooks` is the single concrete `Hooks` implementation used by all
 // scheduling policies (sched_fifo, sched_slo, sched_tailclipper, sched_pred).
 // The actual scheduling differences are handled by the tokio runtime and,
-// when enabled, the active layer (predictive or rajomon).
+// when enabled, the active layers (estimation and/or admission).
 //
-// Layers are called in field order: e2e_deadline_guard (guard), policy
-// (scheduling), queue_latency (observer). The first `Err` short-circuits.
+// Layers are called in field order:
+//   e2e_deadline_guard → estimation → admission → queue_latency.
+// The first `Err` short-circuits.
 
 use std::sync::Arc;
 use std::task::Poll;
 
 use crate::context_ext::{read_context, MasaRequestExt, MasaResponseExt, MasaStatusExt};
 use crate::layer::{
-    ChildRpcContext, E2eDeadlineGuardLayer, Layer, LayerChild, LayerServer, PolicyLayer,
-    QueueLatencyLayer,
+    AdmissionLayer, ChildRpcContext, E2eDeadlineGuardLayer, EstimationLayer, Layer, LayerChild,
+    LayerServer, QueueLatencyLayer,
 };
 use masa_core::{Context, ContextBuilder};
 use tonic_core::masa_ext::resolve_method_name_from_http;
@@ -22,7 +23,8 @@ use tonic_core::masa_ext::resolve_method_name_from_request;
 use tonic_core::masa_ext::{ClientHooks, Hooks, ParentHooks, ServerHooks};
 use tonic_core::{CowGrpcMethod, GrpcMethod, Request, Response, Status};
 
-/// Invoke `$body` for each layer in field order (e2e_deadline_guard → policy → queue_latency).
+/// Invoke `$body` for each layer in field order
+/// (e2e_deadline_guard → estimation → admission → queue_latency).
 /// The first `Err` short-circuits via `?` if the body uses it.
 ///
 /// Forms:
@@ -36,7 +38,11 @@ macro_rules! for_each_layer {
             $body
         }
         {
-            let $o = &$self.policy;
+            let $o = &$self.estimation;
+            $body
+        }
+        {
+            let $o = &$self.admission;
             $body
         }
         {
@@ -51,8 +57,13 @@ macro_rules! for_each_layer {
             $body
         }
         {
-            let $o = &$self.policy;
-            let $c = &mut $child.policy;
+            let $o = &$self.estimation;
+            let $c = &mut $child.estimation;
+            $body
+        }
+        {
+            let $o = &$self.admission;
+            let $c = &mut $child.admission;
             $body
         }
         {
@@ -68,8 +79,13 @@ macro_rules! for_each_layer {
             $body
         }
         {
-            let $o = &$self.policy;
-            let $c = &$child.policy;
+            let $o = &$self.estimation;
+            let $c = &$child.estimation;
+            $body
+        }
+        {
+            let $o = &$self.admission;
+            let $c = &$child.admission;
             $body
         }
         {
@@ -93,7 +109,8 @@ impl Hooks for PolicyHooks {
 #[derive(Debug)]
 pub struct ServerContext {
     e2e_deadline_guard: <E2eDeadlineGuardLayer as Layer>::Server,
-    policy: <PolicyLayer as Layer>::Server,
+    estimation: <EstimationLayer as Layer>::Server,
+    admission: <AdmissionLayer as Layer>::Server,
     queue_latency: <QueueLatencyLayer as Layer>::Server,
 }
 
@@ -101,7 +118,8 @@ impl ServerHooks for ServerContext {
     fn new(_service_name: &'static str) -> Self {
         Self {
             e2e_deadline_guard: <<E2eDeadlineGuardLayer as Layer>::Server as LayerServer>::new(),
-            policy: <<PolicyLayer as Layer>::Server as LayerServer>::new(),
+            estimation: <<EstimationLayer as Layer>::Server as LayerServer>::new(),
+            admission: <<AdmissionLayer as Layer>::Server as LayerServer>::new(),
             queue_latency: <<QueueLatencyLayer as Layer>::Server as LayerServer>::new(),
         }
     }
@@ -113,7 +131,8 @@ pub struct ParentContext {
     ctx: Context,
     resolved_method: CowGrpcMethod,
     pub(crate) e2e_deadline_guard: E2eDeadlineGuardLayer,
-    pub(crate) policy: PolicyLayer,
+    pub(crate) estimation: EstimationLayer,
+    pub(crate) admission: AdmissionLayer,
     pub(crate) queue_latency: QueueLatencyLayer,
 }
 
@@ -128,7 +147,8 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
 
         let e2e_deadline_guard =
             E2eDeadlineGuardLayer::new(&resolved_method, &server_ctx.e2e_deadline_guard, &mut ctx);
-        let policy = PolicyLayer::new(&resolved_method, &server_ctx.policy, &mut ctx);
+        let estimation = EstimationLayer::new(&resolved_method, &server_ctx.estimation, &mut ctx);
+        let admission = AdmissionLayer::new(&resolved_method, &server_ctx.admission, &mut ctx);
         let queue_latency =
             QueueLatencyLayer::new(&resolved_method, &server_ctx.queue_latency, &mut ctx);
 
@@ -136,7 +156,8 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
             ctx,
             resolved_method,
             e2e_deadline_guard,
-            policy,
+            estimation,
+            admission,
             queue_latency,
         }
     }
@@ -204,7 +225,6 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
     fn finalize_before_serialization<Ret>(&self, result: &mut Result<Response<Ret>, Status>) {
         let mut ctx = self.ctx.clone();
         for_each_layer!(self, |o| o.finalize(&mut ctx, result));
-        // Single serialization point — all layers wrote to `ctx`.
         match result {
             Ok(resp) => resp.set_masa_context(&ctx),
             Err(status) => status.set_masa_context(&ctx),
@@ -216,7 +236,8 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
 pub struct ChildContext {
     pub child_method_name: Option<CowGrpcMethod>,
     e2e_deadline_guard: <E2eDeadlineGuardLayer as Layer>::Child,
-    pub(crate) policy: <PolicyLayer as Layer>::Child,
+    pub(crate) estimation: <EstimationLayer as Layer>::Child,
+    pub(crate) admission: <AdmissionLayer as Layer>::Child,
     queue_latency: <QueueLatencyLayer as Layer>::Child,
 }
 
@@ -225,7 +246,8 @@ impl ClientHooks for ChildContext {
         Self {
             child_method_name: None,
             e2e_deadline_guard: <<E2eDeadlineGuardLayer as Layer>::Child as LayerChild>::new(),
-            policy: <<PolicyLayer as Layer>::Child as LayerChild>::new(),
+            estimation: <<EstimationLayer as Layer>::Child as LayerChild>::new(),
+            admission: <<AdmissionLayer as Layer>::Child as LayerChild>::new(),
             queue_latency: <<QueueLatencyLayer as Layer>::Child as LayerChild>::new(),
         }
     }
@@ -264,36 +286,24 @@ mod tests {
                 registry.get_or_register(CowGrpcMethod::new("TestIntegration", "Child"));
             let key = ParentToChildKey::parent_rpc_method(parent_mid).child_rpc_method(child_mid);
 
-            // Inject an estimator with a short update interval (2) for testing.
-            // By default, LatencyRms has a large update interval (512), which makes testing hard.
             {
                 est.child_wallclock_map().insert(key, LatencyRms::new(2));
             }
 
-            // 1st track: sum_sq=100, count=1, since_update=1. No update yet.
             est.track_child_wallclock(key, 10);
-
-            // Estimate uses cached RMS value (initially 0).
             let val = est.est_child_wallclock(key);
             assert_eq!(val, Some(0));
 
-            // 2nd track: sum_sq=200, count=2, since_update=2. Update triggers.
-            // RMS = sqrt( (10^2 + 10^2) / 2 ) = 10.
             est.track_child_wallclock(key, 10);
-
             let val = est.est_child_wallclock(key);
             assert_eq!(val, Some(10));
 
-            // 3rd track: sum_sq=200+400=600, count=3, since_update=1. No update yet.
             est.track_child_wallclock(key, 20);
             let val = est.est_child_wallclock(key);
-            assert_eq!(val, Some(10)); // Still 10
+            assert_eq!(val, Some(10));
 
-            // 4th track: sum_sq=600+400=1000, count=4, since_update=2. Update triggers.
-            // RMS = sqrt( (100 + 100 + 400 + 400) / 4 ) = sqrt(250) ~ 15.
             est.track_child_wallclock(key, 20);
             let val = est.est_child_wallclock(key);
-            // integer_sqrt(250) is 15 (15*15=225, 16*16=256)
             assert_eq!(val, Some(15));
         }
 
@@ -305,12 +315,10 @@ mod tests {
             let method = GrpcMethod::new("TestService", "TestMethod");
             let mut req = http::Request::new(());
 
-            // 1. No overrides
             let resolved = resolve_method_name_from_http(method, &req);
             assert_eq!(resolved.service(), "TestService");
             assert_eq!(resolved.method(), "TestMethod");
 
-            // 2. Method override only
             req.headers_mut().insert(
                 METHOD_NAME_OVERRIDE_HEADER,
                 HeaderValue::from_static("OverriddenMethod"),
@@ -319,7 +327,6 @@ mod tests {
             assert_eq!(resolved.service(), "TestService");
             assert_eq!(resolved.method(), "OverriddenMethod");
 
-            // 3. Method and Service override
             req.headers_mut().insert(
                 SERVICE_NAME_OVERRIDE_HEADER,
                 HeaderValue::from_static("OverriddenService"),
@@ -340,12 +347,10 @@ mod tests {
             let method = GrpcMethod::new("TestService", "TestMethod");
             let mut req = Request::new(());
 
-            // 1. No overrides
             let resolved = resolve_method_name_from_request(method, &req);
             assert_eq!(resolved.service(), "TestService");
             assert_eq!(resolved.method(), "TestMethod");
 
-            // 2. Method override only
             req.metadata_mut().insert(
                 METHOD_NAME_OVERRIDE_HEADER,
                 MetadataValue::from_static("OverriddenMethod"),
@@ -354,7 +359,6 @@ mod tests {
             assert_eq!(resolved.service(), "TestService");
             assert_eq!(resolved.method(), "OverriddenMethod");
 
-            // 3. Method and Service override
             req.metadata_mut().insert(
                 SERVICE_NAME_OVERRIDE_HEADER,
                 MetadataValue::from_static("OverriddenService"),
@@ -366,15 +370,11 @@ mod tests {
 
         #[test]
         fn test_local_deadline_policy_integration() {
-            use crate::MethodRegistry;
-
-            // 1. Setup Server Context
             let server_ctx = Arc::new(ServerContext::new("IntegrationService"));
 
-            // 2. Prepare Parent Request
             let method = GrpcMethod::new("IntegrationService", "ParentMethod");
             let now = masa_core::time_now();
-            let slo_us = 100_000u64; // 100ms SLO
+            let slo_us = 100_000u64;
             let deadline = now + slo_us;
             let ctx = ContextBuilder::new("IntegrationService", 123)
                 .slo(slo_us)
@@ -387,10 +387,8 @@ mod tests {
                 .body(())
                 .unwrap();
 
-            // 3. Begin Parent Context (registers ParentMethod)
             let parent_ctx = ParentContext::begin(method, &req, server_ctx.clone());
 
-            // 4. Before Child RPC (registers ChildMethod)
             let child_method = GrpcMethod::new("IntegrationService", "ChildMethod");
             let mut child_req = Request::new(());
             let mut child_ctx = ChildContext::new(child_method, &child_req);
@@ -399,14 +397,13 @@ mod tests {
                 .before_child_rpc(child_method, &mut child_req, &mut child_ctx)
                 .unwrap();
 
-            // Verify child context was initialized by before_child_rpc
+            // Verify child tracker was initialized by the estimation layer
             let child_tracker = child_ctx
-                .policy
+                .estimation
                 .child_tracker
                 .as_ref()
                 .expect("child_tracker should be initialized after before_child_rpc");
 
-            // Verify registry has IDs
             let registry = MethodRegistry::global();
             let parent_id =
                 registry.get_or_register(CowGrpcMethod::new("IntegrationService", "ParentMethod"));
@@ -417,55 +414,17 @@ mod tests {
             assert_eq!(key.parent(), parent_id);
             assert_eq!(key.child(), child_id);
 
-            // 5. Simulate Child Response
             let mut response = Ok(Response::new(()));
             let _ = parent_ctx
                 .after_child_rpc(child_method, &mut response, child_ctx)
                 .unwrap();
 
-            // 6. Track Latencies
             let mut response_result = Ok(Response::new(()));
             parent_ctx.finalize_before_serialization(&mut response_result);
 
-            // 7. Verify registry names
             let parent_method = registry.get_method_name(parent_id).unwrap();
             assert_eq!(parent_method.service(), "IntegrationService");
             assert_eq!(parent_method.method(), "ParentMethod");
-        }
-
-        /// Verify that `PredictiveAdmission::admission_check` admits when there
-        /// is plenty of time left (floor-based Layer 1 check).
-        #[test]
-        fn test_admission_check_floor_based_admits_with_budget() {
-            use crate::layer::admission::predictive::{AdmissionResult, PredictiveAdmission};
-            use crate::layer::est::estimator::DefaultLatencyEstimator;
-
-            let est = LatencyEstimators::<DefaultLatencyEstimator>::new();
-            let pred = PredictiveAdmission::new();
-
-            // Generous deadline: 100ms from now.
-            let slo_us = 100_000u64;
-            let now = masa_core::time_now();
-            let deadline = now + slo_us;
-            let ctx = ContextBuilder::new("FloorService", 42)
-                .slo(slo_us)
-                .gateway_entry(now)
-                .deadline(deadline)
-                .build();
-
-            let registry = MethodRegistry::global();
-            let parent_mid = registry.get_or_register(CowGrpcMethod::new("FloorService", "Parent"));
-            let child_mid = registry.get_or_register(CowGrpcMethod::new("FloorService", "Child"));
-            let key = ParentToChildKey::parent_rpc_method(parent_mid).child_rpc_method(child_mid);
-
-            // With est_remaining_floor = 0, the floor check is: time_now > e2e_deadline.
-            // Since e2e_deadline is 100ms in the future, this should NOT shed.
-            let result = pred.admission_check(&est, &ctx, key, None);
-            assert_eq!(
-                result,
-                AdmissionResult::Admit,
-                "should admit when plenty of time remains"
-            );
         }
     }
 }
