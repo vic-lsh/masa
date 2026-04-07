@@ -138,6 +138,10 @@ impl PolicyParams {
                     Ok(file) => match serde_json::from_reader(std::io::BufReader::new(file)) {
                         Ok(params) => {
                             log::info!("Loaded policy params from {}", path);
+                            log::info!(
+                                "Policy params: {}",
+                                serde_json::to_string(&params).unwrap()
+                            );
                             return params;
                         }
                         Err(e) => {
@@ -157,7 +161,12 @@ impl PolicyParams {
                     }
                 }
             }
-            PolicyParams::default()
+            let params = PolicyParams::default();
+            log::info!(
+                "Using default policy params: {}",
+                serde_json::to_string(&params).unwrap()
+            );
+            params
         })
     }
 }
