@@ -17,7 +17,7 @@ from ..deployment_manager import TaskSpec
 from ..executor import CommandExecutor, MockCommandExecutor, SubprocessExecutor
 from ..naming import generate_project_name
 from .base import AppBuilder, AppPlugin, DockerConfig
-from .utils import get_docker_progress_flag, normalize_features_to_tag
+from .utils import get_docker_progress_flag, normalize_features_to_tag, resolve_policy_params
 
 if TYPE_CHECKING:
     from ..config import ExperimentConfig
@@ -462,10 +462,11 @@ class SyntheticApp(AppPlugin):
                     f"Services in call graph: {[s['id'] for s in config.app_config['call_graph']['services']]}"
                 )
 
-        # Write policy_param.json (empty dict = use all built-in defaults)
+        # Write policy_param.json, resolving policy-specific overrides.
         project_policy_params_path = output_dir / "policy_param.json"
+        resolved_params = resolve_policy_params(config.policy_params or {}, policy)
         with project_policy_params_path.open("w") as f:
-            json.dump(config.policy_params or {}, f, indent=2)
+            json.dump(resolved_params, f, indent=2)
         env_vars["POLICY_PARAMS_PATH"] = str(project_policy_params_path.resolve())
 
         # Generate gen_config.json
