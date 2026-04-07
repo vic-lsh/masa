@@ -260,7 +260,7 @@ class RajomonOptimizer:
 
     def _cleanup_stale_docker(self) -> None:
         """Remove stale Docker containers and networks from previous optimizer runs."""
-        app_prefix = self.app_plugin.name()
+        app_prefix = self.app_plugin.get_app_name()
         pattern = f"{app_prefix}-opt-rajomon"
         try:
             # Find and remove stale containers
