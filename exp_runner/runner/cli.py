@@ -17,6 +17,7 @@ from .apps import get_app_plugin
 from .apps.base import AppBuilder
 from .config import ExperimentConfig
 from .experiment import Experiment
+from .optimizer import OptimizerConfig, RajomonOptimizer
 from .plotting import generate_all_plots
 from .plotting.replicas import generate_replicas_plots
 
@@ -390,6 +391,43 @@ def cmd_plot_replicas(args: argparse.Namespace) -> None:
         sys.exit(1)
 
 
+def cmd_optimize(args: argparse.Namespace) -> None:
+    """
+    Run Bayesian optimization for Rajomon parameters.
+
+    Args:
+        args: Parsed command-line arguments
+    """
+    repo_root = find_repo_root()
+
+    output_path = Path(args.output) if args.output else None
+
+    config = OptimizerConfig(
+        app=args.app,
+        experiment_base=args.experiment_base,
+        policy=args.policy,
+        saturation_rps=args.saturation_rps,
+        n_iterations=args.iterations,
+        penalty_weight=args.penalty_weight,
+        warm_start_path=Path(args.warm_start) if args.warm_start else None,
+        output_path=output_path,
+    )
+
+    optimizer = RajomonOptimizer(config, repo_root)
+
+    try:
+        best_params = optimizer.run()
+        if best_params:
+            logger.info("Optimization completed successfully!")
+            logger.info(f"Best params: {best_params}")
+        else:
+            logger.error("Optimization completed with no successful trials")
+            sys.exit(1)
+    except Exception as e:
+        logger.error(f"Optimization failed: {e}", exc_info=True)
+        sys.exit(1)
+
+
 def create_parser() -> argparse.ArgumentParser:
     """Main entry point for the CLI."""
     parser = argparse.ArgumentParser(
@@ -604,6 +642,54 @@ Examples:
         "app", choices=["hotel"], help="Application name (hotel only)"
     )
     plot_replicas_parser.set_defaults(func=cmd_plot_replicas)
+
+    # optimize command
+    optimize_parser = subparsers.add_parser(
+        "optimize",
+        help="Optimize Rajomon admission control parameters via Bayesian optimization",
+        description="Run Optuna-based Bayesian optimization to find good Rajomon parameters",
+    )
+    optimize_parser.add_argument(
+        "app",
+        choices=["hotel", "mssim", "socialnet", "synthetic"],
+        help="Application to optimize",
+    )
+    optimize_parser.add_argument(
+        "experiment_base",
+        help="Existing experiment to copy app topology from (e.g., rajomon_hotel)",
+    )
+    optimize_parser.add_argument(
+        "--policy",
+        required=True,
+        help="Feature flags (e.g., sched_slo,ac_rajomon,abort_slo)",
+    )
+    optimize_parser.add_argument(
+        "--saturation-rps",
+        type=int,
+        required=True,
+        help="Max sustainable RPS (used to generate sweep: 0.8x-2.0x)",
+    )
+    optimize_parser.add_argument(
+        "--iterations",
+        type=int,
+        default=30,
+        help="Number of optimization iterations (default: 30)",
+    )
+    optimize_parser.add_argument(
+        "--penalty-weight",
+        type=float,
+        default=10.0,
+        help="Penalty multiplier for p99 SLO violations (default: 10.0)",
+    )
+    optimize_parser.add_argument(
+        "--warm-start",
+        help="Path to previous best_params.json for warm-starting",
+    )
+    optimize_parser.add_argument(
+        "--output",
+        help="Path to write best params (default: exp/<app>/out/_opt_rajomon/best_params.json)",
+    )
+    optimize_parser.set_defaults(func=cmd_optimize)
 
     return parser
 
