@@ -10,6 +10,7 @@ import copy
 import csv
 import json
 import logging
+import shutil
 import subprocess
 import time
 from dataclasses import dataclass
@@ -309,6 +310,19 @@ class RajomonOptimizer:
         except Exception as e:
             logger.warning(f"Docker cleanup failed (non-fatal): {e}")
 
+    def _cleanup_trial_dirs(self, exp_name: str, out_dir: Path) -> None:
+        """Remove trial input/output directories to save disk space."""
+        try:
+            # Remove output directory
+            if out_dir.exists():
+                shutil.rmtree(out_dir)
+            # Remove input directory
+            in_dir = self.repo_root / "exp" / self.config.app / "in" / exp_name
+            if in_dir.exists():
+                shutil.rmtree(in_dir)
+        except Exception as e:
+            logger.warning(f"Trial directory cleanup failed (non-fatal): {e}")
+
     def _run_experiment(self, iteration: int, params: dict) -> float:
         """Run one experiment iteration and return the objective value."""
         self._cleanup_stale_docker()
@@ -344,12 +358,17 @@ class RajomonOptimizer:
 
         # Compute objective
         gen_config = self._build_gen_config()
-        return compute_objective(
+        objective = compute_objective(
             config.out_dir,
             self.config.policy,
             gen_config,
             self.config.penalty_weight,
         )
+
+        # Clean up trial directories to save disk space
+        self._cleanup_trial_dirs(exp_name, config.out_dir)
+
+        return objective
 
     def _log_trial(
         self, trial_number: int, params: dict, objective: float, is_best: bool
