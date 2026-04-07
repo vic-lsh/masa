@@ -10,6 +10,7 @@ import copy
 import csv
 import json
 import logging
+import subprocess
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -257,8 +258,61 @@ class RajomonOptimizer:
 
         return in_dir
 
+    def _cleanup_stale_docker(self) -> None:
+        """Remove stale Docker containers and networks from previous optimizer runs."""
+        app_prefix = self.app_plugin.name()
+        pattern = f"{app_prefix}-opt-rajomon"
+        try:
+            # Find and remove stale containers
+            result = subprocess.run(
+                ["docker", "ps", "-aq", "--filter", f"name={pattern}"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            container_ids = result.stdout.strip().split()
+            if container_ids and container_ids[0]:
+                logger.info(
+                    f"Removing {len(container_ids)} stale optimizer containers"
+                )
+                subprocess.run(
+                    ["docker", "rm", "-f", *container_ids],
+                    capture_output=True,
+                    check=False,
+                )
+
+            # Remove stale networks
+            result = subprocess.run(
+                [
+                    "docker",
+                    "network",
+                    "ls",
+                    "--filter",
+                    f"name={pattern}",
+                    "-q",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            network_ids = result.stdout.strip().split()
+            if network_ids and network_ids[0]:
+                logger.info(
+                    f"Removing {len(network_ids)} stale optimizer networks"
+                )
+                for nid in network_ids:
+                    subprocess.run(
+                        ["docker", "network", "rm", nid],
+                        capture_output=True,
+                        check=False,
+                    )
+        except Exception as e:
+            logger.warning(f"Docker cleanup failed (non-fatal): {e}")
+
     def _run_experiment(self, iteration: int, params: dict) -> float:
         """Run one experiment iteration and return the objective value."""
+        self._cleanup_stale_docker()
+
         exp_name = f"_opt_rajomon_{iteration}"
         self._create_experiment_dir(iteration, params)
 
@@ -399,10 +453,13 @@ class RajomonOptimizer:
                 f"Resuming from {completed} completed trials, "
                 f"{remaining} remaining"
             )
-            if study.best_trial:
-                best_objective = study.best_trial.value
-                best_params = sample_params_from_values(study.best_trial.params)
+            try:
+                bt = study.best_trial
+                best_objective = bt.value
+                best_params = sample_params_from_values(bt.params)
                 logger.info(f"Previous best objective: {best_objective:.4f}")
+            except ValueError:
+                logger.info("No successful trials yet in previous runs")
 
         optimization_start = time.monotonic()
 
