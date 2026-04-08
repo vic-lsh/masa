@@ -139,6 +139,7 @@ impl<E: LatencyEstimator + Default + 'static> LatencyEstimators<E> {
 
     /// Estimated accumulated CPU compute cost for a request subtree (root API key).
     #[cfg(feature = "ac_pred")]
+    #[allow(dead_code)]
     pub(crate) fn est_subtree_compute(&self, key: MethodKey) -> Option<u64> {
         self.subtree_compute.get_estimate(key)
     }

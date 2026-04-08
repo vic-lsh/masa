@@ -1,11 +1,10 @@
-// Predictive admission control layer — goodput-tracking token-bucket AC.
+// Predictive admission control layer — early-return-rate driven AC.
 //
-// When `ac_pred` is enabled, this layer runs compute-capacity admission
-// control via a goodput-tracking token bucket. It sits after the
-// estimation layer which handles latency tracking, deadline tightening,
-// and feasibility checks independently.
+// When `ac_pred` is enabled, this layer runs admission control at ingress
+// (hop_count == 0). It rejects requests probabilistically based on the
+// observed early-return rate, with a goodput-derived floor that relaxes
+// under overload.
 
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
@@ -15,7 +14,7 @@ use tonic_core::{Code, CowGrpcMethod, Response, Status};
 use super::super::{ChildRpcContext, Layer, LayerChild, LayerServer};
 use crate::layer::est::estimator::DefaultLatencyEstimator;
 use crate::layer::est::latency_map::{MethodKey, ParentToChildKey};
-use crate::layer::est::state::LatencyEstimators;
+use crate::layer::est::state::{is_early_return_response, LatencyEstimators};
 use crate::policy_params::PolicyParams;
 use crate::registry::MethodId;
 
@@ -38,14 +37,9 @@ impl LayerServer for PredAdmissionServer {
 // ── Per-Request ─────────────────────────────────────────────────────────
 
 /// Per-request predictive admission layer state.
-///
-/// Accesses the estimation layer's shared `LatencyEstimators` (via the
-/// server-level `EstimationServer`) for cost estimates used by the
-/// goodput-tracking admission controller.
 #[derive(Debug)]
 pub(crate) struct PredAdmissionLayer {
     pred_admission: Arc<PredictiveAdmission>,
-    /// Reference to the shared estimators for cost lookups.
     est: LatencyEstimators<DefaultLatencyEstimator>,
     root_method_id: Option<MethodId>,
     rpc: CowGrpcMethod,
@@ -70,10 +64,9 @@ impl Layer for PredAdmissionLayer {
 
     /// Two-layer admission check before child RPC.
     ///
-    /// - Layer 1 (every hop): floor-based deadline feasibility — reject if
-    ///   estimated remaining wall-clock time exceeds deadline.
-    /// - Layer 2 (ingress only, hop_count==0): compute-capacity admission
-    ///   via goodput-tracking token bucket.
+    /// - Layer 1 (every hop): floor-based deadline feasibility.
+    /// - Layer 2 (ingress only): probabilistic rejection based on
+    ///   early-return rate, floored by goodput health.
     #[inline]
     fn before_child_rpc<T>(
         &self,
@@ -109,33 +102,24 @@ impl Layer for PredAdmissionLayer {
             ));
         }
 
-        // Layer 2: compute-capacity admission (ingress only)
-        if ctx.hop_count() == 0 {
-            let est_cost = if let Some(root_mid) = self.root_method_id {
-                self.est
-                    .est_subtree_compute(MethodKey(root_mid))
-                    .unwrap_or(0)
-            } else {
-                self.est.est_child_wallclock(key).unwrap_or(0)
-            };
-            if !self.pred_admission.should_admit(est_cost) {
-                return Err(Status::new(
-                    Code::DeadlineExceeded,
-                    format!(
-                        "/EarlyReturn?src={}::{}?last_rpc={}::{}&reason=TokenBucketRej",
-                        self.rpc.service(),
-                        self.rpc.method(),
-                        child_method_name.service(),
-                        child_method_name.method(),
-                    ),
-                ));
-            }
+        // Layer 2: early-return-rate admission (ingress only)
+        if ctx.hop_count() == 0 && !self.pred_admission.should_admit() {
+            return Err(Status::new(
+                Code::DeadlineExceeded,
+                format!(
+                    "/EarlyReturn?src={}::{}?last_rpc={}::{}&reason=PredAdmissionRej",
+                    self.rpc.service(),
+                    self.rpc.method(),
+                    child_method_name.service(),
+                    child_method_name.method(),
+                ),
+            ));
         }
 
         Ok(())
     }
 
-    /// Record goodput on successful child RPC completion (ingress only).
+    /// Track early-return rate and goodput after child RPC (ingress only).
     #[inline]
     fn after_child_rpc<T>(
         &self,
@@ -147,11 +131,12 @@ impl Layer for PredAdmissionLayer {
         use crate::context_ext::MasaResponseExt;
 
         if ctx.hop_count() == 0 {
+            let is_er = is_early_return_response(response);
+            self.pred_admission.record_outcome(is_er);
+
             if let Ok(resp) = response {
                 if let Some(child_ctx_resp) = resp.get_masa_context() {
                     if let Some(meta) = child_ctx_resp.response_meta() {
-                        self.pred_admission
-                            .record_completion(meta.accumulated_compute_us);
                         if let Some(root_mid) = self.root_method_id {
                             self.est.track_subtree_compute(
                                 MethodKey(root_mid),
@@ -178,99 +163,125 @@ impl LayerChild for PredAdmissionChild {
 }
 
 // ══════════════════════════════════════════════════════════════════════════
-// Goodput-tracking admission controller
+// Early-return-rate admission controller
 // ══════════════════════════════════════════════════════════════════════════
 
-struct BudgetState {
-    /// EMA of cost-weighted goodput (µs/s).
-    goodput_rate: f64,
-    /// Token bucket balance (µs).
-    budget_us: f64,
-    /// Timestamp of last admission check.
+struct AdmissionState {
+    /// EMA of early-return fraction (0.0–1.0).
+    er_rate: f64,
+    /// Fast EMA of goodput (completions/s).
+    goodput_fast: f64,
+    /// Slow EMA of goodput (completions/s).
+    goodput_slow: f64,
+    /// Timestamp of last update.
     last_update: Instant,
-    /// EMA of per-decision rejection rate (0.0 = no rejections, 1.0 = all rejected).
-    rejection_ema: f64,
+    /// Completions since last update.
+    completions: u64,
+    /// Counter for periodic logging.
+    log_counter: u64,
 }
 
-impl std::fmt::Debug for BudgetState {
+impl std::fmt::Debug for AdmissionState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("BudgetState")
-            .field("goodput_rate", &self.goodput_rate)
-            .field("budget_us", &self.budget_us)
+        f.debug_struct("AdmissionState")
+            .field("er_rate", &self.er_rate)
+            .field("goodput_fast", &self.goodput_fast)
+            .field("goodput_slow", &self.goodput_slow)
             .finish()
     }
 }
 
-/// Goodput-tracking admission controller.
+/// Early-return-rate driven admission controller.
 ///
-/// Sets the token-bucket refill rate to slightly above observed goodput
-/// (successful completion throughput in µs/s).
+/// Rejects probabilistically at `er_rate`. When goodput is healthy
+/// (fast EMA >= slow EMA), rejection is capped at `max_reject_floor`.
+/// When goodput is dropping (overload), the cap lifts.
 #[derive(Debug)]
 pub(crate) struct PredictiveAdmission {
-    state: Mutex<BudgetState>,
-    /// Lock-free accumulator for completed child RPC costs (µs).
-    completed_cost_us: AtomicU64,
+    state: Mutex<AdmissionState>,
 }
 
 impl PredictiveAdmission {
     pub(crate) fn new() -> Self {
-        let p = &PolicyParams::global().pred;
         Self {
-            state: Mutex::new(BudgetState {
-                goodput_rate: p.initial_budget_rate,
-                budget_us: p.initial_budget_rate * p.max_burst_secs,
+            state: Mutex::new(AdmissionState {
+                er_rate: 0.0,
+                goodput_fast: 0.0,
+                goodput_slow: 0.0,
                 last_update: Instant::now(),
-                rejection_ema: 0.0,
+                completions: 0,
+                log_counter: 0,
             }),
-            completed_cost_us: AtomicU64::new(0),
         }
     }
 
-    /// Record a successful child RPC completion (lock-free).
-    pub(crate) fn record_completion(&self, est_child_cost: u64) {
-        self.completed_cost_us
-            .fetch_add(est_child_cost, Ordering::Relaxed);
+    /// Record whether a child RPC was an early return or a success.
+    pub(crate) fn record_outcome(&self, is_early_return: bool) {
+        let p = &PolicyParams::global().pred;
+        let mut state = self.state.lock().unwrap();
+
+        // Update early-return rate EMA (per-event).
+        let er_sample = if is_early_return { 1.0 } else { 0.0 };
+        state.er_rate += p.er_alpha * (er_sample - state.er_rate);
+
+        // Track completions for goodput.
+        if !is_early_return {
+            state.completions += 1;
+        }
+
+        // Update goodput EMAs based on elapsed time.
+        let now = Instant::now();
+        let elapsed = now.duration_since(state.last_update).as_secs_f64();
+        if elapsed > 0.01 {
+            let instant_goodput = state.completions as f64 / elapsed;
+            state.completions = 0;
+            state.last_update = now;
+
+            let alpha_fast = 1.0 - (-elapsed / p.tau_fast).exp();
+            let alpha_slow = 1.0 - (-elapsed / p.tau_slow).exp();
+            state.goodput_fast += alpha_fast * (instant_goodput - state.goodput_fast);
+            state.goodput_slow += alpha_slow * (instant_goodput - state.goodput_slow);
+        }
+
+        state.log_counter += 1;
+        if state.log_counter % 1000 == 0 {
+            let overloaded = state.goodput_fast < state.goodput_slow;
+            log::info!(
+                "[ac_pred] outcomes={} er_rate={:.4} goodput_fast={:.1} goodput_slow={:.1} overloaded={}",
+                state.log_counter,
+                state.er_rate,
+                state.goodput_fast,
+                state.goodput_slow,
+                overloaded,
+            );
+        }
     }
 
     /// Returns true if the request should be admitted.
-    pub(crate) fn should_admit(&self, est_child_cost: u64) -> bool {
+    pub(crate) fn should_admit(&self) -> bool {
         let p = &PolicyParams::global().pred;
-        let cost = est_child_cost as f64;
+        let state = self.state.lock().unwrap();
 
-        let drained = self.completed_cost_us.swap(0, Ordering::Relaxed) as f64;
-
-        let mut state = self.state.lock().unwrap();
-        let now = Instant::now();
-        let elapsed = now.duration_since(state.last_update).as_secs_f64();
-        state.last_update = now;
-
-        if elapsed > 0.0 {
-            let instant_rate = drained / elapsed;
-            let alpha = 1.0 - (-elapsed / p.tau).exp();
-            state.goodput_rate += alpha * (instant_rate - state.goodput_rate);
-        }
-
-        let budget_rate = if state.rejection_ema > p.rejection_threshold {
-            state.goodput_rate * (1.0 + p.probe_min)
+        let overloaded = state.goodput_fast < state.goodput_slow;
+        let reject_prob = if overloaded {
+            // Goodput dropping — overloaded, allow full rejection.
+            state.er_rate
         } else {
-            p.initial_budget_rate
+            // Goodput healthy — cap rejection at floor.
+            state.er_rate.min(p.max_reject_floor)
         };
 
-        state.budget_us += budget_rate * elapsed;
-        let max_budget = (budget_rate * p.max_burst_secs).max(cost * 2.0);
-        if state.budget_us > max_budget {
-            state.budget_us = max_budget;
+        drop(state);
+        let coin = rand::random::<f64>();
+        let admitted = coin > reject_prob;
+        if !admitted {
+            log::debug!(
+                "[ac_pred] REJECTED reject_prob={:.4} overloaded={}",
+                reject_prob,
+                overloaded,
+            );
         }
-
-        let rejected = if state.budget_us >= cost {
-            state.budget_us -= cost;
-            false
-        } else {
-            true
-        };
-        state.rejection_ema +=
-            p.rejection_alpha * ((if rejected { 1.0 } else { 0.0 }) - state.rejection_ema);
-        !rejected
+        admitted
     }
 }
 
@@ -279,40 +290,68 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_admission_controller_admits_with_budget() {
+    fn test_admits_when_no_early_returns() {
         let ac = PredictiveAdmission::new();
-        assert!(ac.should_admit(1000));
+        // No early returns recorded — er_rate is 0, should always admit.
+        for _ in 0..100 {
+            assert!(ac.should_admit());
+        }
     }
 
     #[test]
-    fn test_admission_controller_rejects_when_budget_exhausted() {
+    fn test_er_rate_increases_with_early_returns() {
         let ac = PredictiveAdmission::new();
-        let mut rejected = false;
-        for _ in 0..20 {
-            if !ac.should_admit(100_000) {
-                rejected = true;
-                break;
+        for _ in 0..100 {
+            ac.record_outcome(true);
+        }
+        let state = ac.state.lock().unwrap();
+        assert!(state.er_rate > 0.9, "er_rate should be near 1.0 after all early returns");
+    }
+
+    #[test]
+    fn test_er_rate_recovers_after_successes() {
+        let ac = PredictiveAdmission::new();
+        // Drive er_rate up.
+        for _ in 0..100 {
+            ac.record_outcome(true);
+        }
+        // Drive it back down.
+        for _ in 0..200 {
+            ac.record_outcome(false);
+        }
+        let state = ac.state.lock().unwrap();
+        assert!(state.er_rate < 0.1, "er_rate should recover after successes");
+    }
+
+    #[test]
+    fn test_goodput_floor_caps_rejection() {
+        let ac = PredictiveAdmission::new();
+        // Record enough early returns to push er_rate high.
+        for _ in 0..100 {
+            ac.record_outcome(true);
+        }
+        // But also record successes with time gaps to make goodput_fast >= goodput_slow
+        // (healthy state). In healthy state, rejection is capped at max_reject_floor.
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        for _ in 0..50 {
+            ac.record_outcome(false);
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        for _ in 0..50 {
+            ac.record_outcome(false);
+        }
+
+        // With healthy goodput, should admit most requests despite high er_rate.
+        let mut admitted = 0;
+        for _ in 0..1000 {
+            if ac.should_admit() {
+                admitted += 1;
             }
         }
+        // max_reject_floor = 0.10, so ~90% should be admitted.
         assert!(
-            rejected,
-            "should eventually reject when budget is exhausted"
-        );
-    }
-
-    #[test]
-    fn test_goodput_tracking_refills_budget() {
-        let ac = PredictiveAdmission::new();
-        while ac.should_admit(100_000) {}
-
-        ac.record_completion(100_000);
-        ac.record_completion(100_000);
-
-        std::thread::sleep(std::time::Duration::from_millis(50));
-
-        assert!(
-            ac.should_admit(1000),
-            "should admit after completions refill the budget"
+            admitted > 800,
+            "should admit most requests when goodput is healthy, got {admitted}/1000"
         );
     }
 }
