@@ -66,35 +66,23 @@ impl Default for RajomonParams {
 
 /// Tunable parameters for the predictive admission control policy.
 ///
-/// Uses a goodput-tracking rate controller: the token-bucket refill rate
-/// tracks observed successful completion throughput (in µs/s) plus a
-/// probe margin, replacing the previous utilization-based feedback loop.
-///
-/// The probe margin switches between two modes based on the rejection rate:
-/// - **Explore** (`probe_max`): used when rejection rate is below
-///   `rejection_threshold`, allowing aggressive capacity discovery.
-/// - **Exploit** (`probe_min`): used when rejection rate exceeds the
-///   threshold, locking to tight goodput tracking during overload.
+/// Uses early-return rate as the rejection signal with a goodput floor:
+/// - `reject_prob = er_rate` (probabilistic rejection proportional to
+///   observed early-return fraction).
+/// - Goodput floor: when goodput is healthy (fast EMA >= slow EMA),
+///   rejection probability is capped at `max_reject_floor`. When goodput
+///   is dropping (overloaded), the cap is lifted.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct PredParams {
-    /// Maximum burst window in seconds (token-bucket capacity = budget_rate × max_burst_secs).
-    pub max_burst_secs: f64,
-    /// Initial token-bucket refill rate in µs of compute budget per second.
-    /// Used as bootstrap value before real completions arrive.
-    pub initial_budget_rate: f64,
-    /// Minimum probe factor — tight tracking during overload (exploit mode).
-    /// E.g., 0.05 means budget_rate = goodput_rate * 1.05.
-    pub probe_min: f64,
-    /// Maximum probe factor — aggressive exploration at sub-saturation (explore mode).
-    /// E.g., 1.0 means budget_rate = goodput_rate * 2.0.
-    pub probe_max: f64,
-    /// Per-decision EMA coefficient for the rejection rate tracker.
-    pub rejection_alpha: f64,
-    /// Rejection rate threshold for switching from explore to exploit mode.
-    pub rejection_threshold: f64,
-    /// EMA time constant in seconds for the goodput rate estimator.
-    pub tau: f64,
+    /// Per-event EMA coefficient for the early-return rate (0–1).
+    pub er_alpha: f64,
+    /// Fast EMA time constant (seconds) for goodput rate.
+    pub tau_fast: f64,
+    /// Slow EMA time constant (seconds) for goodput rate.
+    pub tau_slow: f64,
+    /// Maximum rejection probability when goodput is healthy.
+    pub max_reject_floor: f64,
     /// Variance multiplier for the LatencyMeanVar estimator.
     /// estimate = mean + k * stddev. 0.0 = pure mean estimator (default).
     pub estimator_k: f64,
@@ -103,13 +91,10 @@ pub struct PredParams {
 impl Default for PredParams {
     fn default() -> Self {
         Self {
-            max_burst_secs: 0.005,
-            initial_budget_rate: 5_000_000.0,
-            probe_min: 0.15,
-            probe_max: 1.0,
-            rejection_alpha: 0.05,
-            rejection_threshold: 0.10,
-            tau: 2.0,
+            er_alpha: 0.05,
+            tau_fast: 0.5,
+            tau_slow: 5.0,
+            max_reject_floor: 0.10,
             estimator_k: 0.0,
         }
     }
@@ -180,8 +165,8 @@ mod tests {
         let p = PolicyParams::default();
         assert_eq!(p.rajomon.max_token, 100);
         assert!(p.rajomon.price_cap <= p.rajomon.max_token);
-        assert_eq!(p.pred.probe_min, 0.15);
-        assert_eq!(p.pred.tau, 2.0);
+        assert_eq!(p.pred.er_alpha, 0.05);
+        assert!(p.pred.tau_fast < p.pred.tau_slow);
     }
 
     #[test]
@@ -189,10 +174,8 @@ mod tests {
         let json = r#"{"rajomon": {"max_token": 200}}"#;
         let p: PolicyParams = serde_json::from_str(json).unwrap();
         assert_eq!(p.rajomon.max_token, 200);
-        // Other rajomon fields should be defaults
         assert_eq!(p.rajomon.price_update_rate_ms, 10);
-        // pred fields should be defaults
-        assert_eq!(p.pred.probe_min, 0.15);
+        assert_eq!(p.pred.er_alpha, 0.05);
     }
 
     #[test]
@@ -200,6 +183,6 @@ mod tests {
         let p: PolicyParams = serde_json::from_str("{}").unwrap();
         let d = PolicyParams::default();
         assert_eq!(p.rajomon.max_token, d.rajomon.max_token);
-        assert_eq!(p.pred.probe_min, d.pred.probe_min);
+        assert_eq!(p.pred.er_alpha, d.pred.er_alpha);
     }
 }
