@@ -12,7 +12,7 @@ use std::fmt;
 use std::hash::Hash;
 use std::ops::Deref;
 use std::sync::{
-    atomic::{AtomicU64, AtomicUsize, Ordering},
+    atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering},
     Arc, Mutex,
 };
 use std::time::{Duration, Instant};
@@ -421,6 +421,8 @@ pub(crate) struct RequestMetadataTracker {
     compute: ComputeTracker,
     max_child_downstream_util: Mutex<f32>,
     accumulated_child_compute_us: AtomicU64,
+    accumulated_child_early_returns: AtomicU32,
+    local_early_return: AtomicBool,
 }
 
 impl RequestMetadataTracker {
@@ -429,6 +431,8 @@ impl RequestMetadataTracker {
             compute: ComputeTracker::new(),
             max_child_downstream_util: Mutex::new(0.0),
             accumulated_child_compute_us: AtomicU64::new(0),
+            accumulated_child_early_returns: AtomicU32::new(0),
+            local_early_return: AtomicBool::new(false),
         }
     }
 
@@ -452,7 +456,12 @@ impl RequestMetadataTracker {
         let mut downstream_util = None;
         let mut accumulated_compute_us = None;
 
-        if let Ok(resp) = response {
+        if is_early_return_response(response) {
+            // Child early-returned with Err(Status) — no response headers to
+            // read, but we know at least 1 early return occurred.
+            self.accumulated_child_early_returns
+                .fetch_add(1, Ordering::Relaxed);
+        } else if let Ok(resp) = response {
             if let Some(child_ctx_resp) = resp.get_masa_context() {
                 if let Some(meta) = child_ctx_resp.response_meta() {
                     let mut max_util = self.max_child_downstream_util.lock().unwrap();
@@ -462,6 +471,8 @@ impl RequestMetadataTracker {
                     downstream_util = Some(meta.max_downstream_util);
                     self.accumulated_child_compute_us
                         .fetch_add(meta.accumulated_compute_us, Ordering::Relaxed);
+                    self.accumulated_child_early_returns
+                        .fetch_add(meta.early_return_count, Ordering::Relaxed);
                     accumulated_compute_us = Some(meta.accumulated_compute_us);
                 }
             }
@@ -473,6 +484,11 @@ impl RequestMetadataTracker {
         }
     }
 
+    /// Mark this request as having triggered a local early return.
+    pub(crate) fn mark_early_return(&self) {
+        self.local_early_return.store(true, Ordering::Relaxed);
+    }
+
     /// Build and set `ResponseMeta` on the outgoing context.
     pub(crate) fn inject_response_meta(&self, ctx: &mut Context) {
         let compute_time_us = self.compute.compute_us();
@@ -482,11 +498,20 @@ impl RequestMetadataTracker {
         let max_child_util = *self.max_child_downstream_util.lock().unwrap();
         let max_downstream_util = utilization.max(max_child_util);
 
+        let local_er = if self.local_early_return.load(Ordering::Relaxed) {
+            1
+        } else {
+            0
+        };
+        let early_return_count =
+            local_er + self.accumulated_child_early_returns.load(Ordering::Relaxed);
+
         ctx.set_response_meta(ResponseMeta {
             compute_time_us,
             accumulated_compute_us,
             utilization,
             max_downstream_util,
+            early_return_count,
         });
     }
 }

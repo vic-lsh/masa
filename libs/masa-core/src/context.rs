@@ -29,6 +29,9 @@ pub struct ResponseMeta {
     pub accumulated_compute_us: u64,
     pub utilization: f32,
     pub max_downstream_util: f32,
+    /// Number of early returns in the subtree (this hop + all children).
+    #[serde(default)]
+    pub early_return_count: u32,
 }
 
 /// Identifies the root (ingress) RPC method. Transported over the wire as a

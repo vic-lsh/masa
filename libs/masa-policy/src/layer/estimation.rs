@@ -207,7 +207,9 @@ impl Layer for EstimationLayer {
     /// Flush estimation observations and build response metadata.
     #[inline]
     fn finalize<Ret>(&self, ctx: &mut Context, result: &mut Result<Response<Ret>, Status>) {
-        if !is_early_return_response(result) {
+        if is_early_return_response(result) {
+            self.request_metadata.mark_early_return();
+        } else {
             self.estimation.flush();
         }
         self.request_metadata.inject_response_meta(ctx);
