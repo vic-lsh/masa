@@ -340,6 +340,50 @@ def get_policy_display_name(policy: str) -> str:
     return Policy.parse(policy).display_name
 
 
+def get_policy_marker(policy: str) -> str:
+    """Get matplotlib marker shape for a policy."""
+    from exp_runner.runner.policy import Policy
+
+    return Policy.parse(policy).marker
+
+
+def get_policy_linestyle(policy: str) -> str:
+    """Get matplotlib linestyle for a policy."""
+    from exp_runner.runner.policy import Policy
+
+    return Policy.parse(policy).linestyle
+
+
+def get_policy_hatch(policy: str) -> str:
+    """Get matplotlib bar hatch pattern for a policy."""
+    from exp_runner.runner.policy import Policy
+
+    return Policy.parse(policy).hatch
+
+
+def get_policy_line_style(policy: str) -> dict:
+    """Bundle of {color, marker, linestyle} suitable for ax.plot(**...).
+
+    Provides redundant encoding (color + shape + line style) so plots stay
+    readable in greyscale and for color-vision-deficient viewers.
+    """
+    from exp_runner.runner.policy import Policy
+
+    p = Policy.parse(policy)
+    return {"color": p.color, "marker": p.marker, "linestyle": p.linestyle}
+
+
+def get_policy_bar_style(policy: str) -> dict:
+    """Bundle of {color, hatch, edgecolor} suitable for ax.bar(**...).
+
+    `edgecolor="black"` is required so the hatch pattern renders visibly.
+    """
+    from exp_runner.runner.policy import Policy
+
+    p = Policy.parse(policy)
+    return {"color": p.color, "hatch": p.hatch, "edgecolor": "black"}
+
+
 def filter_excluded_errors(df):
     """
     Filter out requests with excluded error types.
