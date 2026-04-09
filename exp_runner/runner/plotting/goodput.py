@@ -1624,12 +1624,21 @@ def plot_early_return_timeline(
 
 
 # Stable color for each abort reason (matches latency.py stacked bar chart).
+#
+# Palette: Okabe-Ito (color-vision-deficient safe). Hue families group
+# related reasons:
+#   - grey  = baseline / E2E expiry
+#   - warm  = deadline / feasibility checks (deadline-based shedding)
+#   - cool  = admission control rejections (PredAdmission, Rajomon)
 _REASON_COLORS = {
-    "E2EDeadline": "#95a5a6",
-    "LocalDeadlineExceeded": "#e74c3c",
-    "BeforePollFeasibility": "#e67e22",
-    "BeforeChildFeasibility": "#f39c12",
-    "TokenBucketRej": "#3498db",
+    "E2EDeadline": "#999999",            # grey
+    "LocalDeadlineExceeded": "#D55E00",  # vermillion
+    "BeforePollFeasibility": "#E69F00",  # orange
+    "BeforeChildFeasibility": "#F0E442",  # yellow
+    "PredAdmissionRej": "#56B4E9",       # sky blue
+    "RajomonAdmissionRej": "#0072B2",    # blue
+    "RajomonChildBudgetRej": "#009E73",  # bluish green
+    "TokenBucketRej": "#CC79A7",         # reddish purple (legacy)
 }
 # Stable order: known reasons first, then any unexpected ones alphabetically.
 _KNOWN_REASON_ORDER = [
@@ -1637,6 +1646,9 @@ _KNOWN_REASON_ORDER = [
     "LocalDeadlineExceeded",
     "BeforePollFeasibility",
     "BeforeChildFeasibility",
+    "PredAdmissionRej",
+    "RajomonAdmissionRej",
+    "RajomonChildBudgetRej",
     "TokenBucketRej",
 ]
 
