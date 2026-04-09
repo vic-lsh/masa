@@ -5,6 +5,7 @@
 // observed early-return rate, with a goodput-derived floor that relaxes
 // under overload.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
@@ -43,6 +44,9 @@ pub(crate) struct PredAdmissionLayer {
     est: LatencyEstimators<DefaultLatencyEstimator>,
     root_method_id: Option<MethodId>,
     rpc: CowGrpcMethod,
+    /// Set when this layer rejects a child RPC. Prevents the rejection
+    /// from feeding back into `er_rate` via `finalize`.
+    self_rejected: AtomicBool,
 }
 
 impl Layer for PredAdmissionLayer {
@@ -59,6 +63,7 @@ impl Layer for PredAdmissionLayer {
             est: crate::layer::estimation::global_estimators(),
             root_method_id,
             rpc: method.clone(),
+            self_rejected: AtomicBool::new(false),
         }
     }
 
@@ -104,6 +109,7 @@ impl Layer for PredAdmissionLayer {
 
         // Layer 2: early-return-rate admission (ingress only)
         if ctx.hop_count() == 0 && !self.pred_admission.should_admit() {
+            self.self_rejected.store(true, Ordering::Relaxed);
             return Err(Status::new(
                 Code::DeadlineExceeded,
                 format!(
@@ -119,7 +125,10 @@ impl Layer for PredAdmissionLayer {
         Ok(())
     }
 
-    /// Track early-return rate and goodput after child RPC (ingress only).
+    /// Track subtree compute from child metadata.
+    ///
+    /// Predictive admission feedback is recorded once per ingress request in
+    /// `finalize`, so root-local early returns contribute to the signal.
     #[inline]
     fn after_child_rpc<T>(
         &self,
@@ -131,9 +140,6 @@ impl Layer for PredAdmissionLayer {
         use crate::context_ext::MasaResponseExt;
 
         if ctx.hop_count() == 0 {
-            let is_er = is_early_return_response(response);
-            self.pred_admission.record_outcome(is_er);
-
             if let Ok(resp) = response {
                 if let Some(child_ctx_resp) = resp.get_masa_context() {
                     if let Some(meta) = child_ctx_resp.response_meta() {
@@ -148,6 +154,30 @@ impl Layer for PredAdmissionLayer {
             }
         }
         Ok(())
+    }
+
+    #[inline]
+    fn finalize<Ret>(&self, ctx: &mut Context, result: &mut Result<Response<Ret>, Status>) {
+        if ctx.hop_count() != 0 {
+            return;
+        }
+
+        // Skip outcome recording for our own rejections — counting them
+        // would cause er_rate to feed back on itself (reject → er_rate
+        // rises → reject more → death spiral).
+        if self.self_rejected.load(Ordering::Relaxed) {
+            return;
+        }
+
+        // Learn from the final ingress outcome so local early returns such as
+        // `LocalDeadlineExceeded` are visible to predictive admission.
+        let is_er = is_early_return_response(result)
+            || ctx
+                .response_meta()
+                .map(|meta| meta.early_return_count > 0)
+                .unwrap_or(false);
+
+        self.pred_admission.record_outcome(is_er);
     }
 }
 
@@ -305,7 +335,10 @@ mod tests {
             ac.record_outcome(true);
         }
         let state = ac.state.lock().unwrap();
-        assert!(state.er_rate > 0.9, "er_rate should be near 1.0 after all early returns");
+        assert!(
+            state.er_rate > 0.9,
+            "er_rate should be near 1.0 after all early returns"
+        );
     }
 
     #[test]
@@ -320,7 +353,10 @@ mod tests {
             ac.record_outcome(false);
         }
         let state = ac.state.lock().unwrap();
-        assert!(state.er_rate < 0.1, "er_rate should recover after successes");
+        assert!(
+            state.er_rate < 0.1,
+            "er_rate should recover after successes"
+        );
     }
 
     #[test]
