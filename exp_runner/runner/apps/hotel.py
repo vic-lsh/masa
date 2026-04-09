@@ -19,70 +19,13 @@ from ..deployment_manager import TaskSpec
 from ..executor import CommandExecutor, MockCommandExecutor, SubprocessExecutor
 from ..naming import generate_project_name
 from .base import AppBuilder, AppPlugin, DockerConfig
-from .utils import get_docker_progress_flag, normalize_features_to_tag
+from .utils import (
+    get_docker_progress_flag,
+    normalize_features_to_tag,
+    resolve_policy_params,
+)
 
 logger = logging.getLogger(__name__)
-
-
-# ── Scheduling-policy → parameter key mapping ──────────────────────────
-#
-# Resolves per-scheduling-policy parameter variants from a single
-# policy_param.json.  A section like "rajomon" may contain nested
-# scheduling-policy keys:
-#
-#   { "rajomon": {
-#       "sched_fifo":  { "price_cap": 10, ... },
-#       "sched_slo":   { "init_price": 3, ... }
-#   }}
-#
-# The runner detects the active scheduling policy from the feature string,
-# picks the matching sub-dict, and flattens it so the container sees:
-#
-#   { "rajomon": { "price_cap": 10, ... } }
-#
-# If "rajomon" contains flat params (no nested policy keys), it passes
-# through unchanged.
-
-_SCHED_POLICY_KEYS = {"sched_pred", "sched_slo", "sched_fifo", "sched_tailclipper"}
-
-
-def resolve_policy_params(params: dict, policy: str) -> dict:
-    """Resolve per-scheduling-policy parameter variants.
-
-    For each known section (``rajomon``, ``pred``), if the value is a dict
-    whose keys are scheduling policy names, select the sub-dict matching the
-    active scheduling policy.  Otherwise pass through unchanged.
-    """
-    import copy
-
-    features = set(policy.split(","))
-
-    # Determine which scheduling policy is active.
-    active_sched = None
-    for sched in _SCHED_POLICY_KEYS:
-        if sched in features:
-            active_sched = sched
-            break
-
-    resolved = copy.deepcopy(params)
-
-    for section in ("rajomon", "pred"):
-        value = resolved.get(section)
-        if not isinstance(value, dict):
-            continue
-        # Check if value contains scheduling policy keys (nested variant).
-        if value.keys() & _SCHED_POLICY_KEYS:
-            if active_sched and active_sched in value:
-                resolved[section] = value[active_sched]
-                logger.info(
-                    f"Using {section}.{active_sched} params for policy {policy}"
-                )
-            else:
-                # No match — remove section so Rust uses built-in defaults.
-                del resolved[section]
-                logger.info(f"No {section} params for {active_sched}, using defaults")
-
-    return resolved
 
 
 def create_gen_config_dict(

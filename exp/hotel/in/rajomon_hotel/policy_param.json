@@ -27,17 +27,17 @@
       "max_token": 1000
     },
     "sched_pred": {
-      "price_update_rate_ms": 100,
-      "latency_threshold_us": 25000,
-      "price_step_up": 1,
-      "price_step_down": 1,
-      "price_cap": 6,
-      "init_price": 3,
+      "latency_threshold_us": 1171,
+      "price_update_rate_ms": 62,
+      "price_step_up": 6,
+      "price_step_down": 7,
+      "price_cap": 32,
+      "init_price": 0,
       "price_freq": 5,
-      "tokens_left_init": 1000,
-      "token_update_rate_ms": 10,
-      "token_update_step": 50,
-      "max_token": 1000
+      "tokens_left_init": 121,
+      "token_update_rate_ms": 62,
+      "token_update_step": 8,
+      "max_token": 121
     }
   }
 }
