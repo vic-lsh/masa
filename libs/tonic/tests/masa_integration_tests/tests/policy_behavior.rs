@@ -280,7 +280,18 @@ async fn insufficient_tokens_triggers_early_return() {
         .expect_err("request should have failed due to insufficient rajomon budget");
 
     assert_eq!(error.code(), Code::ResourceExhausted);
-    assert!(error.message().contains("Insufficient Rajomon Tokens"));
+    // The /EarlyReturn message should carry a structured `reason=` so the
+    // experiment plotting code can attribute drops to admission control.
+    assert!(
+        error.message().starts_with("/EarlyReturn?src="),
+        "unexpected error format: {}",
+        error.message(),
+    );
+    assert!(
+        error.message().contains("&reason=RajomonAdmissionRej"),
+        "expected RajomonAdmissionRej reason, got: {}",
+        error.message(),
+    );
     assert!(
         !executed.load(Ordering::SeqCst),
         "handler should not have executed when token budget is exhausted"
