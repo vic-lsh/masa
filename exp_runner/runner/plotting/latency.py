@@ -108,12 +108,18 @@ def _plot_abort_reason_stacked(
     output_dir: str, api: str, policy: str, rps_values: list, data: dict
 ) -> None:
     """Generate stacked bar chart of abort reasons across RPS levels."""
+    # Okabe-Ito palette (color-vision-deficient safe). Must stay in sync with
+    # _REASON_COLORS in goodput.py — same hue families: grey baseline, warm for
+    # deadline/feasibility shedding, cool for admission-control rejections.
     reason_colors = {
-        "LocalDeadlineExceeded": "#e74c3c",
-        "BeforePollFeasibility": "#e67e22",
-        "BeforeChildFeasibility": "#f39c12",
-        "TokenBucketRej": "#3498db",
-        "E2EDeadline": "#95a5a6",
+        "E2EDeadline": "#999999",            # grey
+        "LocalDeadlineExceeded": "#D55E00",  # vermillion
+        "BeforePollFeasibility": "#E69F00",  # orange
+        "BeforeChildFeasibility": "#F0E442",  # yellow
+        "PredAdmissionRej": "#56B4E9",       # sky blue
+        "RajomonAdmissionRej": "#0072B2",    # blue
+        "RajomonChildBudgetRej": "#009E73",  # bluish green
+        "TokenBucketRej": "#CC79A7",         # reddish purple (legacy)
     }
 
     # Collect reason counts per RPS
@@ -140,6 +146,9 @@ def _plot_abort_reason_stacked(
         "LocalDeadlineExceeded",
         "BeforePollFeasibility",
         "BeforeChildFeasibility",
+        "PredAdmissionRej",
+        "RajomonAdmissionRej",
+        "RajomonChildBudgetRej",
         "TokenBucketRej",
     ]
     reasons = [r for r in known_order if r in all_reasons]
