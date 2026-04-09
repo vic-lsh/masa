@@ -63,9 +63,7 @@ def sample_params(trial: optuna.Trial) -> dict:
     latency_threshold_us = trial.suggest_int(
         "latency_threshold_us", 1000, 100000, log=True
     )
-    price_update_rate_ms = trial.suggest_int(
-        "price_update_rate_ms", 1, 100, log=True
-    )
+    price_update_rate_ms = trial.suggest_int("price_update_rate_ms", 1, 100, log=True)
     price_step_up = trial.suggest_int("price_step_up", 1, 20)
     price_step_down = trial.suggest_int("price_step_down", 1, 10)
     price_cap = trial.suggest_int("price_cap", 1, 100)
@@ -195,9 +193,7 @@ class RajomonOptimizer:
         self.opt_out_dir = repo_root / "exp" / config.app / "out" / "_opt_rajomon"
         self.opt_out_dir.mkdir(parents=True, exist_ok=True)
 
-        self.output_path = config.output_path or (
-            self.opt_out_dir / "best_params.json"
-        )
+        self.output_path = config.output_path or (self.opt_out_dir / "best_params.json")
         self.log_csv_path = self.opt_out_dir / "optimization_log.csv"
         self.db_path = self.opt_out_dir / "optuna.db"
 
@@ -273,9 +269,7 @@ class RajomonOptimizer:
             )
             container_ids = result.stdout.strip().split()
             if container_ids and container_ids[0]:
-                logger.info(
-                    f"Removing {len(container_ids)} stale optimizer containers"
-                )
+                logger.info(f"Removing {len(container_ids)} stale optimizer containers")
                 subprocess.run(
                     ["docker", "rm", "-f", *container_ids],
                     capture_output=True,
@@ -298,9 +292,7 @@ class RajomonOptimizer:
             )
             network_ids = result.stdout.strip().split()
             if network_ids and network_ids[0]:
-                logger.info(
-                    f"Removing {len(network_ids)} stale optimizer networks"
-                )
+                logger.info(f"Removing {len(network_ids)} stale optimizer networks")
                 for nid in network_ids:
                     subprocess.run(
                         ["docker", "network", "rm", nid],
@@ -404,9 +396,17 @@ class RajomonOptimizer:
 
         # Enqueue default params as first trial
         study.enqueue_trial(
-            {k: v for k, v in DEFAULT_RAJOMON_PARAMS.items() if k not in (
-                "init_price", "price_freq", "tokens_left_init", "token_update_rate_ms"
-            )}
+            {
+                k: v
+                for k, v in DEFAULT_RAJOMON_PARAMS.items()
+                if k
+                not in (
+                    "init_price",
+                    "price_freq",
+                    "tokens_left_init",
+                    "token_update_rate_ms",
+                )
+            }
         )
 
         # Enqueue warm-start params if provided
@@ -419,9 +419,13 @@ class RajomonOptimizer:
                     warm_params = warm_params["rajomon"]
                 # Filter to only optimized params
                 optimized_keys = {
-                    "latency_threshold_us", "price_update_rate_ms",
-                    "price_step_up", "price_step_down", "price_cap",
-                    "token_update_step", "max_token",
+                    "latency_threshold_us",
+                    "price_update_rate_ms",
+                    "price_step_up",
+                    "price_step_down",
+                    "price_cap",
+                    "token_update_step",
+                    "max_token",
                 }
                 enqueue_params = {
                     k: v for k, v in warm_params.items() if k in optimized_keys
@@ -445,8 +449,10 @@ class RajomonOptimizer:
         logger.info(f"  RPS sweep:      {self.rps_sweep}")
         logger.info(f"  Iterations:     {self.config.n_iterations}")
         logger.info(f"  Penalty weight: {self.config.penalty_weight}")
-        logger.info(f"  Per-trial time: ~{self.config.warmup_secs + self.config.duration_secs}s "
-                     f"({self.config.warmup_secs}s warmup + {self.config.duration_secs}s run)")
+        logger.info(
+            f"  Per-trial time: ~{self.config.warmup_secs + self.config.duration_secs}s "
+            f"({self.config.warmup_secs}s warmup + {self.config.duration_secs}s run)"
+        )
         logger.info(f"  Output:         {self.output_path}")
         logger.info(f"  Optuna DB:      {self.db_path}")
         if self.config.warm_start_path:
@@ -469,8 +475,7 @@ class RajomonOptimizer:
 
         if completed > 0:
             logger.info(
-                f"Resuming from {completed} completed trials, "
-                f"{remaining} remaining"
+                f"Resuming from {completed} completed trials, {remaining} remaining"
             )
             try:
                 bt = study.best_trial
@@ -487,9 +492,7 @@ class RajomonOptimizer:
             trial_start = time.monotonic()
 
             logger.info(f"{'=' * 60}")
-            logger.info(
-                f"[{trial_num + 1}/{self.config.n_iterations}] Starting trial"
-            )
+            logger.info(f"[{trial_num + 1}/{self.config.n_iterations}] Starting trial")
 
             trial = study.ask()
             params = sample_params(trial)

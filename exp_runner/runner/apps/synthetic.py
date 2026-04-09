@@ -17,7 +17,11 @@ from ..deployment_manager import TaskSpec
 from ..executor import CommandExecutor, MockCommandExecutor, SubprocessExecutor
 from ..naming import generate_project_name
 from .base import AppBuilder, AppPlugin, DockerConfig
-from .utils import get_docker_progress_flag, normalize_features_to_tag, resolve_policy_params
+from .utils import (
+    get_docker_progress_flag,
+    normalize_features_to_tag,
+    resolve_policy_params,
+)
 
 if TYPE_CHECKING:
     from ..config import ExperimentConfig
