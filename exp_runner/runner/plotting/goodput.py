@@ -1375,17 +1375,22 @@ def plot_goodput_timeline(
     policy_data_by_rps: dict[str, dict[int, pd.DataFrame]],
     *,
     duration_sec: float,
-    warmup_sec: float = 0,
     window_sec: float = 2.0,
 ) -> None:
     """Plot per-second goodput over time for real apps (hotel, socialnet, synthetic).
 
     Stitches RPS periods in their original run order, using a sliding window.
     SLO is per-row (``df["slo"]`` in microseconds), matching real-app mixed-SLO data.
+
+    Note: ``DurationSecs`` is the *measurement* window only — the loadgen
+    (apps/app-utils/src/load_gen.rs:422) drops warmup requests before they
+    reach the trace channel, so the per-RPS CSVs already exclude warmup.
+    The plot lays out each period as ``duration_sec`` seconds wide.
     """
     fig, ax = plt.subplots(figsize=(14, 6))
     cmap = plt.get_cmap("tab10")
     csv_rows: list[dict[str, object]] = []
+    effective_duration = duration_sec
 
     for idx, policy in enumerate(policies):
         rps_data = policy_data_by_rps.get(policy, {})
@@ -1410,13 +1415,6 @@ def plot_goodput_timeline(
             # Time relative to this period, in seconds
             rel_sec = (start_at - t_min) / 1_000_000.0
 
-            # Skip warmup
-            if warmup_sec > 0:
-                keep = rel_sec >= warmup_sec
-                rel_sec = rel_sec[keep] - warmup_sec
-                df = df.loc[keep]
-
-            effective_duration = duration_sec - warmup_sec
             abs_sec = rel_sec + period_idx * effective_duration
 
             # Goodput mask: latency (microseconds) <= slo (microseconds)
@@ -1466,7 +1464,6 @@ def plot_goodput_timeline(
         pd.DataFrame(csv_rows).to_csv(csv_path, index=False)
 
     # Offered RPS as a filled step area
-    effective_duration = duration_sec - warmup_sec
     step_t = [0.0]
     step_rps: list[float] = [float(rps_sequence[0])]
     for i, rps in enumerate(rps_sequence):
@@ -1509,17 +1506,21 @@ def plot_early_return_timeline(
     policy_data_by_rps: dict[str, dict[int, pd.DataFrame]],
     *,
     duration_sec: float,
-    warmup_sec: float = 0,
     window_sec: float = 2.0,
 ) -> None:
     """Plot per-second early-return rate over time for real apps.
 
     Mirrors ``plot_goodput_timeline`` but counts early-return requests
     instead of SLO-meeting requests.
+
+    Note: see ``plot_goodput_timeline`` — the per-RPS CSVs are already
+    post-warmup (the loadgen drops warmup requests), so each period is
+    laid out as ``duration_sec`` seconds wide.
     """
     fig, ax = plt.subplots(figsize=(14, 6))
     cmap = plt.get_cmap("tab10")
     csv_rows: list[dict[str, object]] = []
+    effective_duration = duration_sec
 
     for idx, policy in enumerate(policies):
         rps_data = policy_data_by_rps.get(policy, {})
@@ -1538,12 +1539,6 @@ def plot_early_return_timeline(
             t_min = start_at.min()
             rel_sec = (start_at - t_min) / 1_000_000.0
 
-            if warmup_sec > 0:
-                keep = rel_sec >= warmup_sec
-                rel_sec = rel_sec[keep] - warmup_sec
-                df = df.loc[keep]
-
-            effective_duration = duration_sec - warmup_sec
             abs_sec = rel_sec + period_idx * effective_duration
 
             # Early-return mask
@@ -1593,7 +1588,6 @@ def plot_early_return_timeline(
         pd.DataFrame(csv_rows).to_csv(csv_path, index=False)
 
     # Offered RPS as a filled step area
-    effective_duration = duration_sec - warmup_sec
     step_t = [0.0]
     step_rps: list[float] = [float(rps_sequence[0])]
     for i, rps in enumerate(rps_sequence):
@@ -1654,13 +1648,15 @@ def plot_abort_reason_timeline(
     policy_data_by_rps: dict[str, dict[int, pd.DataFrame]],
     *,
     duration_sec: float,
-    warmup_sec: float = 0,
     window_sec: float = 2.0,
 ) -> None:
     """Plot per-second early-return rate by abort reason over time.
 
     One subplot per policy; within each subplot one line per abort reason.
     Mirrors ``plot_early_return_timeline`` but splits by ``er_reason``.
+
+    Note: see ``plot_goodput_timeline`` — the per-RPS CSVs are already
+    post-warmup, so each period is laid out as ``duration_sec`` seconds wide.
     """
     # First pass: discover all reasons across all policies.
     all_reasons: set[str] = set()
@@ -1684,7 +1680,7 @@ def plot_abort_reason_timeline(
     fig, axes = plt.subplots(
         n_policies, 1, figsize=(14, 5 * n_policies), squeeze=False, sharex=True
     )
-    effective_duration = duration_sec - warmup_sec
+    effective_duration = duration_sec
     csv_rows: list[dict[str, object]] = []
 
     for p_idx, policy in enumerate(policies):
@@ -1706,11 +1702,6 @@ def plot_abort_reason_timeline(
 
             t_min = start_at.min()
             rel_sec = (start_at - t_min) / 1_000_000.0
-
-            if warmup_sec > 0:
-                keep = rel_sec >= warmup_sec
-                rel_sec = rel_sec[keep] - warmup_sec
-                df = df.loc[keep]
 
             abs_sec = rel_sec + period_idx * effective_duration
 
@@ -1813,7 +1804,6 @@ def generate_plots(args, plot_data: PlotData | None = None) -> None:
     rps_values = plot_data.rps_values
     rps_sequence = plot_data.rps_sequence
     duration_sec = plot_data.duration_sec
-    warmup_sec = plot_data.warmup_sec
     results = plot_data.results
 
     # First, compute all policy goodputs (needed for plots)
@@ -1976,7 +1966,6 @@ def generate_plots(args, plot_data: PlotData | None = None) -> None:
                 ),
                 {
                     "duration_sec": duration_sec,
-                    "warmup_sec": warmup_sec,
                 },
             )
         )
@@ -1997,7 +1986,6 @@ def generate_plots(args, plot_data: PlotData | None = None) -> None:
                 ),
                 {
                     "duration_sec": duration_sec,
-                    "warmup_sec": warmup_sec,
                 },
             )
         )
@@ -2018,7 +2006,6 @@ def generate_plots(args, plot_data: PlotData | None = None) -> None:
                 ),
                 {
                     "duration_sec": duration_sec,
-                    "warmup_sec": warmup_sec,
                 },
             )
         )
