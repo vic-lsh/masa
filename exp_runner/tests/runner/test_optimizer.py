@@ -1,11 +1,7 @@
 """Tests for the Rajomon parameter optimizer."""
 
-import json
-from pathlib import Path
-
 import optuna
 import pandas as pd
-import pytest
 
 from exp_runner.runner.optimizer import (
     DEFAULT_RAJOMON_PARAMS,
