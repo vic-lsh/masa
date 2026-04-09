@@ -267,7 +267,7 @@ impl Layer for RajomonLayer {
 
         // Check if request was marked for drop
         if self.should_drop {
-            return Err(Err(self.issue_error(None)));
+            return Err(Err(self.issue_error(None, "RajomonAdmissionRej")));
         }
         Ok(())
     }
@@ -283,14 +283,14 @@ impl Layer for RajomonLayer {
     ) -> Result<(), Status> {
         // Check if request was marked for drop before initiating child RPC
         if self.should_drop {
-            return Err(self.issue_error(None));
+            return Err(self.issue_error(None, "RajomonAdmissionRej"));
         }
 
         // Check outbound budget
         let price = RAJOMON_STATE.child_price(child_method);
         let current = self.remaining_tokens.load(Ordering::Relaxed);
         if current < price {
-            return Err(self.issue_error(Some(child_method)));
+            return Err(self.issue_error(Some(child_method), "RajomonChildBudgetRej"));
         }
 
         child_rpc.tokens = self.remaining_tokens.load(Ordering::Relaxed);
@@ -306,7 +306,7 @@ impl Layer for RajomonLayer {
     ) -> Result<(), Result<Response<Ret>, Status>> {
         if let Poll::Pending = poll {
             if self.should_drop {
-                return Err(Err(self.issue_error(None)));
+                return Err(Err(self.issue_error(None, "RajomonAdmissionRej")));
             }
         }
         Ok(())
@@ -373,23 +373,28 @@ impl Layer for RajomonLayer {
 }
 
 impl RajomonLayer {
-    fn issue_error(&self, child_method: Option<&CowGrpcMethod>) -> Status {
-        let mut msg = format!(
-            "/EarlyReturn?src={}::{}",
-            self.rpc.service(),
-            self.rpc.method()
-        );
-
-        if let Some(child) = child_method {
-            msg.push_str(&format!(
-                "?last_rpc={}::{}",
+    /// Build a rejection `Status` carrying a structured `/EarlyReturn?...` message.
+    ///
+    /// Mirrors the format used by `predictive.rs` so the experiment plotting code
+    /// (`exp_runner/runner/plotting/util.py::_parse_error_columns`) can extract a
+    /// `reason` column for each rejected request.
+    fn issue_error(&self, child_method: Option<&CowGrpcMethod>, reason: &str) -> Status {
+        let msg = match child_method {
+            Some(child) => format!(
+                "/EarlyReturn?src={}::{}?last_rpc={}::{}&reason={}",
+                self.rpc.service(),
+                self.rpc.method(),
                 child.service(),
-                child.method()
-            ));
-        }
-
-        // Keep "Insufficient Rajomon Tokens" for backward compatibility in assertions
-        msg.push_str(" Insufficient Rajomon Tokens");
+                child.method(),
+                reason,
+            ),
+            None => format!(
+                "/EarlyReturn?src={}::{}&reason={}",
+                self.rpc.service(),
+                self.rpc.method(),
+                reason,
+            ),
+        };
 
         Status::resource_exhausted(msg)
     }
