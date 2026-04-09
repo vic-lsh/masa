@@ -15,7 +15,11 @@ from ..deployment_manager import TaskSpec
 from ..executor import CommandExecutor, SubprocessExecutor
 from ..naming import generate_project_name
 from .base import AppBuilder, AppPlugin, DockerConfig
-from .utils import get_docker_progress_flag, normalize_features_to_tag
+from .utils import (
+    get_docker_progress_flag,
+    normalize_features_to_tag,
+    resolve_policy_params,
+)
 
 if TYPE_CHECKING:
     from exp_runner.runner.config import ExperimentConfig
@@ -419,11 +423,12 @@ class SocialnetApp(AppPlugin):
             if candidate.exists():
                 env_vars["APP_CONFIG_PATH"] = str(candidate.resolve())
 
-        # Write policy_param.json (empty dict = use all built-in defaults)
+        # Write policy_param.json, resolving policy-specific overrides.
         project_policy_params_path = output_dir / "policy_param.json"
         project_policy_params_path.parent.mkdir(parents=True, exist_ok=True)
+        resolved_params = resolve_policy_params(config.policy_params or {}, policy)
         with project_policy_params_path.open("w") as f:
-            json.dump(config.policy_params or {}, f, indent=2)
+            json.dump(resolved_params, f, indent=2)
         env_vars["POLICY_PARAMS_PATH"] = str(project_policy_params_path.resolve())
 
         return env_vars

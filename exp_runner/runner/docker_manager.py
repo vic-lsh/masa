@@ -176,7 +176,7 @@ class DockerManager(DeploymentManager):
             f"Stopping and cleaning up existing services for {project_name or 'default'}"
         )
         self.executor.run(
-            [*base_cmd, "down", "-v"],
+            [*base_cmd, "down", "-v", "--remove-orphans"],
             cwd=app_dir,
             check=False,  # Don't fail if nothing to stop
             env=env,
@@ -246,7 +246,7 @@ class DockerManager(DeploymentManager):
             base_cmd.extend(["-p", project_name])
 
         self.executor.run(
-            [*base_cmd, "down"],
+            [*base_cmd, "down", "-v", "--remove-orphans"],
             cwd=app_dir,
             check=False,  # Don't fail if already stopped
             env=env,
