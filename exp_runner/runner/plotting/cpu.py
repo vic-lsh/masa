@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 
 from ..container_utils import extract_service_name
-from .util import get_policy_color, get_policy_display_name
+from .util import get_policy_display_name, get_policy_line_style, get_policy_linestyle
 
 logger = logging.getLogger(__name__)
 
@@ -170,7 +170,7 @@ def _plot_service_cpu(
     fig, ax = plt.subplots(figsize=figsize)
 
     policies = sorted(df_grouped["policy"].unique())
-    colors = _get_policy_colors(policies)
+    styles = _get_policy_styles(policies)
 
     for policy in policies:
         df_policy = df_grouped[df_grouped["policy"] == policy].sort_values(
@@ -188,10 +188,9 @@ def _plot_service_cpu(
             df_policy["time_bin_mid"],
             smoothed_cpu,
             label=get_policy_display_name(policy),
-            color=colors.get(policy, None),
             linewidth=2,
-            marker="o",
             markersize=3,
+            **styles[policy],
         )
 
     ax.set_xlabel("Time (seconds)", fontsize=12)
@@ -233,28 +232,27 @@ def _apply_ewma(values: np.ndarray, alpha: float) -> np.ndarray:
     return smoothed
 
 
-def _get_policy_colors(policies: list[str]) -> dict[str, str]:
+def _get_policy_styles(policies: list[str]) -> dict[str, dict]:
     """
-    Get colors for policies, matching the color scheme from plotting utilities.
+    Get plot styles (color, marker, linestyle) for policies, matching the
+    centralized scheme. Unknown policies fall back to matplotlib's prop cycle.
 
     Args:
         policies: List of policy names
 
     Returns:
-        Dict mapping policy name to color
+        Dict mapping policy name to a kwargs dict for ax.plot.
     """
     result = {}
     default_colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
     default_idx = 0
 
     for policy in policies:
-        color = get_policy_color(policy)
-        if color:
-            result[policy] = color
-        else:
-            # Use default matplotlib colors for unknown policies
-            result[policy] = default_colors[default_idx % len(default_colors)]
+        style = get_policy_line_style(policy)
+        if style["color"] is None:
+            style["color"] = default_colors[default_idx % len(default_colors)]
             default_idx += 1
+        result[policy] = style
 
     return result
 
@@ -410,12 +408,14 @@ def _plot_policy_services(
             .reset_index()
         )
 
+        # Single line per axes; use the policy's style so per-policy figures
+        # are visually consistent with the multi-policy comparison plot.
         ax.plot(
             df_grouped["time_rounded"],
             df_grouped["cpu_percent"],
             linewidth=2,
-            marker="o",
             markersize=3,
+            linestyle=get_policy_linestyle(policy),
         )
 
         ax.set_xlabel("Time (s)", fontsize=10)

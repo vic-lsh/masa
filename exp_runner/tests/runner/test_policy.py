@@ -169,29 +169,106 @@ class TestDisplayName:
 
 
 class TestColor:
+    """Colors are from the Okabe-Ito color-blind-safe palette.
+
+    The `drop` dimension is encoded by `linestyle` (see TestLinestyle), so
+    drop variants share the same base color as their no-drop counterparts.
+    """
+
     def test_fifo(self):
-        assert Policy.parse("sched_fifo").color == "grey"
+        assert Policy.parse("sched_fifo").color == "#999999"
 
     def test_fifo_drop(self):
-        assert Policy.parse("sched_fifo,abort_slo").color == "darkgrey"
+        # Same color as no-drop; drop is encoded via linestyle.
+        assert Policy.parse("sched_fifo,abort_slo").color == "#999999"
 
     def test_e2e_slo(self):
-        assert Policy.parse("sched_slo").color == "steelblue"
+        assert Policy.parse("sched_slo").color == "#0072B2"
 
     def test_e2e_slo_drop(self):
-        assert Policy.parse("sched_slo,abort_slo").color == "cornflowerblue"
+        assert Policy.parse("sched_slo,abort_slo").color == "#0072B2"
+
+    def test_e2e_slo_with_ac_slack(self):
+        assert Policy.parse("sched_slo,ac_pred,est_mean_var").color == "#009E73"
+
+    def test_e2e_slo_with_ac_rajomon(self):
+        assert Policy.parse("sched_slo,ac_rajomon").color == "#E69F00"
 
     def test_oldest(self):
-        assert Policy.parse("sched_tailclipper").color == "purple"
+        assert Policy.parse("sched_tailclipper").color == "#CC79A7"
 
     def test_oldest_drop(self):
-        assert Policy.parse("sched_tailclipper,abort_slo").color == "mediumpurple"
+        assert Policy.parse("sched_tailclipper,abort_slo").color == "#CC79A7"
 
     def test_slack_with_est(self):
-        assert Policy.parse("sched_pred,est_mean_var").color == "coral"
+        assert Policy.parse("sched_pred,est_mean_var").color == "#D55E00"
 
     def test_slack_with_ac(self):
-        assert Policy.parse("sched_pred,ac_pred,est_mean_var").color == "forestgreen"
+        assert Policy.parse("sched_pred,ac_pred,est_mean_var").color == "#009E73"
 
     def test_unknown(self):
         assert Policy.parse("custom").color is None
+
+
+# ── marker / linestyle / hatch ────────────────────────────────────────────
+
+
+class TestMarker:
+    """Marker is a redundant encoding of `prio` (so plots survive greyscale)."""
+
+    def test_fifo(self):
+        assert Policy.parse("sched_fifo").marker == "o"
+
+    def test_e2e_slo(self):
+        assert Policy.parse("sched_slo").marker == "s"
+
+    def test_oldest(self):
+        assert Policy.parse("sched_tailclipper").marker == "^"
+
+    def test_slack(self):
+        assert Policy.parse("sched_pred,est_mean_var").marker == "D"
+
+    def test_drop_does_not_change_marker(self):
+        assert Policy.parse("sched_fifo,abort_slo").marker == "o"
+        assert Policy.parse("sched_slo,abort_slo").marker == "s"
+
+    def test_unknown_fallback(self):
+        assert Policy.parse("custom").marker == "o"
+
+
+class TestLinestyle:
+    """Linestyle encodes the `drop` dimension orthogonally."""
+
+    def test_no_drop_is_solid(self):
+        assert Policy.parse("sched_fifo").linestyle == "-"
+        assert Policy.parse("sched_slo").linestyle == "-"
+        assert Policy.parse("sched_pred,est_mean_var").linestyle == "-"
+
+    def test_abort_slo_is_dashed(self):
+        assert Policy.parse("sched_fifo,abort_slo").linestyle == "--"
+        assert Policy.parse("sched_slo,abort_slo").linestyle == "--"
+
+    def test_abort_slack_is_dashed(self):
+        assert Policy.parse("sched_pred,abort_slack,est_mean_var").linestyle == "--"
+
+    def test_unknown_fallback(self):
+        assert Policy.parse("custom").linestyle == "-"
+
+
+class TestHatch:
+    """Hatch is a redundant encoding of `prio` for bar plots."""
+
+    def test_fifo(self):
+        assert Policy.parse("sched_fifo").hatch == ""
+
+    def test_e2e_slo(self):
+        assert Policy.parse("sched_slo").hatch == "//"
+
+    def test_oldest(self):
+        assert Policy.parse("sched_tailclipper").hatch == "xx"
+
+    def test_slack(self):
+        assert Policy.parse("sched_pred,est_mean_var").hatch == ".."
+
+    def test_unknown_fallback(self):
+        assert Policy.parse("custom").hatch == ""

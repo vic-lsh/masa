@@ -141,25 +141,63 @@ class Policy:
     def color(self) -> str | None:
         """Matplotlib color for this policy, or None for the default cycle.
 
-        Colour scheme:
-        - fifo:    grey / darkgrey (with drop)
-        - e2e_slo: steelblue / cornflowerblue (with drop)
-        - oldest:  purple / mediumpurple (with drop)
-        - slack:   hotpink / lightpink (with drop),
-                   coral (with est, no AC), forestgreen (with AC)
-        """
-        has_drop = self.drop is not None
+        Colour-blind-safe scheme (Okabe-Ito palette). Encodes prio + ac family;
+        the `drop` dimension is encoded by `linestyle` instead of a lighter shade.
 
+        - fifo:    grey         (#999999)
+        - e2e_slo: blue         (#0072B2)
+        - oldest:  reddish purple (#CC79A7)
+        - slack:   vermillion   (#D55E00)  — no AC
+                   bluish green (#009E73)  — ac=slack (cost-aware AC)
+                   orange       (#E69F00)  — ac=rajomon
+        """
         if self.prio == "fifo":
-            return "darkgrey" if has_drop else "grey"
+            return "#999999"
         if self.prio == "e2e_slo":
-            return "cornflowerblue" if has_drop else "steelblue"
+            if self.ac == "slack":
+                return "#009E73"
+            if self.ac == "rajomon":
+                return "#E69F00"
+            return "#0072B2"
         if self.prio == "oldest":
-            return "mediumpurple" if has_drop else "purple"
+            return "#CC79A7"
         if self.prio == "slack":
-            if self.ac is not None:
-                return "forestgreen"
-            if self.est is not None:
-                return "coral"
-            return "lightpink" if has_drop else "hotpink"
+            if self.ac == "slack":
+                return "#009E73"
+            if self.ac == "rajomon":
+                return "#E69F00"
+            return "#D55E00"
         return None
+
+    @property
+    def marker(self) -> str:
+        """Matplotlib marker shape for this policy. Redundant encoding of `prio`
+        so categories survive greyscale printing and CVD viewers."""
+        if self.prio == "fifo":
+            return "o"
+        if self.prio == "e2e_slo":
+            return "s"
+        if self.prio == "oldest":
+            return "^"
+        if self.prio == "slack":
+            return "D"
+        return "o"
+
+    @property
+    def linestyle(self) -> str:
+        """Matplotlib linestyle. Encodes the `drop` dimension orthogonally:
+        solid = no drop, dashed = any drop variant."""
+        return "--" if self.drop is not None else "-"
+
+    @property
+    def hatch(self) -> str:
+        """Matplotlib hatch pattern for bar plots. Redundant encoding of `prio`."""
+        if self.prio == "fifo":
+            return ""
+        if self.prio == "e2e_slo":
+            return "//"
+        if self.prio == "oldest":
+            return "xx"
+        if self.prio == "slack":
+            return ".."
+        return ""

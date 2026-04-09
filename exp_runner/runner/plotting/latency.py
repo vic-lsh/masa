@@ -9,8 +9,8 @@ import seaborn as sns
 from .util import (
     filter_excluded_errors,
     get_plot_worker_count,
-    get_policy_color,
     get_policy_display_name,
+    get_policy_line_style,
     parse_args,
     PlotData,
     prepare_output_dir,
@@ -45,9 +45,14 @@ def _plot_latency_cdf(
         latencies = np.sort(df_filtered["latency"].to_numpy() / MS_TO_US)
         percentiles = np.linspace(0, 100, len(latencies))
 
-        color = get_policy_color(policy)
+        # CDF: dense lines, drop the marker dimension to avoid clutter.
+        style = get_policy_line_style(policy)
+        style.pop("marker", None)
         ax.plot(
-            latencies, percentiles, label=get_policy_display_name(policy), color=color
+            latencies,
+            percentiles,
+            label=get_policy_display_name(policy),
+            **style,
         )
 
     # Add labels and title
@@ -193,13 +198,11 @@ def _plot_p99_latency(
             else:
                 p99_latency = df_filtered["latency"].quantile(0.99) / MS_TO_US
             p99_values.append(p99_latency)
-        color = get_policy_color(policy)
         ax.plot(
             rps_values,
             p99_values,
-            "o-",
             label=get_policy_display_name(policy),
-            color=color,
+            **get_policy_line_style(policy),
         )
 
     ax.set_xlabel("Requests Per Second (RPS)")
@@ -244,13 +247,11 @@ def _plot_averaged_percentile_latency(
                     )
                 percentile_values.append(percentile_latency)
             averaged_percentile += np.array(percentile_values)
-        color = get_policy_color(policy)
         ax.plot(
             rps_values,
             averaged_percentile / repeats,
-            "o-",
             label=get_policy_display_name(policy),
-            color=color,
+            **get_policy_line_style(policy),
         )
 
     p = int(percentile * 100)

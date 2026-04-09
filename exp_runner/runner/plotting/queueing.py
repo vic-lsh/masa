@@ -7,8 +7,8 @@ import numpy as np
 from .util import (
     filter_excluded_errors,
     get_plot_worker_count,
-    get_policy_color,
     get_policy_display_name,
+    get_policy_line_style,
     parse_args,
     PlotData,
     prepare_output_dir,
@@ -225,15 +225,13 @@ def _plot_total_queueing_latency(
                 total_avg = df_filtered[queueing_cols].sum(axis=1).mean() / MS_TO_US
                 totals.append(total_avg)
 
-        color = get_policy_color(policy)
         ax.plot(
             rps_values,
             totals,
-            marker="o",
             label=get_policy_display_name(policy),
-            color=color,
             linewidth=2,
             markersize=6,
+            **get_policy_line_style(policy),
         )
 
     ax.set_ylabel("Avg Total Queueing Latency (ms)")

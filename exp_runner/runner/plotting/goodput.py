@@ -11,8 +11,11 @@ from exp_runner.runner.policy import Policy
 from .util import (
     filter_excluded_errors,
     get_plot_worker_count,
+    get_policy_bar_style,
     get_policy_color,
     get_policy_display_name,
+    get_policy_line_style,
+    get_policy_linestyle,
     load_plot_data,
     parse_args,
     PlotData,
@@ -907,15 +910,13 @@ def _plot_all_api_goodput_clean(
 
     for policy in sorted_policies:
         y = policy_total_goodputs.get(policy, [])
-        color = get_policy_color(policy)
         ax1.plot(
             rps_values,
             y,
-            marker="o",
             label=get_policy_display_name(policy),
-            color=color,
             linewidth=2,
             markersize=6,
+            **get_policy_line_style(policy),
         )
     ax1.set_ylabel("Goodput (req/s meeting SLO)")
     ax1.set_xlabel("Load (requests per second)")
@@ -944,15 +945,13 @@ def _plot_all_api_goodput_clean(
                 fraction_values.append(goodput_values[i] / rps)
             else:
                 fraction_values.append(0.0)
-        color = get_policy_color(policy)
         ax3.plot(
             rps_values,
             fraction_values,
-            marker="o",
             label=get_policy_display_name(policy),
-            color=color,
             linewidth=2,
             markersize=6,
+            **get_policy_line_style(policy),
         )
     ax3.set_ylabel("Goodput / Offered Load")
     ax3.set_xlabel("Load (requests per second)")
@@ -1221,13 +1220,12 @@ def _plot_policy_goodput_comparison(
 
     for j, policy in enumerate(sorted_policies):
         offset = (j - len(sorted_policies) / 2 + 0.5) * bar_width
-        color = get_policy_color(policy)
         ax.bar(
             index + offset,
             policy_goodputs[policy],
             bar_width,
             label=get_policy_display_name(policy),
-            color=color,
+            **get_policy_bar_style(policy),
         )
 
     ax.set_xlabel("Requests Per Second (RPS)")
@@ -1344,13 +1342,12 @@ def _plot_averaged_goodput(
             / repeats
         )
         offset = (j - len(sorted_policies) / 2 + 0.5) * bar_width
-        color = get_policy_color(policy)
         ax.bar(
             index + offset,
             average_goodput,
             bar_width,
             label=get_policy_display_name(policy),
-            color=color,
+            **get_policy_bar_style(policy),
         )
 
     ax.set_xlabel("Requests Per Second (RPS)")
@@ -1459,6 +1456,7 @@ def plot_goodput_timeline(
             all_goodput,
             label=get_policy_display_name(policy),
             color=color,
+            linestyle=get_policy_linestyle(policy),
             linewidth=1.5,
         )
 
@@ -1586,6 +1584,7 @@ def plot_early_return_timeline(
             all_er_rate,
             label=get_policy_display_name(policy),
             color=color,
+            linestyle=get_policy_linestyle(policy),
             linewidth=1.5,
         )
 
