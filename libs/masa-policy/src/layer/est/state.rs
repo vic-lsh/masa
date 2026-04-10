@@ -229,7 +229,7 @@ where
             parts.push(format!("{}: (no estimate)", key));
         }
     });
-    log::info!("{}: {}", label, parts.join(", "));
+    // log::info!("{}: {}", label, parts.join(", "));
 }
 
 fn log_method_map_if_non_empty<E: LatencyEstimator + Default + 'static>(
