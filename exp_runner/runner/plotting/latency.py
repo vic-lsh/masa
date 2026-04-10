@@ -112,14 +112,14 @@ def _plot_abort_reason_stacked(
     # _REASON_COLORS in goodput.py — same hue families: grey baseline, warm for
     # deadline/feasibility shedding, cool for admission-control rejections.
     reason_colors = {
-        "E2EDeadline": "#999999",            # grey
+        "E2EDeadline": "#999999",  # grey
         "LocalDeadlineExceeded": "#D55E00",  # vermillion
         "BeforePollFeasibility": "#E69F00",  # orange
         "BeforeChildFeasibility": "#F0E442",  # yellow
-        "PredAdmissionRej": "#56B4E9",       # sky blue
-        "RajomonAdmissionRej": "#0072B2",    # blue
+        "PredAdmissionRej": "#56B4E9",  # sky blue
+        "RajomonAdmissionRej": "#0072B2",  # blue
         "RajomonChildBudgetRej": "#009E73",  # bluish green
-        "TokenBucketRej": "#CC79A7",         # reddish purple (legacy)
+        "TokenBucketRej": "#CC79A7",  # reddish purple (legacy)
     }
 
     # Collect reason counts per RPS
