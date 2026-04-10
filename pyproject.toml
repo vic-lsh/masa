@@ -72,6 +72,7 @@ dependencies = [
     "tzdata==2025.2",
     "wcwidth==0.2.13",
     "webencodings==0.5.1",
+    "optuna>=4.8.0",
 ]
 
 [tool]
