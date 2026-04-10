@@ -2,6 +2,7 @@
 Shared utilities for application plugins.
 """
 
+import copy
 import os
 import re
 import sys
@@ -13,6 +14,64 @@ if TYPE_CHECKING:
     from exp.runner.config import ExperimentConfig
 
 logger = logging.getLogger(__name__)
+
+# ── Scheduling-policy → parameter key mapping ──────────────────────────
+#
+# Resolves per-scheduling-policy parameter variants from a single
+# policy_param.json.  A section like "rajomon" may contain nested
+# scheduling-policy keys:
+#
+#   { "rajomon": {
+#       "sched_fifo":  { "price_cap": 10, ... },
+#       "sched_slo":   { "init_price": 3, ... }
+#   }}
+#
+# The runner detects the active scheduling policy from the feature string,
+# picks the matching sub-dict, and flattens it so the container sees:
+#
+#   { "rajomon": { "price_cap": 10, ... } }
+#
+# If "rajomon" contains flat params (no nested policy keys), it passes
+# through unchanged.
+
+SCHED_POLICY_KEYS = {"sched_pred", "sched_slo", "sched_fifo", "sched_tailclipper"}
+
+
+def resolve_policy_params(params: dict, policy: str) -> dict:
+    """Resolve per-scheduling-policy parameter variants.
+
+    For each known section (``rajomon``, ``pred``), if the value is a dict
+    whose keys are scheduling policy names, select the sub-dict matching the
+    active scheduling policy.  Otherwise pass through unchanged.
+    """
+    features = set(policy.split(","))
+
+    # Determine which scheduling policy is active.
+    active_sched = None
+    for sched in SCHED_POLICY_KEYS:
+        if sched in features:
+            active_sched = sched
+            break
+
+    resolved = copy.deepcopy(params)
+
+    for section in ("rajomon", "pred"):
+        value = resolved.get(section)
+        if not isinstance(value, dict):
+            continue
+        # Check if value contains scheduling policy keys (nested variant).
+        if value.keys() & SCHED_POLICY_KEYS:
+            if active_sched and active_sched in value:
+                resolved[section] = value[active_sched]
+                logger.info(
+                    f"Using {section}.{active_sched} params for policy {policy}"
+                )
+            else:
+                # No match — remove section so Rust uses built-in defaults.
+                del resolved[section]
+                logger.info(f"No {section} params for {active_sched}, using defaults")
+
+    return resolved
 
 
 def normalize_features_to_tag(features: Optional[str]) -> str:
