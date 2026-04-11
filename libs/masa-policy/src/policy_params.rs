@@ -141,8 +141,13 @@ impl Default for RajomonParams {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct PredParams {
-    /// Per-event EMA coefficient for the early-return rate (0–1).
-    pub er_alpha: f64,
+    /// Time constant (seconds) for the early-return rate EMA.
+    ///
+    /// Controls both the update speed of `er_rate` in `record_outcome` (via
+    /// time-corrected alpha) and how quickly it decays in `should_admit` when
+    /// no completions arrive (natural phase reset without explicit resets).
+    /// Default 2.0s gives a consistent ~2s response time regardless of RPS.
+    pub tau_er: f64,
     /// Fast EMA time constant (seconds) for goodput rate.
     pub tau_fast: f64,
     /// Slow EMA time constant (seconds) for goodput rate.
@@ -157,7 +162,7 @@ pub struct PredParams {
 impl Default for PredParams {
     fn default() -> Self {
         Self {
-            er_alpha: 0.05,
+            tau_er: 2.0,
             tau_fast: 0.5,
             tau_slow: 5.0,
             max_reject_floor: 0.10,
@@ -231,7 +236,7 @@ mod tests {
         let p = PolicyParams::default();
         assert_eq!(p.rajomon.max_token, 100);
         assert_eq!(p.rajomon.price_cap, u64::MAX);
-        assert_eq!(p.pred.er_alpha, 0.05);
+        assert!(p.pred.tau_er > 0.0);
         assert!(p.pred.tau_fast < p.pred.tau_slow);
     }
 
@@ -241,7 +246,7 @@ mod tests {
         let p: PolicyParams = serde_json::from_str(json).unwrap();
         assert_eq!(p.rajomon.max_token, 200);
         assert_eq!(p.rajomon.price_update_rate_ms, 10);
-        assert_eq!(p.pred.er_alpha, 0.05);
+        assert_eq!(p.pred.tau_er, 2.0);
     }
 
     #[test]
@@ -249,6 +254,6 @@ mod tests {
         let p: PolicyParams = serde_json::from_str("{}").unwrap();
         let d = PolicyParams::default();
         assert_eq!(p.rajomon.max_token, d.rajomon.max_token);
-        assert_eq!(p.pred.er_alpha, d.pred.er_alpha);
+        assert_eq!(p.pred.tau_er, d.pred.tau_er);
     }
 }
