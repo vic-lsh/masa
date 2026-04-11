@@ -44,9 +44,11 @@ pub(crate) struct PredAdmissionLayer {
     est: LatencyEstimators<DefaultLatencyEstimator>,
     root_method_id: Option<MethodId>,
     rpc: CowGrpcMethod,
-    /// Set when this layer rejects a child RPC. Prevents the rejection
+    /// Set when this layer rejects a request. Prevents the rejection
     /// from feeding back into `er_rate` via `finalize`.
     self_rejected: AtomicBool,
+    /// Guards the ingress admission check so it runs only on the first poll.
+    admission_checked: AtomicBool,
 }
 
 impl Layer for PredAdmissionLayer {
@@ -64,14 +66,38 @@ impl Layer for PredAdmissionLayer {
             root_method_id,
             rpc: method.clone(),
             self_rejected: AtomicBool::new(false),
+            admission_checked: AtomicBool::new(false),
         }
     }
 
-    /// Two-layer admission check before child RPC.
+    /// Admission check at true ingress — runs once, before any handler work.
     ///
-    /// - Layer 1 (every hop): floor-based deadline feasibility.
-    /// - Layer 2 (ingress only): probabilistic rejection based on
-    ///   early-return rate, floored by goodput health.
+    /// Fires on the first poll of the request future (hop_count == 0 only).
+    /// The `admission_checked` flag ensures it runs exactly once per request
+    /// regardless of how many times the future is polled.
+    #[inline]
+    fn before_poll<Ret>(
+        &self,
+        ctx: &Context,
+    ) -> Result<(), Result<tonic_core::Response<Ret>, Status>> {
+        if ctx.hop_count() != 0 || self.admission_checked.swap(true, Ordering::Relaxed) {
+            return Ok(());
+        }
+        if !self.pred_admission.should_admit() {
+            self.self_rejected.store(true, Ordering::Relaxed);
+            return Err(Err(Status::new(
+                Code::DeadlineExceeded,
+                format!(
+                    "/EarlyReturn?src={}::{}&reason=PredAdmissionRej",
+                    self.rpc.service(),
+                    self.rpc.method(),
+                ),
+            )));
+        }
+        Ok(())
+    }
+
+    /// Floor-based deadline feasibility check before each child RPC.
     #[inline]
     fn before_child_rpc<T>(
         &self,
@@ -91,7 +117,6 @@ impl Layer for PredAdmissionLayer {
 
         let time_left = ctx.e2e_deadline().saturating_sub(time_now());
 
-        // Layer 1: floor-based deadline feasibility
         let remaining = self.est.est_after_child_wallclock(key, time_left);
         let est_child = self.est.est_child_wallclock(key).unwrap_or(0);
         if time_now() + est_child + remaining.floor > ctx.e2e_deadline() {
@@ -99,21 +124,6 @@ impl Layer for PredAdmissionLayer {
                 Code::DeadlineExceeded,
                 format!(
                     "/EarlyReturn?src={}::{}?last_rpc={}::{}&reason=BeforeChildFeasibility",
-                    self.rpc.service(),
-                    self.rpc.method(),
-                    child_method_name.service(),
-                    child_method_name.method(),
-                ),
-            ));
-        }
-
-        // Layer 2: early-return-rate admission (ingress only)
-        if ctx.hop_count() == 0 && !self.pred_admission.should_admit() {
-            self.self_rejected.store(true, Ordering::Relaxed);
-            return Err(Status::new(
-                Code::DeadlineExceeded,
-                format!(
-                    "/EarlyReturn?src={}::{}?last_rpc={}::{}&reason=PredAdmissionRej",
                     self.rpc.service(),
                     self.rpc.method(),
                     child_method_name.service(),
@@ -203,8 +213,10 @@ struct AdmissionState {
     goodput_fast: f64,
     /// Slow EMA of goodput (completions/s).
     goodput_slow: f64,
-    /// Timestamp of last update.
+    /// Timestamp of last goodput EMA update.
     last_update: Instant,
+    /// Timestamp of last er_rate EMA update (independent of goodput clock).
+    er_last_update: Instant,
     /// Completions since last update.
     completions: u64,
     /// Counter for periodic logging.
@@ -239,6 +251,7 @@ impl PredictiveAdmission {
                 goodput_fast: 0.0,
                 goodput_slow: 0.0,
                 last_update: Instant::now(),
+                er_last_update: Instant::now(),
                 completions: 0,
                 log_counter: 0,
             }),
@@ -249,10 +262,18 @@ impl PredictiveAdmission {
     pub(crate) fn record_outcome(&self, is_early_return: bool) {
         let p = &PolicyParams::global().pred;
         let mut state = self.state.lock().unwrap();
+        let now = Instant::now();
 
-        // Update early-return rate EMA (per-event).
+        // Update early-return rate EMA (time-corrected).
+        // Using elapsed time gives a consistent ~tau_er time constant regardless
+        // of arrival rate — at 1500 RPS the per-event alpha was ~0.05 giving a
+        // 13 ms time constant; at 100 RPS it was ~600 ms. The time-corrected
+        // alpha makes the controller equally responsive across all load levels.
         let er_sample = if is_early_return { 1.0 } else { 0.0 };
-        state.er_rate += p.er_alpha * (er_sample - state.er_rate);
+        let er_elapsed = now.duration_since(state.er_last_update).as_secs_f64();
+        let alpha_er = 1.0 - (-er_elapsed / p.tau_er).exp();
+        state.er_rate += alpha_er * (er_sample - state.er_rate);
+        state.er_last_update = now;
 
         // Track completions for goodput.
         if !is_early_return {
@@ -260,7 +281,6 @@ impl PredictiveAdmission {
         }
 
         // Update goodput EMAs based on elapsed time.
-        let now = Instant::now();
         let elapsed = now.duration_since(state.last_update).as_secs_f64();
         if elapsed > 0.01 {
             let instant_goodput = state.completions as f64 / elapsed;
@@ -275,7 +295,7 @@ impl PredictiveAdmission {
 
         state.log_counter += 1;
         if state.log_counter % 1000 == 0 {
-            let overloaded = state.goodput_fast < state.goodput_slow;
+            let overloaded = state.goodput_fast < state.goodput_slow; // approx; exact check in should_admit
             log::info!(
                 "[ac_pred] outcomes={} er_rate={:.4} goodput_fast={:.1} goodput_slow={:.1} overloaded={}",
                 state.log_counter,
@@ -292,13 +312,28 @@ impl PredictiveAdmission {
         let p = &PolicyParams::global().pred;
         let state = self.state.lock().unwrap();
 
+        // Overload detection: compare stored goodput EMAs directly.
+        // The goodput EMAs are already time-corrected in record_outcome, so
+        // they reflect actual rates. Applying additional decay here caused
+        // cascades: self-rejections stall completions → last_update freezes →
+        // goodput decays to 0 → overloaded=true → full er_rate → 100% rejection.
         let overloaded = state.goodput_fast < state.goodput_slow;
+
+        // Apply time-based decay to er_rate to get the virtual rejection
+        // probability. This provides adaptive phase reset: when arrivals drop
+        // (or self-rejections dominate so record_outcome is never called),
+        // stale er_rate fades within ~tau_er seconds without any explicit reset.
+        let er_elapsed = Instant::now()
+            .duration_since(state.er_last_update)
+            .as_secs_f64();
+        let virt_er_rate = state.er_rate * (-er_elapsed / p.tau_er).exp();
+
         let reject_prob = if overloaded {
             // Goodput dropping — overloaded, allow full rejection.
-            state.er_rate
+            virt_er_rate
         } else {
             // Goodput healthy — cap rejection at floor.
-            state.er_rate.min(p.max_reject_floor)
+            virt_er_rate.min(p.max_reject_floor)
         };
 
         drop(state);
@@ -328,16 +363,27 @@ mod tests {
         }
     }
 
+    /// Helper: backdate er_last_update so the next record_outcome call sees
+    /// a meaningful elapsed time (1 s → alpha_er ≈ 0.39 at tau_er = 2 s).
+    fn backdate_er(ac: &PredictiveAdmission) {
+        let mut state = ac.state.lock().unwrap();
+        state.er_last_update = Instant::now() - std::time::Duration::from_secs(1);
+    }
+
     #[test]
     fn test_er_rate_increases_with_early_returns() {
         let ac = PredictiveAdmission::new();
-        for _ in 0..100 {
+        // Backdate before each call so alpha_er ≈ 0.39 per event.
+        // After 10 calls all ER: er_rate ≈ 1 - 0.61^10 ≈ 0.993.
+        for _ in 0..10 {
+            backdate_er(&ac);
             ac.record_outcome(true);
         }
         let state = ac.state.lock().unwrap();
         assert!(
             state.er_rate > 0.9,
-            "er_rate should be near 1.0 after all early returns"
+            "er_rate should be near 1.0 after all early returns, got {}",
+            state.er_rate
         );
     }
 
@@ -345,28 +391,33 @@ mod tests {
     fn test_er_rate_recovers_after_successes() {
         let ac = PredictiveAdmission::new();
         // Drive er_rate up.
-        for _ in 0..100 {
+        for _ in 0..10 {
+            backdate_er(&ac);
             ac.record_outcome(true);
         }
-        // Drive it back down.
-        for _ in 0..200 {
+        // Drive it back down — 5 success calls each with 1 s elapsed is
+        // enough: er_rate falls from ~0.99 to ~0.08 (below 0.1).
+        for _ in 0..5 {
+            backdate_er(&ac);
             ac.record_outcome(false);
         }
         let state = ac.state.lock().unwrap();
         assert!(
             state.er_rate < 0.1,
-            "er_rate should recover after successes"
+            "er_rate should recover after successes, got {}",
+            state.er_rate
         );
     }
 
     #[test]
     fn test_goodput_floor_caps_rejection() {
         let ac = PredictiveAdmission::new();
-        // Record enough early returns to push er_rate high.
-        for _ in 0..100 {
+        // Drive er_rate high via backdating (same approach as other tests).
+        for _ in 0..10 {
+            backdate_er(&ac);
             ac.record_outcome(true);
         }
-        // But also record successes with time gaps to make goodput_fast >= goodput_slow
+        // Record successes with time gaps to make goodput_fast >= goodput_slow
         // (healthy state). In healthy state, rejection is capped at max_reject_floor.
         std::thread::sleep(std::time::Duration::from_millis(50));
         for _ in 0..50 {
@@ -388,6 +439,53 @@ mod tests {
         assert!(
             admitted > 800,
             "should admit most requests when goodput is healthy, got {admitted}/1000"
+        );
+    }
+
+    /// Verifies that er_rate decays naturally when no completions arrive,
+    /// providing automatic phase reset without explicit state manipulation.
+    ///
+    /// Scenario: system built up high er_rate under load, then load drops.
+    /// Even without any new record_outcome calls, should_admit should become
+    /// progressively more permissive as virt_er_rate = er_rate * exp(-t/tau_er)
+    /// decays toward zero.
+    #[test]
+    fn test_er_rate_decays_when_idle() {
+        let ac = PredictiveAdmission::new();
+
+        // Build high er_rate via backdating (er_rate ≈ 0.99 after 10 calls).
+        for _ in 0..10 {
+            backdate_er(&ac);
+            ac.record_outcome(true);
+        }
+
+        // Establish overloaded state (goodput_fast < goodput_slow) so the floor
+        // cap is lifted and full virt_er_rate drives rejection probability.
+        {
+            let mut state = ac.state.lock().unwrap();
+            state.goodput_fast = 100.0; // declining
+            state.goodput_slow = 150.0; // stable
+        }
+
+        // Sanity: er_rate ≈ 0.99, overloaded → almost all rejected.
+        let admitted_before = (0..1000).filter(|_| ac.should_admit()).count();
+        assert!(
+            admitted_before < 200,
+            "high er_rate with overloaded state should cause frequent rejection, got {admitted_before}/1000"
+        );
+
+        // Simulate idle period: backdate er_last_update by 3 × tau_er (= 6 s).
+        // virt_er_rate = 0.99 × exp(-3) ≈ 0.05 — effectively near zero.
+        {
+            let mut state = ac.state.lock().unwrap();
+            state.er_last_update = Instant::now() - std::time::Duration::from_secs(6);
+        }
+
+        // After idle period er_rate decays → almost all admitted.
+        let admitted_after = (0..1000).filter(|_| ac.should_admit()).count();
+        assert!(
+            admitted_after > 900,
+            "er_rate should decay to near zero after 3×tau_er idle, got {admitted_after}/1000"
         );
     }
 }
