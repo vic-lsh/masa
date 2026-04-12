@@ -235,9 +235,9 @@ impl std::fmt::Debug for AdmissionState {
 
 /// Early-return-rate driven admission controller.
 ///
-/// Rejects probabilistically at `er_rate`. When goodput is healthy
-/// (fast EMA >= slow EMA), rejection is capped at `max_reject_floor`.
-/// When goodput is dropping (overload), the cap lifts.
+/// Rejects probabilistically at `virt_er_rate = er_rate * exp(-elapsed/tau_er)`.
+/// The ER rate tracks the fraction of admitted requests that end in an early
+/// return. Exponential decay provides natural phase reset when idle.
 #[derive(Debug)]
 pub(crate) struct PredictiveAdmission {
     state: Mutex<AdmissionState>,
@@ -312,13 +312,6 @@ impl PredictiveAdmission {
         let p = &PolicyParams::global().pred;
         let state = self.state.lock().unwrap();
 
-        // Overload detection: compare stored goodput EMAs directly.
-        // The goodput EMAs are already time-corrected in record_outcome, so
-        // they reflect actual rates. Applying additional decay here caused
-        // cascades: self-rejections stall completions → last_update freezes →
-        // goodput decays to 0 → overloaded=true → full er_rate → 100% rejection.
-        let overloaded = state.goodput_fast < state.goodput_slow;
-
         // Apply time-based decay to er_rate to get the virtual rejection
         // probability. This provides adaptive phase reset: when arrivals drop
         // (or self-rejections dominate so record_outcome is never called),
@@ -328,22 +321,28 @@ impl PredictiveAdmission {
             .as_secs_f64();
         let virt_er_rate = state.er_rate * (-er_elapsed / p.tau_er).exp();
 
-        let reject_prob = if overloaded {
-            // Goodput dropping — overloaded, allow full rejection.
-            virt_er_rate
+        // Derivative term: fires when goodput is falling (goodput_fast < goodput_slow),
+        // which happens within ~tau_fast seconds of a load spike before ER rate builds
+        // up over ~tau_er seconds. Vanishes at steady state so equilibrium and loop
+        // gain are unchanged.
+        let goodput_divergence = if state.goodput_slow > 0.0 {
+            ((state.goodput_slow - state.goodput_fast) / state.goodput_slow).max(0.0)
         } else {
-            // Goodput healthy — cap rejection at floor.
-            virt_er_rate.min(p.max_reject_floor)
+            0.0
         };
+        let reject_prob = (virt_er_rate * p.reject_scale
+            + goodput_divergence * p.goodput_divergence_weight)
+            .min(1.0);
 
         drop(state);
         let coin = rand::random::<f64>();
         let admitted = coin > reject_prob;
         if !admitted {
             log::debug!(
-                "[ac_pred] REJECTED reject_prob={:.4} overloaded={}",
+                "[ac_pred] REJECTED reject_prob={:.4} virt_er={:.4} div={:.4}",
                 reject_prob,
-                overloaded,
+                virt_er_rate,
+                goodput_divergence
             );
         }
         admitted
@@ -410,35 +409,35 @@ mod tests {
     }
 
     #[test]
-    fn test_goodput_floor_caps_rejection() {
+    fn test_admits_when_er_rate_low() {
         let ac = PredictiveAdmission::new();
-        // Drive er_rate high via backdating (same approach as other tests).
+        // er_rate = 0 (no early returns) → virt_er_rate ≈ 0 → should admit almost all.
+        let admitted = (0..1000).filter(|_| ac.should_admit()).count();
+        assert!(
+            admitted > 950,
+            "zero er_rate should admit >95%, got {admitted}/1000"
+        );
+    }
+
+    #[test]
+    fn test_rejects_proportional_to_er_rate() {
+        let ac = PredictiveAdmission::new();
+        // Drive er_rate to ~0.99 via backdating.
         for _ in 0..10 {
             backdate_er(&ac);
             ac.record_outcome(true);
         }
-        // Record successes with time gaps to make goodput_fast >= goodput_slow
-        // (healthy state). In healthy state, rejection is capped at max_reject_floor.
-        std::thread::sleep(std::time::Duration::from_millis(50));
-        for _ in 0..50 {
-            ac.record_outcome(false);
+        // Even with goodput_fast >= goodput_slow (healthy), should reject ~99%
+        // because rejection is now driven by virt_er_rate alone.
+        {
+            let mut state = ac.state.lock().unwrap();
+            state.goodput_fast = 200.0;
+            state.goodput_slow = 150.0; // healthy: fast > slow
         }
-        std::thread::sleep(std::time::Duration::from_millis(50));
-        for _ in 0..50 {
-            ac.record_outcome(false);
-        }
-
-        // With healthy goodput, should admit most requests despite high er_rate.
-        let mut admitted = 0;
-        for _ in 0..1000 {
-            if ac.should_admit() {
-                admitted += 1;
-            }
-        }
-        // max_reject_floor = 0.10, so ~90% should be admitted.
+        let admitted = (0..1000).filter(|_| ac.should_admit()).count();
         assert!(
-            admitted > 800,
-            "should admit most requests when goodput is healthy, got {admitted}/1000"
+            admitted < 100,
+            "high er_rate should reject ~99% regardless of healthy goodput, got {admitted}/1000"
         );
     }
 
@@ -459,15 +458,7 @@ mod tests {
             ac.record_outcome(true);
         }
 
-        // Establish overloaded state (goodput_fast < goodput_slow) so the floor
-        // cap is lifted and full virt_er_rate drives rejection probability.
-        {
-            let mut state = ac.state.lock().unwrap();
-            state.goodput_fast = 100.0; // declining
-            state.goodput_slow = 150.0; // stable
-        }
-
-        // Sanity: er_rate ≈ 0.99, overloaded → almost all rejected.
+        // Sanity: er_rate ≈ 0.99 → virt_er_rate ≈ 0.99 → almost all rejected.
         let admitted_before = (0..1000).filter(|_| ac.should_admit()).count();
         assert!(
             admitted_before < 200,
@@ -487,5 +478,18 @@ mod tests {
             admitted_after > 900,
             "er_rate should decay to near zero after 3×tau_er idle, got {admitted_after}/1000"
         );
+    }
+
+    /// Verify reject_scale defaults to 1.0 and is included in the compiled params.
+    #[test]
+    fn test_reject_scale_default() {
+        let p = crate::policy_params::PolicyParams::default();
+        assert_eq!(p.pred.reject_scale, 1.0);
+    }
+
+    #[test]
+    fn test_goodput_divergence_weight_default() {
+        let p = crate::policy_params::PolicyParams::default();
+        assert_eq!(p.pred.goodput_divergence_weight, 0.0);
     }
 }
