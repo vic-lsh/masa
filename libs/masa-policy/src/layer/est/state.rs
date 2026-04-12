@@ -167,10 +167,16 @@ impl<E: LatencyEstimator + Default + 'static> LatencyEstimators<E> {
         self.subtree_compute.track(key, cost_us);
     }
 
-    /// Inject 0 into after-child-wallclock estimates when a child early-returns.
-    /// Creates negative feedback to prevent frozen high estimates.
+    /// No-op when a child early-returns: we do not update after-child-wallclock.
+    ///
+    /// Previously this injected 0, which prevented frozen-high estimates but caused
+    /// burst-clear-rebound oscillation: a burst of ERs (alpha_down=0.2 per obs) would
+    /// collapse the estimate toward 0, silencing abort_slack until the queue rebuilt.
+    /// Letting the estimate stale at its last real observation is safer — it preserves
+    /// abort_slack pressure during the burst, and the estimate self-corrects once
+    /// successful completions resume.
+    #[allow(unused_variables)]
     pub(crate) fn track_er_feedback(&self, key: ParentToChildKey) {
-        self.after_child_wallclock.track(key, 0);
     }
 
     // ── Logging ────────────────────────────────────────────────────────
