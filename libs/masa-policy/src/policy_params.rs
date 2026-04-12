@@ -132,12 +132,12 @@ impl Default for RajomonParams {
 
 /// Tunable parameters for the predictive admission control policy.
 ///
-/// Uses early-return rate as the rejection signal with a goodput floor:
-/// - `reject_prob = er_rate` (probabilistic rejection proportional to
-///   observed early-return fraction).
-/// - Goodput floor: when goodput is healthy (fast EMA >= slow EMA),
-///   rejection probability is capped at `max_reject_floor`. When goodput
-///   is dropping (overloaded), the cap is lifted.
+/// `reject_prob = (virt_er_rate * reject_scale + goodput_divergence * goodput_divergence_weight).min(1.0)`
+///
+/// The ER rate EMA tracks the fraction of admitted requests that end in an
+/// early return; the exponential decay provides natural phase reset when idle.
+/// The goodput divergence term fires when throughput is falling (load spike onset)
+/// and vanishes at steady state, acting as a derivative (D) term.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct PredParams {
@@ -152,8 +152,29 @@ pub struct PredParams {
     pub tau_fast: f64,
     /// Slow EMA time constant (seconds) for goodput rate.
     pub tau_slow: f64,
-    /// Maximum rejection probability when goodput is healthy.
+    /// Previously used to cap rejection probability in the "healthy" goodput
+    /// state. No longer used in the admission decision — kept for backwards
+    /// compatibility with existing config files.
     pub max_reject_floor: f64,
+    /// Rejection scale factor on `virt_er_rate`. Default 1.0.
+    ///
+    /// **Do not set above 1.0.** Values > 1.0 increase the closed-loop gain above
+    /// 1.0 (loop_gain = reject_scale × C×R/A*²), causing oscillation. Use
+    /// `goodput_divergence_weight` instead for tighter admission at high load.
+    pub reject_scale: f64,
+    /// Weight for the goodput-divergence derivative term.
+    ///
+    /// At each admission check:
+    ///   `D = max(0.0, (goodput_slow − goodput_fast) / goodput_slow)`
+    ///   `reject_prob = (virt_er_rate * reject_scale + D * goodput_divergence_weight).min(1.0)`
+    ///
+    /// `D` is positive when goodput is *falling* (fast EMA below slow EMA), which
+    /// happens within ~`tau_fast` seconds of a load spike — well before ER rate
+    /// builds up over ~`tau_er` seconds. At steady state `goodput_fast ≈ goodput_slow`
+    /// so `D → 0` and steady-state equilibrium and loop gain are unchanged.
+    ///
+    /// Default 0.0 (disabled, backward compatible). Start with 0.5.
+    pub goodput_divergence_weight: f64,
     /// Variance multiplier for the LatencyMeanVar estimator.
     /// estimate = mean + k * stddev. 0.0 = pure mean estimator (default).
     pub estimator_k: f64,
@@ -166,6 +187,8 @@ impl Default for PredParams {
             tau_fast: 0.5,
             tau_slow: 5.0,
             max_reject_floor: 0.10,
+            reject_scale: 1.0,
+            goodput_divergence_weight: 0.0,
             estimator_k: 0.0,
         }
     }
@@ -238,6 +261,8 @@ mod tests {
         assert_eq!(p.rajomon.price_cap, u64::MAX);
         assert!(p.pred.tau_er > 0.0);
         assert!(p.pred.tau_fast < p.pred.tau_slow);
+        assert_eq!(p.pred.reject_scale, 1.0);
+        assert_eq!(p.pred.goodput_divergence_weight, 0.0);
     }
 
     #[test]
