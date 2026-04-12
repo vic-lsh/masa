@@ -213,12 +213,17 @@ struct AdmissionState {
     goodput_fast: f64,
     /// Slow EMA of goodput (completions/s).
     goodput_slow: f64,
-    /// Timestamp of last goodput EMA update.
+    /// Start of the current observation window (shared by goodput and er_rate).
     last_update: Instant,
-    /// Timestamp of last er_rate EMA update (independent of goodput clock).
+    /// When er_rate was last updated from observed data.
+    /// Used by `should_admit` to decay virt_er_rate when no outcomes arrive.
     er_last_update: Instant,
-    /// Completions since last update.
+    /// Successful completions accumulated in the current window.
     completions: u64,
+    /// Early-return events accumulated in the current window.
+    er_count: u64,
+    /// Total events (success + ER) accumulated in the current window.
+    window_total: u64,
     /// Counter for periodic logging.
     log_counter: u64,
 }
@@ -253,6 +258,8 @@ impl PredictiveAdmission {
                 last_update: Instant::now(),
                 er_last_update: Instant::now(),
                 completions: 0,
+                er_count: 0,
+                window_total: 0,
                 log_counter: 0,
             }),
         }
@@ -264,33 +271,48 @@ impl PredictiveAdmission {
         let mut state = self.state.lock().unwrap();
         let now = Instant::now();
 
-        // Update early-return rate EMA (time-corrected).
-        // Using elapsed time gives a consistent ~tau_er time constant regardless
-        // of arrival rate — at 1500 RPS the per-event alpha was ~0.05 giving a
-        // 13 ms time constant; at 100 RPS it was ~600 ms. The time-corrected
-        // alpha makes the controller equally responsive across all load levels.
-        let er_sample = if is_early_return { 1.0 } else { 0.0 };
-        let er_elapsed = now.duration_since(state.er_last_update).as_secs_f64();
-        let alpha_er = 1.0 - (-er_elapsed / p.tau_er).exp();
-        state.er_rate += alpha_er * (er_sample - state.er_rate);
-        state.er_last_update = now;
-
-        // Track completions for goodput.
-        if !is_early_return {
+        // Accumulate into the current observation window.
+        state.window_total += 1;
+        if is_early_return {
+            state.er_count += 1;
+        } else {
             state.completions += 1;
         }
 
-        // Update goodput EMAs based on elapsed time.
+        // Both er_rate and goodput EMAs update on the same 10 ms window.
+        //
+        // Previously er_rate used a per-event Bernoulli update with a
+        // time-corrected alpha. That is mathematically correct at steady load,
+        // but during over-rejection (few admitted requests, sparse events)
+        // the per-event alpha jumps to ~1-2% and a handful of consecutive
+        // successes can collapse er_rate prematurely, triggering an admission
+        // burst and a ping-pong cycle.
+        //
+        // Using a windowed fraction sample (er_count / window_total) instead:
+        // - alpha is fixed per window (~0.005 at 10 ms / tau_er 2 s)
+        //   regardless of how many events arrived
+        // - sample variance scales as 1/N (lower at high load)
+        // - behaviour is symmetric with the goodput window already in place
         let elapsed = now.duration_since(state.last_update).as_secs_f64();
         if elapsed > 0.01 {
+            // Update goodput EMAs.
             let instant_goodput = state.completions as f64 / elapsed;
-            state.completions = 0;
-            state.last_update = now;
-
             let alpha_fast = 1.0 - (-elapsed / p.tau_fast).exp();
             let alpha_slow = 1.0 - (-elapsed / p.tau_slow).exp();
             state.goodput_fast += alpha_fast * (instant_goodput - state.goodput_fast);
             state.goodput_slow += alpha_slow * (instant_goodput - state.goodput_slow);
+
+            // Update er_rate EMA from the window fraction.
+            let er_sample = state.er_count as f64 / state.window_total as f64;
+            let alpha_er = 1.0 - (-elapsed / p.tau_er).exp();
+            state.er_rate += alpha_er * (er_sample - state.er_rate);
+            state.er_last_update = now;
+
+            // Reset window.
+            state.completions = 0;
+            state.er_count = 0;
+            state.window_total = 0;
+            state.last_update = now;
         }
 
         state.log_counter += 1;
@@ -362,26 +384,29 @@ mod tests {
         }
     }
 
-    /// Helper: backdate er_last_update so the next record_outcome call sees
-    /// a meaningful elapsed time (1 s → alpha_er ≈ 0.39 at tau_er = 2 s).
-    fn backdate_er(ac: &PredictiveAdmission) {
+    /// Helper: backdate `last_update` (the window clock) so the next
+    /// `record_outcome` call fires the 10 ms window and applies a meaningful
+    /// alpha to er_rate (50 ms elapsed → alpha_er ≈ 0.025 at tau_er = 2 s).
+    fn backdate_window(ac: &PredictiveAdmission) {
         let mut state = ac.state.lock().unwrap();
-        state.er_last_update = Instant::now() - std::time::Duration::from_secs(1);
+        state.last_update = Instant::now() - std::time::Duration::from_millis(50);
     }
 
     #[test]
     fn test_er_rate_increases_with_early_returns() {
         let ac = PredictiveAdmission::new();
-        // Backdate before each call so alpha_er ≈ 0.39 per event.
-        // After 10 calls all ER: er_rate ≈ 1 - 0.61^10 ≈ 0.993.
-        for _ in 0..10 {
-            backdate_er(&ac);
+        // Backdate window before each call so every event fires its own window
+        // with a 50 ms elapsed → alpha_er ≈ 0.025. After 10 all-ER windows:
+        // er_rate ≈ 1 - 0.975^10 ≈ 0.22; after 50 windows ≈ 0.72. Use enough
+        // iterations (100) to drive er_rate reliably above 0.9.
+        for _ in 0..100 {
+            backdate_window(&ac);
             ac.record_outcome(true);
         }
         let state = ac.state.lock().unwrap();
         assert!(
             state.er_rate > 0.9,
-            "er_rate should be near 1.0 after all early returns, got {}",
+            "er_rate should be near 1.0 after many early returns, got {}",
             state.er_rate
         );
     }
@@ -390,14 +415,14 @@ mod tests {
     fn test_er_rate_recovers_after_successes() {
         let ac = PredictiveAdmission::new();
         // Drive er_rate up.
-        for _ in 0..10 {
-            backdate_er(&ac);
+        for _ in 0..100 {
+            backdate_window(&ac);
             ac.record_outcome(true);
         }
-        // Drive it back down — 5 success calls each with 1 s elapsed is
-        // enough: er_rate falls from ~0.99 to ~0.08 (below 0.1).
-        for _ in 0..5 {
-            backdate_er(&ac);
+        // Drive it back down with success windows. Each window (50 ms, sample=0):
+        // er_rate *= (1 - 0.025). After ~100 success windows er_rate < 0.1.
+        for _ in 0..100 {
+            backdate_window(&ac);
             ac.record_outcome(false);
         }
         let state = ac.state.lock().unwrap();
@@ -422,13 +447,13 @@ mod tests {
     #[test]
     fn test_rejects_proportional_to_er_rate() {
         let ac = PredictiveAdmission::new();
-        // Drive er_rate to ~0.99 via backdating.
-        for _ in 0..10 {
-            backdate_er(&ac);
+        // Drive er_rate high via windowed backdating.
+        for _ in 0..100 {
+            backdate_window(&ac);
             ac.record_outcome(true);
         }
-        // Even with goodput_fast >= goodput_slow (healthy), should reject ~99%
-        // because rejection is now driven by virt_er_rate alone.
+        // Even with goodput_fast >= goodput_slow (healthy), should reject heavily
+        // because rejection is driven by virt_er_rate alone.
         {
             let mut state = ac.state.lock().unwrap();
             state.goodput_fast = 200.0;
@@ -452,9 +477,9 @@ mod tests {
     fn test_er_rate_decays_when_idle() {
         let ac = PredictiveAdmission::new();
 
-        // Build high er_rate via backdating (er_rate ≈ 0.99 after 10 calls).
-        for _ in 0..10 {
-            backdate_er(&ac);
+        // Build high er_rate via windowed backdating.
+        for _ in 0..100 {
+            backdate_window(&ac);
             ac.record_outcome(true);
         }
 
