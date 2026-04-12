@@ -1,9 +1,10 @@
-// Predictive admission control layer — early-return-rate driven AC.
+// Predictive admission control layer — AIMD-based admission control.
 //
 // When `ac_pred` is enabled, this layer runs admission control at ingress
-// (hop_count == 0). It rejects requests probabilistically based on the
-// observed early-return rate, with a goodput-derived floor that relaxes
-// under overload.
+// (hop_count == 0). It rejects requests probabilistically based on an
+// AIMD-controlled admission probability (`admit_p`) that decreases when the
+// observed ER fraction exceeds a threshold and recovers additively when healthy.
+// Exponential idle decay opens admission naturally when traffic drops.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -45,7 +46,7 @@ pub(crate) struct PredAdmissionLayer {
     root_method_id: Option<MethodId>,
     rpc: CowGrpcMethod,
     /// Set when this layer rejects a request. Prevents the rejection
-    /// from feeding back into `er_rate` via `finalize`.
+    /// from feeding back into the admission controller via `finalize`.
     self_rejected: AtomicBool,
     /// Guards the ingress admission check so it runs only on the first poll.
     admission_checked: AtomicBool,
@@ -172,9 +173,8 @@ impl Layer for PredAdmissionLayer {
             return;
         }
 
-        // Skip outcome recording for our own rejections — counting them
-        // would cause er_rate to feed back on itself (reject → er_rate
-        // rises → reject more → death spiral).
+        // Skip outcome recording for self-rejections to avoid the controller
+        // feeding back on its own rejections (reject → admit_p drops further → reject more).
         if self.self_rejected.load(Ordering::Relaxed) {
             return;
         }
@@ -203,49 +203,41 @@ impl LayerChild for PredAdmissionChild {
 }
 
 // ══════════════════════════════════════════════════════════════════════════
-// Early-return-rate admission controller
+// AIMD admission controller
 // ══════════════════════════════════════════════════════════════════════════
 
 struct AdmissionState {
-    /// EMA of early-return fraction (0.0–1.0).
-    er_rate: f64,
-    /// Fast EMA of goodput (completions/s).
-    goodput_fast: f64,
-    /// Slow EMA of goodput (completions/s).
-    goodput_slow: f64,
-    /// Start of the current observation window (shared by goodput and er_rate).
+    /// Start of the current 50 ms observation window.
     last_update: Instant,
-    /// When er_rate was last updated from observed data.
-    /// Used by `should_admit` to decay virt_er_rate when no outcomes arrive.
+    /// When the window was last closed. Used by `should_admit` for idle decay:
+    /// as this timestamp ages, reject_prob decays to 0, reopening admission
+    /// automatically when traffic drops.
     er_last_update: Instant,
-    /// Successful completions accumulated in the current window.
-    completions: u64,
     /// Early-return events accumulated in the current window.
     er_count: u64,
     /// Total events (success + ER) accumulated in the current window.
     window_total: u64,
     /// Counter for periodic logging.
     log_counter: u64,
-    /// AIMD-controlled admission probability [0.0, 1.0].
-    /// Only used when `aimd_alpha > 0.0`. Starts at 1.0 (fully open).
+    /// AIMD-controlled admission probability [0.0, 1.0]. Starts at 1.0 (fully open).
     admit_p: f64,
 }
 
 impl std::fmt::Debug for AdmissionState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("AdmissionState")
-            .field("er_rate", &self.er_rate)
-            .field("goodput_fast", &self.goodput_fast)
-            .field("goodput_slow", &self.goodput_slow)
+            .field("admit_p", &self.admit_p)
             .finish()
     }
 }
 
-/// Early-return-rate driven admission controller.
+/// AIMD admission controller.
 ///
-/// Rejects probabilistically at `virt_er_rate = er_rate * exp(-elapsed/tau_er)`.
-/// The ER rate tracks the fraction of admitted requests that end in an early
-/// return. Exponential decay provides natural phase reset when idle.
+/// `admit_p` is updated per 50 ms window: multiplicative decrease (`admit_p *= beta`)
+/// when the window's ER fraction exceeds `aimd_er_threshold`; additive increase
+/// (`admit_p += alpha`) when healthy. Rejection probability is
+/// `(1 - admit_p) * exp(-idle_elapsed / tau_er)` — the exponential term provides
+/// natural phase reset when no outcomes arrive (idle traffic → admission opens).
 #[derive(Debug)]
 pub(crate) struct PredictiveAdmission {
     state: Mutex<AdmissionState>,
@@ -255,12 +247,8 @@ impl PredictiveAdmission {
     pub(crate) fn new() -> Self {
         Self {
             state: Mutex::new(AdmissionState {
-                er_rate: 0.0,
-                goodput_fast: 0.0,
-                goodput_slow: 0.0,
                 last_update: Instant::now(),
                 er_last_update: Instant::now(),
-                completions: 0,
                 er_count: 0,
                 window_total: 0,
                 log_counter: 0,
@@ -269,63 +257,37 @@ impl PredictiveAdmission {
         }
     }
 
-    /// Record whether a child RPC was an early return or a success.
+    /// Record whether an admitted request ended in an early return or a success.
     pub(crate) fn record_outcome(&self, is_early_return: bool) {
         let p = &PolicyParams::global().pred;
         let mut state = self.state.lock().unwrap();
         let now = Instant::now();
 
-        // Accumulate into the current observation window.
+        // Accumulate into the current 50 ms observation window.
         state.window_total += 1;
         if is_early_return {
             state.er_count += 1;
-        } else {
-            state.completions += 1;
         }
 
-        // Both er_rate and goodput EMAs update on the same 10 ms window.
-        //
-        // Previously er_rate used a per-event Bernoulli update with a
-        // time-corrected alpha. That is mathematically correct at steady load,
-        // but during over-rejection (few admitted requests, sparse events)
-        // the per-event alpha jumps to ~1-2% and a handful of consecutive
-        // successes can collapse er_rate prematurely, triggering an admission
-        // burst and a ping-pong cycle.
-        //
-        // Using a windowed fraction sample (er_count / window_total) instead:
-        // - alpha is fixed per window (~0.005 at 10 ms / tau_er 2 s)
-        //   regardless of how many events arrived
-        // - sample variance scales as 1/N (lower at high load)
-        // - behaviour is symmetric with the goodput window already in place
+        // At each 50 ms window boundary, compute the ER fraction and run the
+        // AIMD step. Using a windowed fraction sample rather than per-event EMA:
+        // - alpha is fixed per window regardless of how many events arrived
+        // - sample variance scales as 1/N (more stable at high load)
+        // - should_admit sees a frozen reject_prob for the full window, decoupling
+        //   the admission decision from mid-window ER noise
         let elapsed = now.duration_since(state.last_update).as_secs_f64();
-        if elapsed > 0.01 {
-            // Update goodput EMAs.
-            let instant_goodput = state.completions as f64 / elapsed;
-            let alpha_fast = 1.0 - (-elapsed / p.tau_fast).exp();
-            let alpha_slow = 1.0 - (-elapsed / p.tau_slow).exp();
-            state.goodput_fast += alpha_fast * (instant_goodput - state.goodput_fast);
-            state.goodput_slow += alpha_slow * (instant_goodput - state.goodput_slow);
-
-            // Update er_rate EMA from the window fraction.
+        if elapsed > 0.05 {
             let er_sample = state.er_count as f64 / state.window_total as f64;
-            let alpha_er = 1.0 - (-elapsed / p.tau_er).exp();
-            state.er_rate += alpha_er * (er_sample - state.er_rate);
+            if er_sample > p.aimd_er_threshold {
+                // Overloaded window: multiplicative decrease.
+                state.admit_p = (state.admit_p * p.aimd_beta).max(0.0);
+            } else {
+                // Healthy window: additive increase, capped at 1.0.
+                state.admit_p = (state.admit_p + p.aimd_alpha).min(1.0);
+            }
             state.er_last_update = now;
 
-            // AIMD step: update admit_p based on this window's observed ER fraction.
-            // Only active when aimd_alpha > 0.0.
-            if p.aimd_alpha > 0.0 {
-                if er_sample > p.aimd_er_threshold {
-                    // Overloaded window: multiplicative decrease.
-                    state.admit_p = (state.admit_p * p.aimd_beta).max(0.0);
-                } else {
-                    // Healthy window: additive increase, capped at 1.0.
-                    state.admit_p = (state.admit_p + p.aimd_alpha).min(1.0);
-                }
-            }
-
             // Reset window.
-            state.completions = 0;
             state.er_count = 0;
             state.window_total = 0;
             state.last_update = now;
@@ -333,14 +295,10 @@ impl PredictiveAdmission {
 
         state.log_counter += 1;
         if state.log_counter % 1000 == 0 {
-            let overloaded = state.goodput_fast < state.goodput_slow; // approx; exact check in should_admit
             log::info!(
-                "[ac_pred] outcomes={} er_rate={:.4} goodput_fast={:.1} goodput_slow={:.1} overloaded={}",
+                "[ac_pred] outcomes={} admit_p={:.4}",
                 state.log_counter,
-                state.er_rate,
-                state.goodput_fast,
-                state.goodput_slow,
-                overloaded,
+                state.admit_p,
             );
         }
     }
@@ -350,47 +308,22 @@ impl PredictiveAdmission {
         let p = &PolicyParams::global().pred;
         let state = self.state.lock().unwrap();
 
-        // Apply time-based decay to er_rate to get the virtual rejection
-        // probability. This provides adaptive phase reset: when arrivals drop
-        // (or self-rejections dominate so record_outcome is never called),
-        // stale er_rate fades within ~tau_er seconds without any explicit reset.
+        // idle_decay decays reject_prob to 0 as time passes since the last window
+        // close. This reopens admission automatically when traffic is sparse.
         let er_elapsed = Instant::now()
             .duration_since(state.er_last_update)
             .as_secs_f64();
-        let virt_er_rate = state.er_rate * (-er_elapsed / p.tau_er).exp();
-
-        // Derivative term: fires when goodput is falling (goodput_fast < goodput_slow),
-        // which happens within ~tau_fast seconds of a load spike before ER rate builds
-        // up over ~tau_er seconds. Vanishes at steady state so equilibrium and loop
-        // gain are unchanged.
-        let goodput_divergence = if state.goodput_slow > 0.0 {
-            ((state.goodput_slow - state.goodput_fast) / state.goodput_slow).max(0.0)
-        } else {
-            0.0
-        };
-        let reject_prob = if p.aimd_alpha > 0.0 {
-            // AIMD path: reject_prob derived from admit_p budget.
-            // Multiply by the same idle-decay factor used by virt_er_rate so that
-            // admission opens naturally when no events arrive (phase reset).
-            let idle_decay = (-er_elapsed / p.tau_er).exp();
-            ((1.0 - state.admit_p) * idle_decay).min(1.0)
-        } else {
-            // Legacy path: proportional ER-rate controller (unchanged).
-            (virt_er_rate * p.reject_scale
-                + goodput_divergence * p.goodput_divergence_weight)
-                .min(1.0)
-        };
+        let idle_decay = (-er_elapsed / p.tau_er).exp();
+        let reject_prob = ((1.0 - state.admit_p) * idle_decay).min(1.0);
         let admit_p = state.admit_p;
-
         drop(state);
+
         let coin = rand::random::<f64>();
         let admitted = coin > reject_prob;
         if !admitted {
             log::debug!(
-                "[ac_pred] REJECTED reject_prob={:.4} virt_er={:.4} div={:.4} admit_p={:.4}",
+                "[ac_pred] REJECTED reject_prob={:.4} admit_p={:.4}",
                 reject_prob,
-                virt_er_rate,
-                goodput_divergence,
                 admit_p
             );
         }
@@ -405,161 +338,106 @@ mod tests {
     #[test]
     fn test_admits_when_no_early_returns() {
         let ac = PredictiveAdmission::new();
-        // No early returns recorded — er_rate is 0, should always admit.
+        // admit_p=1.0, idle_decay=1.0 → reject_prob=0 → always admit.
         for _ in 0..100 {
             assert!(ac.should_admit());
         }
     }
 
-    /// Helper: backdate `last_update` (the window clock) so the next
-    /// `record_outcome` call fires the 10 ms window and applies a meaningful
-    /// alpha to er_rate (50 ms elapsed → alpha_er ≈ 0.025 at tau_er = 2 s).
+    #[test]
+    fn test_admits_fully_when_no_overload() {
+        let ac = PredictiveAdmission::new();
+        // No outcomes recorded → admit_p stays 1.0 → should admit >95%.
+        let admitted = (0..1000).filter(|_| ac.should_admit()).count();
+        assert!(
+            admitted > 950,
+            "zero ER should admit >95%, got {admitted}/1000"
+        );
+    }
+
+    /// Helper: backdate the window clock so the next `record_outcome` call
+    /// crosses the 50 ms boundary and fires the AIMD step.
     fn backdate_window(ac: &PredictiveAdmission) {
         let mut state = ac.state.lock().unwrap();
-        state.last_update = Instant::now() - std::time::Duration::from_millis(50);
+        state.last_update = Instant::now() - std::time::Duration::from_millis(60);
     }
 
     #[test]
-    fn test_er_rate_increases_with_early_returns() {
+    fn test_aimd_decreases_admit_p_on_overloaded_window() {
         let ac = PredictiveAdmission::new();
-        // Backdate window before each call so every event fires its own window
-        // with a 50 ms elapsed → alpha_er ≈ 0.025. After 10 all-ER windows:
-        // er_rate ≈ 1 - 0.975^10 ≈ 0.22; after 50 windows ≈ 0.72. Use enough
-        // iterations (100) to drive er_rate reliably above 0.9.
-        for _ in 0..100 {
+        // Drive 10 all-ER windows (100% ER fraction > any reasonable threshold).
+        for _ in 0..10 {
             backdate_window(&ac);
             ac.record_outcome(true);
         }
         let state = ac.state.lock().unwrap();
         assert!(
-            state.er_rate > 0.9,
-            "er_rate should be near 1.0 after many early returns, got {}",
-            state.er_rate
+            state.admit_p < 1.0,
+            "admit_p should decrease after overloaded windows, got {}",
+            state.admit_p
         );
     }
 
     #[test]
-    fn test_er_rate_recovers_after_successes() {
+    fn test_aimd_increases_admit_p_on_healthy_window() {
         let ac = PredictiveAdmission::new();
-        // Drive er_rate up.
-        for _ in 0..100 {
-            backdate_window(&ac);
-            ac.record_outcome(true);
+        // Set admit_p low, then drive all-success windows.
+        {
+            let mut state = ac.state.lock().unwrap();
+            state.admit_p = 0.5;
         }
-        // Drive it back down with success windows. Each window (50 ms, sample=0):
-        // er_rate *= (1 - 0.025). After ~100 success windows er_rate < 0.1.
-        for _ in 0..100 {
+        for _ in 0..5 {
             backdate_window(&ac);
             ac.record_outcome(false);
         }
         let state = ac.state.lock().unwrap();
         assert!(
-            state.er_rate < 0.1,
-            "er_rate should recover after successes, got {}",
-            state.er_rate
+            state.admit_p > 0.5,
+            "admit_p should increase after healthy windows, got {}",
+            state.admit_p
         );
     }
 
     #[test]
-    fn test_admits_when_er_rate_low() {
+    fn test_admit_p_starts_fully_open() {
         let ac = PredictiveAdmission::new();
-        // er_rate = 0 (no early returns) → virt_er_rate ≈ 0 → should admit almost all.
-        let admitted = (0..1000).filter(|_| ac.should_admit()).count();
-        assert!(
-            admitted > 950,
-            "zero er_rate should admit >95%, got {admitted}/1000"
-        );
+        let state = ac.state.lock().unwrap();
+        assert_eq!(state.admit_p, 1.0, "admit_p should start at 1.0");
     }
 
+    /// Verify idle decay reopens admission when no outcomes arrive.
+    ///
+    /// Scenario: admit_p is driven low by overload, then traffic goes idle.
+    /// reject_prob = (1 - admit_p) * exp(-idle / tau_er) should decay toward 0
+    /// even though admit_p itself hasn't changed.
     #[test]
-    fn test_rejects_proportional_to_er_rate() {
+    fn test_idle_decay_reopens_admission() {
         let ac = PredictiveAdmission::new();
-        // Drive er_rate high via windowed backdating.
-        for _ in 0..100 {
-            backdate_window(&ac);
-            ac.record_outcome(true);
-        }
-        // Even with goodput_fast >= goodput_slow (healthy), should reject heavily
-        // because rejection is driven by virt_er_rate alone.
+
+        // Set admit_p very low to force near-total rejection.
         {
             let mut state = ac.state.lock().unwrap();
-            state.goodput_fast = 200.0;
-            state.goodput_slow = 150.0; // healthy: fast > slow
-        }
-        let admitted = (0..1000).filter(|_| ac.should_admit()).count();
-        assert!(
-            admitted < 100,
-            "high er_rate should reject ~99% regardless of healthy goodput, got {admitted}/1000"
-        );
-    }
-
-    /// Verifies that er_rate decays naturally when no completions arrive,
-    /// providing automatic phase reset without explicit state manipulation.
-    ///
-    /// Scenario: system built up high er_rate under load, then load drops.
-    /// Even without any new record_outcome calls, should_admit should become
-    /// progressively more permissive as virt_er_rate = er_rate * exp(-t/tau_er)
-    /// decays toward zero.
-    #[test]
-    fn test_er_rate_decays_when_idle() {
-        let ac = PredictiveAdmission::new();
-
-        // Build high er_rate via windowed backdating.
-        for _ in 0..100 {
-            backdate_window(&ac);
-            ac.record_outcome(true);
+            state.admit_p = 0.01;
+            state.er_last_update = Instant::now();
         }
 
-        // Sanity: er_rate ≈ 0.99 → virt_er_rate ≈ 0.99 → almost all rejected.
         let admitted_before = (0..1000).filter(|_| ac.should_admit()).count();
         assert!(
-            admitted_before < 200,
-            "high er_rate with overloaded state should cause frequent rejection, got {admitted_before}/1000"
+            admitted_before < 100,
+            "low admit_p should cause frequent rejection, got {admitted_before}/1000"
         );
 
-        // Simulate idle period: backdate er_last_update by 3 × tau_er (= 6 s).
-        // virt_er_rate = 0.99 × exp(-3) ≈ 0.05 — effectively near zero.
+        // Simulate 3 × tau_er (= 6 s at default tau_er=2 s) of idle.
+        // idle_decay = exp(-3) ≈ 0.05 → reject_prob ≈ 0.99 × 0.05 ≈ 0.05.
         {
             let mut state = ac.state.lock().unwrap();
             state.er_last_update = Instant::now() - std::time::Duration::from_secs(6);
         }
 
-        // After idle period er_rate decays → almost all admitted.
         let admitted_after = (0..1000).filter(|_| ac.should_admit()).count();
         assert!(
             admitted_after > 900,
-            "er_rate should decay to near zero after 3×tau_er idle, got {admitted_after}/1000"
+            "idle decay should open admission after 3×tau_er, got {admitted_after}/1000"
         );
-    }
-
-    /// Verify reject_scale defaults to 1.0 and is included in the compiled params.
-    #[test]
-    fn test_reject_scale_default() {
-        let p = crate::policy_params::PolicyParams::default();
-        assert_eq!(p.pred.reject_scale, 1.0);
-    }
-
-    #[test]
-    fn test_goodput_divergence_weight_default() {
-        let p = crate::policy_params::PolicyParams::default();
-        assert_eq!(p.pred.goodput_divergence_weight, 0.0);
-    }
-
-    #[test]
-    fn test_aimd_decreases_on_overloaded_window() {
-        // With aimd_alpha > 0, a window with er_sample > threshold should cut admit_p.
-        // We cannot override PolicyParams::global() in tests (OnceLock), so we test
-        // the AdmissionState logic indirectly by verifying admit_p starts at 1.0.
-        let ac = PredictiveAdmission::new();
-        let state = ac.state.lock().unwrap();
-        assert_eq!(state.admit_p, 1.0, "admit_p should start fully open");
-    }
-
-    #[test]
-    fn test_aimd_params_default_disabled() {
-        let p = crate::policy_params::PolicyParams::default();
-        assert_eq!(p.pred.aimd_alpha, 0.0, "AIMD disabled by default");
-        assert_eq!(p.pred.aimd_beta, 0.875);
-        assert_eq!(p.pred.aimd_er_threshold, 0.10);
     }
 }
