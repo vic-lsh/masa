@@ -178,6 +178,26 @@ pub struct PredParams {
     /// Variance multiplier for the LatencyMeanVar estimator.
     /// estimate = mean + k * stddev. 0.0 = pure mean estimator (default).
     pub estimator_k: f64,
+    /// AIMD additive increase per healthy observation window.
+    ///
+    /// When the window's ER fraction is below `aimd_er_threshold`, the admission
+    /// probability is increased by this amount: `admit_p = min(1.0, admit_p + alpha)`.
+    /// Default 0.0 disables AIMD entirely (backward compatible).
+    /// Suggested starting value: 0.05 (recover from 0 → 1 in ~20 healthy windows = 200ms).
+    pub aimd_alpha: f64,
+    /// AIMD multiplicative decrease factor applied on an overloaded window.
+    ///
+    /// When the window's ER fraction exceeds `aimd_er_threshold`:
+    /// `admit_p = admit_p * beta`.
+    /// Must be in (0.0, 1.0). Default 0.875 cuts admission by 12.5% per overloaded window,
+    /// matching classic TCP-style response.
+    pub aimd_beta: f64,
+    /// ER-fraction threshold above which a window is considered overloaded.
+    ///
+    /// Each 10 ms observation window votes: if `er_count / window_total > threshold`,
+    /// AIMD applies a multiplicative decrease; otherwise an additive increase.
+    /// Default 0.10 (10% ER rate triggers decrease).
+    pub aimd_er_threshold: f64,
 }
 
 impl Default for PredParams {
@@ -190,6 +210,9 @@ impl Default for PredParams {
             reject_scale: 1.0,
             goodput_divergence_weight: 0.0,
             estimator_k: 0.0,
+            aimd_alpha: 0.0,
+            aimd_beta: 0.875,
+            aimd_er_threshold: 0.10,
         }
     }
 }
@@ -263,6 +286,7 @@ mod tests {
         assert!(p.pred.tau_fast < p.pred.tau_slow);
         assert_eq!(p.pred.reject_scale, 1.0);
         assert_eq!(p.pred.goodput_divergence_weight, 0.0);
+        assert_eq!(p.pred.aimd_alpha, 0.0);
     }
 
     #[test]
