@@ -132,71 +132,42 @@ impl Default for RajomonParams {
 
 /// Tunable parameters for the predictive admission control policy.
 ///
-/// `reject_prob = (virt_er_rate * reject_scale + goodput_divergence * goodput_divergence_weight).min(1.0)`
+/// `reject_prob = (1 - admit_p) * exp(-idle_elapsed / tau_er)`
 ///
-/// The ER rate EMA tracks the fraction of admitted requests that end in an
-/// early return; the exponential decay provides natural phase reset when idle.
-/// The goodput divergence term fires when throughput is falling (load spike onset)
-/// and vanishes at steady state, acting as a derivative (D) term.
+/// `admit_p` is updated per 50 ms window: multiplicative decrease (`admit_p *= beta`)
+/// when the window's ER fraction exceeds `aimd_er_threshold`; additive increase
+/// (`admit_p += alpha`) otherwise. The exponential term provides natural phase reset
+/// when traffic is sparse — idle_elapsed grows, reject_prob decays to 0.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct PredParams {
-    /// Time constant (seconds) for the early-return rate EMA.
+    /// Time constant (seconds) for idle decay in `should_admit`.
     ///
-    /// Controls both the update speed of `er_rate` in `record_outcome` (via
-    /// time-corrected alpha) and how quickly it decays in `should_admit` when
-    /// no completions arrive (natural phase reset without explicit resets).
-    /// Default 2.0s gives a consistent ~2s response time regardless of RPS.
+    /// As time passes since the last window close, reject_prob decays:
+    /// `reject_prob = (1 - admit_p) * exp(-idle_elapsed / tau_er)`.
+    /// Larger values keep admission restricted longer after an overload episode.
+    /// Default 2.0 s.
     pub tau_er: f64,
-    /// Fast EMA time constant (seconds) for goodput rate.
-    pub tau_fast: f64,
-    /// Slow EMA time constant (seconds) for goodput rate.
-    pub tau_slow: f64,
-    /// Previously used to cap rejection probability in the "healthy" goodput
-    /// state. No longer used in the admission decision — kept for backwards
-    /// compatibility with existing config files.
-    pub max_reject_floor: f64,
-    /// Rejection scale factor on `virt_er_rate`. Default 1.0.
-    ///
-    /// **Do not set above 1.0.** Values > 1.0 increase the closed-loop gain above
-    /// 1.0 (loop_gain = reject_scale × C×R/A*²), causing oscillation. Use
-    /// `goodput_divergence_weight` instead for tighter admission at high load.
-    pub reject_scale: f64,
-    /// Weight for the goodput-divergence derivative term.
-    ///
-    /// At each admission check:
-    ///   `D = max(0.0, (goodput_slow − goodput_fast) / goodput_slow)`
-    ///   `reject_prob = (virt_er_rate * reject_scale + D * goodput_divergence_weight).min(1.0)`
-    ///
-    /// `D` is positive when goodput is *falling* (fast EMA below slow EMA), which
-    /// happens within ~`tau_fast` seconds of a load spike — well before ER rate
-    /// builds up over ~`tau_er` seconds. At steady state `goodput_fast ≈ goodput_slow`
-    /// so `D → 0` and steady-state equilibrium and loop gain are unchanged.
-    ///
-    /// Default 0.0 (disabled, backward compatible). Start with 0.5.
-    pub goodput_divergence_weight: f64,
-    /// Variance multiplier for the LatencyMeanVar estimator.
-    /// estimate = mean + k * stddev. 0.0 = pure mean estimator (default).
+    /// Variance multiplier for the LatencyMeanVar estimator used by abort_slack.
+    /// `estimate = mean + k * stddev`. 0.0 = pure mean estimator (default).
     pub estimator_k: f64,
-    /// AIMD additive increase per healthy observation window.
+    /// AIMD additive increase per healthy 50 ms observation window.
     ///
-    /// When the window's ER fraction is below `aimd_er_threshold`, the admission
-    /// probability is increased by this amount: `admit_p = min(1.0, admit_p + alpha)`.
-    /// Default 0.0 disables AIMD entirely (backward compatible).
-    /// Suggested starting value: 0.05 (recover from 0 → 1 in ~20 healthy windows = 200ms).
+    /// When the window's ER fraction is below `aimd_er_threshold`:
+    /// `admit_p = min(1.0, admit_p + alpha)`.
+    /// Default 0.05 recovers from 0 → 1 in ~20 healthy windows ≈ 1 s.
     pub aimd_alpha: f64,
     /// AIMD multiplicative decrease factor applied on an overloaded window.
     ///
     /// When the window's ER fraction exceeds `aimd_er_threshold`:
-    /// `admit_p = admit_p * beta`.
-    /// Must be in (0.0, 1.0). Default 0.875 cuts admission by 12.5% per overloaded window,
-    /// matching classic TCP-style response.
+    /// `admit_p = admit_p * beta`. Must be in (0.0, 1.0).
+    /// Default 0.875 cuts admission by 12.5% per overloaded window.
     pub aimd_beta: f64,
-    /// ER-fraction threshold above which a window is considered overloaded.
+    /// ER-fraction threshold above which a 50 ms window is considered overloaded.
     ///
-    /// Each 10 ms observation window votes: if `er_count / window_total > threshold`,
-    /// AIMD applies a multiplicative decrease; otherwise an additive increase.
-    /// Default 0.10 (10% ER rate triggers decrease).
+    /// Should be set just below the natural ER fraction at saturation
+    /// (e.g. 0.40 if saturation produces ~41% ER fraction).
+    /// Default 0.10.
     pub aimd_er_threshold: f64,
 }
 
@@ -204,13 +175,8 @@ impl Default for PredParams {
     fn default() -> Self {
         Self {
             tau_er: 2.0,
-            tau_fast: 0.5,
-            tau_slow: 5.0,
-            max_reject_floor: 0.10,
-            reject_scale: 1.0,
-            goodput_divergence_weight: 0.0,
             estimator_k: 0.0,
-            aimd_alpha: 0.0,
+            aimd_alpha: 0.05,
             aimd_beta: 0.875,
             aimd_er_threshold: 0.10,
         }
@@ -283,10 +249,9 @@ mod tests {
         assert_eq!(p.rajomon.max_token, 100);
         assert_eq!(p.rajomon.price_cap, u64::MAX);
         assert!(p.pred.tau_er > 0.0);
-        assert!(p.pred.tau_fast < p.pred.tau_slow);
-        assert_eq!(p.pred.reject_scale, 1.0);
-        assert_eq!(p.pred.goodput_divergence_weight, 0.0);
-        assert_eq!(p.pred.aimd_alpha, 0.0);
+        assert!(p.pred.aimd_alpha > 0.0);
+        assert!(p.pred.aimd_beta > 0.0 && p.pred.aimd_beta < 1.0);
+        assert!(p.pred.aimd_er_threshold > 0.0 && p.pred.aimd_er_threshold < 1.0);
     }
 
     #[test]
