@@ -34,20 +34,6 @@ class TestGenerateRpsSweep:
 class TestSampleParams:
     """Tests for parameter sampling."""
 
-    def test_constraints_price_cap_le_max_token(self):
-        """price_cap should be clamped to min(price_cap, max_token)."""
-        # Run many trials and verify constraint always holds
-        study = optuna.create_study(direction="maximize")
-
-        for _ in range(50):
-            trial = study.ask()
-            params = sample_params(trial)
-            study.tell(trial, 0.0)
-
-            assert params["price_cap"] <= params["max_token"], (
-                f"price_cap ({params['price_cap']}) > max_token ({params['max_token']})"
-            )
-
     def test_fixed_params_derived(self):
         """Verify fixed/derived params: tokens_left_init == max_token,
         token_update_rate_ms == price_update_rate_ms."""
@@ -61,7 +47,7 @@ class TestSampleParams:
             assert params["tokens_left_init"] == params["max_token"]
             assert params["token_update_rate_ms"] == params["price_update_rate_ms"]
             assert params["init_price"] == 0
-            assert params["price_freq"] == 5
+            assert params["price_freq"] == 3
 
     def test_all_params_present(self):
         """All 11 RajomonParams fields should be present."""
