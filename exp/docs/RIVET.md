@@ -76,4 +76,54 @@ Adding price_cap=1000 means maximum rejection probability is 1000/2000 = 50%. Ra
 3. 1300 RPS: improvement from 26 to 200+ (some meaningful goodput even in deep overload)
 
 ### Experiment design
-Same gen_config as baseline (Search only, SLO=200ms, RPS=[700, 1000, 1300]) to enable direct comparison. Added `sched_tailclipper,abort_slo` as a reference baseline.
+Same gen_config as baseline (Search only, SLO=200ms, RPS=[700, 1000, 1300]) to enable direct comparison. Rajomon-only.
+
+### Actual Outcomes (rivet_1)
+
+**Status:** Regression ❌
+
+| RPS | Goodput (rivet_1) | Goodput (baseline) | Delta |
+|-----|-------------------|-------------------|-------|
+| 700 | 0.2 | 703 | −703 |
+| 1000 | 0.07 | 48 | −48 |
+| 1300 | 0.07 | 26 | −26 |
+
+**Total collapse.** Goodput dropped to near-zero at ALL RPS levels including 700 RPS which was perfect in the baseline.
+
+**Root cause: Reservation warm-up cascade.**
+- Reservation service has peak queue latency of 150-190ms at 700 RPS (vs 22-52ms in baseline)
+- With threshold=100ms, these peaks trigger price escalation (own_price reaches 298-892)
+- High reservation price propagates to frontend via downstream price (150-209)
+- Frontend rejects 415/s out of 700/s incoming requests
+- With less traffic, reservation's Mongo/Redis connections fail to warm up, keeping queue latency elevated
+- Vicious cycle: high price → rejection → cold connections → high queue latency → high price
+
+**Key insight:** Baseline worked at 700 RPS despite threshold=25ms because:
+- Reservation queue latency was lower in that run (22-52ms peak)
+- Even when price climbed (to 99-132 in baseline), with max_token=2000 the rejection rate was only ~5-7%
+- Enough traffic still reached reservation to keep connections warm
+
+**Why raising threshold made things WORSE:** The higher threshold doesn't help because the problem is peak queue latency during warm-up transients, not the steady-state threshold. Once the cascade starts, the system can't recover because price only decreases by 1 per tick (hardcoded).
+
+**Decision:** Revert. The threshold+cap change doesn't address the fundamental warm-up cascade problem.
+
+---
+
+## Iteration 2: Very conservative params + longer warmup (experiment rivet_2)
+
+**Status:** Pending
+
+### Change
+Config-only (policy_param.json + gen_config.json):
+- `latency_threshold_us`: 25343 → **200000** (200ms = SLO, only trigger on extreme overload)
+- `price_step_up`: 4 → **1** (minimum climb rate)
+- `price_cap`: add **200** (max ~10% rejection rate with max_token=2000)
+- `WarmupSecs`: 10 → **30** (give Mongo/Redis connections time to warm up before measurement)
+
+### Hypothesis
+The baseline's success at 700 RPS was partly lucky — reservation's warm-up latency happened to be lower in that run. The combination of very high threshold (200ms, equal to SLO), minimum climb rate (price_step_up=1), and low price_cap (200) should make rajomon nearly transparent at normal load. The longer warmup (30s) gives services time to establish database connections before measurement begins, avoiding the warm-up cascade that killed rivet_1.
+
+### Expected outcomes if hypothesis is correct:
+1. 700 RPS: ~700 goodput (near perfect, rajomon essentially inactive)
+2. 1000 RPS: some improvement over baseline's 48 (rajomon only mildly active)
+3. 1300 RPS: some improvement over baseline's 26 (mild rejection only)
