@@ -382,3 +382,40 @@ With max_token=3000: accumulated=1500 → 50% max rejection. At 900 RPS: ~450 ad
 1. 300-700 RPS: unchanged (price stays low, rejection minimal)
 2. 900 RPS: improvement from 328 to 380+ (fewer admits but better quality)
 3. 1100-1300 RPS: improvement (tighter admission keeps latency manageable)
+
+### Actual Outcomes (rivet_7)
+
+**Status:** Mixed
+
+| RPS | rivet_6 (max=5000) | rivet_7 (max=3000) | Delta |
+|-----|---------------------|---------------------|-------|
+| 300 | 298 | 299 | +1 |
+| 500 | 500 | 497 | -3 |
+| 700 | 697 | 681 | **-16** |
+| 900 | 328 | 301 | **-27** |
+| 1100 | 146 | 165 | **+19** |
+| 1300 | 88 | 116 | **+28** |
+
+Abort reasons: equal RajomonAdmissionRej (231) and RajomonChildBudgetRej (231). The lower max_token makes child budget rejections more prominent — admitted requests have less remaining budget for downstream calls.
+
+The lower max_token trades moderate-overload goodput for deep-overload goodput. The curve is flatter but 900 RPS is worse. max_token=5000 (rivet_6) remains better for the critical 900 RPS region.
+
+---
+
+## Iteration 8: Midpoint max_token=4000 (experiment rivet_8)
+
+**Status:** Pending
+
+### Change
+Config-only, same as rivet_6 except:
+- `max_token`: 5000 → **4000**
+- `tokens_left_init`: 5000 → **4000**
+- `token_update_step`: 5000 → **4000**
+
+### Hypothesis
+max_token=5000 was best at 900 (328) but weak at 1100+ (146, 88). max_token=3000 was better at 1100+ (165, 116) but worse at 900 (301). The midpoint (4000) should give accumulated/max_token = 1500/4000 = 37.5% max rejection — slightly more aggressive than 5000's 30%, less than 3000's 50%.
+
+### Expected outcomes:
+1. 300-700 RPS: unchanged
+2. 900 RPS: ~310-320 (between rivet_6 and rivet_7)
+3. 1100-1300 RPS: ~150-160, ~100-110
