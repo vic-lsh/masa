@@ -445,3 +445,53 @@ thicket_7's ClientShed (max 3006/s at rps=3000) shows the client bucket is drain
 
 ### Experiment design
 Single policy `sched_fifo,ac_rajomon`, same RPS sweep [800, 1200, 1400, 1600, 1800, 2000, 2500, 3000], same gen_config. Only `token_update_step` changes.
+
+### Actual Outcomes (thicket_8)
+
+**Status:** Major improvement ✅ (mid-range); 2500/3000 still collapse
+
+Abort reasons (target policy):
+- `RajomonAdmissionRej`: avg 68.9/s, max 589.5/s (up from 52.6 / 319)
+- `RajomonChildBudgetRej`: avg 6.4/s, max 85/s (up from 3.7 / 65)
+- `ClientShed`: avg **275.8/s**, max 2842/s (avg down 65% from thicket_7's 773.8; max only down 5%)
+- `ClientTimeout`: avg 4.5/s, max 333/s (new non-zero)
+
+| RPS | thicket_7 | thicket_8 | Δ |
+|-----|-----------|-----------|-----|
+| 800 | 800 | 800 | 0 |
+| 1200 | 1191 | 1195 | +4 |
+| 1400 | 1230 | 1267 | +37 |
+| 1600 | 806 | 812 | +6 |
+| 1800 | 843 | **1777** | **+934** |
+| 2000 | 893 | **1711** | **+818** |
+| 2500 | 54 | 218 | +164 |
+| 3000 | 27 | 206 | +179 |
+
+**Interpretation**: raising refill pushed bucket steady-state from ~0.6 tokens to ~5 tokens at rps=3000, freeing up enough client traffic for rajomon to admit and process. 1800/2000 now sit near-perfect (rps=2000 goodput=1711 = 86% of offered). 1600 dip is the socialnet bistable region (saturation edge), not a rajomon issue.
+
+**Remaining problem**: ClientShed max still 2842/s at rps=3000. At 3000 RPS with refill=7500/s, C_steady ≈ 2*7500/3000 = 5 tokens. Server cached price can grow above 5, causing all-in sheds during spikes. Need refill ~2-3× higher to keep C_steady ≈ 15-20 at rps=3000.
+
+---
+
+## Iteration 2 (post-fix): push refill another 3× (experiment thicket_9)
+
+**Status:** Pending
+
+### Change
+From thicket_8:
+- `token_update_step`: 30 → **100** (3.3× more refill; ≈33× thicket_7 original)
+- All other params unchanged.
+
+### Hypothesis
+thicket_8 proved refill is the main bottleneck but didn't push it enough for rps=3000. Refill = 100/4ms = 25000/s. C_steady at rps=3000: 2*25000/3000 ≈ 17 tokens. This should keep the bucket reliably above any server cached_price that has climbed from repeated queue-latency observations. Expected: ClientShed max drops below 1500/s, RajomonAdmissionRej takes over as primary, goodput at 2500/3000 recovers substantially.
+
+Risk: if refill is too high, rajomon may admit too freely at moderate overload (1600-2000 region), causing goodput regression there. The system's native capacity is ~1500-1800/s; if admission allows more through, latency inflates and goodput drops. Watch for regressions at 1800/2000.
+
+### Expected outcomes
+1. ClientShed max at rps=3000 drops from 2842 to <1500/s.
+2. RajomonAdmissionRej becomes dominant reason (avg >200/s).
+3. Goodput at 2500/3000 recovers to >500.
+4. 800-1800 likely unchanged or slight regression from over-admission.
+
+### Experiment design
+Identical to thicket_8 except `token_update_step`. Single variable.
