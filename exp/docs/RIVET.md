@@ -171,3 +171,47 @@ The baseline's 703 goodput at 700 RPS was a lucky run. By adding lower RPS point
 2. 500 RPS: ~500 goodput (moderate load)
 3. 700 RPS: either ~703 (reproducible baseline) or <100 (fragile system)
 4. 900-1300 RPS: steep decline
+
+### Actual Outcomes (rivet_3)
+
+**Status:** Complete ✅ (reproducibility confirmed)
+
+| RPS | Goodput | Fraction | p50 (ms) | p90 (ms) | Frontend ER |
+|-----|---------|----------|----------|----------|-------------|
+| 300 | 298 | 99.2% | 116 | 123 | 0 |
+| 500 | 497 | 99.3% | 116 | 123 | 0 |
+| 700 | 630 | 90.1% | 136 | 167 | 42 (6%) |
+| 900 | 69 | 7.6% | 174 | 198 | 647 (72%) |
+| 1100 | 30 | 2.8% | 185 | 208 | 862 (78%) |
+| 1300 | 31 | 2.4% | 189 | 214 | 1035 (80%) |
+
+**Key findings:**
+1. System is stable at 300-500 RPS. Near-perfect goodput, low latency.
+2. 700 RPS: 630 goodput (vs baseline's 703). Baseline was slightly lucky but system IS functional here.
+3. **Cliff at 900 RPS**: goodput drops from 630 → 69. Price explodes past max_token=2000.
+4. System saturation is ~800 RPS. Beyond this, rajomon enters total-shutdown mode.
+
+**Critical insight from rivet_1 vs rivet_3:** The LOW threshold (25ms) actually HELPS at moderate load by providing early backpressure that prevents reservation from being overwhelmed during warm-up. The rivet_1 failure (threshold=100ms) happened because NO early backpressure → reservation flooded → cascading queue buildup. The threshold is doing useful work — the problem is the UNBOUNDED price growth once the cliff is hit.
+
+---
+
+## Iteration 4: Add price_cap to baseline params (experiment rivet_4)
+
+**Status:** Pending
+
+### Change
+Config-only — single-variable change from rivet_3 baseline:
+- `price_cap`: add **1000** (max 50% rejection with max_token=2000)
+- All other params identical to baseline (threshold=25343, step_up=4, etc.)
+
+### Hypothesis
+The baseline's low threshold provides necessary early backpressure at moderate load (confirmed by rivet_1 failure). The cliff at 900 RPS is caused by price growing past max_token=2000, creating total shutdown. Adding price_cap=1000 limits maximum rejection to ~50%, which should:
+1. Preserve the working behavior at 300-700 RPS (price rarely reaches 1000 there)
+2. Convert the 900 RPS cliff into partial rejection — 50% admission means ~450 RPS throughput, below saturation, so admitted requests should meet SLO
+3. Allow some goodput at 1100-1300 (vs near-zero currently)
+
+### Expected outcomes if hypothesis is correct:
+1. 300-500 RPS: unchanged (~300, ~500 goodput)
+2. 700 RPS: unchanged (~630 goodput)
+3. 900 RPS: significant improvement from 69 to 300-400 (partial rejection instead of total shutdown)
+4. 1100-1300 RPS: improvement from ~30 to 100-300
