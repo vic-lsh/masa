@@ -66,4 +66,52 @@ Same gen_config as api_composepost but dropping the uninformative 1000 RPS point
 
 ### Actual Outcomes (thicket_1)
 
+**Status:** Rajomon DORMANT ❌ (validation failed — tuning restart required)
+
+| RPS | Target (fifo+ac_rajomon+abort_slo) | Baseline (tailclipper+abort_slo) | Delta |
+|-----|------------------------------------|----------------------------------|-------|
+| 800 | 799.8 | 799.9 | -0.1 |
+| 1200 | 1193.3 | 1189.6 | +3.7 |
+| 1400 | **1381.9** | 1179.2 | +202.8 |
+| 1600 | 879.3 | 866.1 | +13.2 |
+| 1800 | **1161.4** | 991.9 | +169.6 |
+| 2000 | 1966.1 | 1826.2 | +139.9 |
+| 2500 | 968.6 | 898.8 | +69.8 |
+| 3000 | **137.0** | 1050.7 | **-913.7** |
+
+**Rajomon activity: DORMANT.** `abort_reason_timeline.csv` contains only `E2EDeadline` rows for both policies. Zero `RajomonAdmissionRej` / `RajomonChildBudgetRej` events emitted across the whole run. The goodput + ER accounting also holds (goodput + E2EDeadline rate ≈ offered RPS at every load), confirming the admission gate never rejected anything.
+
+**Root cause:** threshold=25ms = half of SLO=50ms is too permissive for socialnet. On hotel (SLO=200ms), 25ms is 1/8 of SLO and queue latency routinely exceeded it. On socialnet, `abort_slo` aborts requests as soon as their 50ms deadline is hit, so queues never get deep enough for queue-latency to exceed 25ms. Price never climbs from init_price=0, accumulated_price stays 0, nothing is rejected at the gate.
+
+**Implication for apparent wins:** The 1400/1800/2000 RPS wins (+170 to +200 goodput) are NOT from rajomon — rajomon was idle. They are artifacts of `sched_fifo,abort_slo` vs `sched_tailclipper,abort_slo` scheduling/abort ordering differences. These wins would survive even if rajomon were removed.
+
+**Implication for 3000 RPS collapse:** The target's collapse to 137 (vs tailclipper's 1050) is also unrelated to rajomon (since rajomon wasn't active). It's a sched_fifo + abort_slo interaction at deep overload. Tailclipper's oldest-first policy fares better at 3000 RPS, but fifo drowns.
+
+**Decision:** Next iteration MUST make rajomon active before any other tuning matters. Lowering `latency_threshold_us` is the single variable to change — it gates every downstream mechanism.
+
+---
+
+## Iteration 2: Lower threshold to activate rajomon (experiment thicket_2)
+
+**Status:** Pending
+
+### Change
+Config-only. Single-variable from thicket_1:
+- `latency_threshold_us`: 25343 → **5000** (5ms = 1/10 of SLO, mirroring the 1/8 ratio used on hotel)
+- All other params unchanged (price_step_up=1, price_cap=500, max_token=5000, price_freq=3, price_update_rate_ms=25)
+
+### Hypothesis
+The dormancy in thicket_1 is caused by queue latency never exceeding the 25ms threshold under socialnet's tight 50ms SLO. `abort_slo` drains queues before they grow deep. Lowering threshold to 5ms should let queue-latency excess drive price climb well before SLO-miss rejection kicks in, putting rajomon in the critical path.
+
+### Expected outcomes
+1. **Primary (validation):** abort_reason_timeline shows non-zero `RajomonAdmissionRej` at RPS ≥ 1400, and it becomes the dominant reason at some RPS (likely 2500-3000). If this fails, we try an even lower threshold (2000us) in iter 3.
+2. Low load (800, 1200) unchanged — queue latency still below 5ms there.
+3. 3000 RPS: rajomon activates, gates ingress before runaway abort_slo cascades. Goodput recovers from 137 toward 400+.
+4. Possible downside: rajomon may over-reject at moderate overload (1600-2000), reducing goodput vs thicket_1. We accept this as a necessary test of activation; iter 3 will calibrate.
+
+### Experiment design
+Identical gen_config and policies as thicket_1. Only `policy_param.json` changes. Enables clean A/B vs thicket_1 for isolating the threshold effect.
+
+### Actual Outcomes (thicket_2)
+
 **Status:** _pending run_
