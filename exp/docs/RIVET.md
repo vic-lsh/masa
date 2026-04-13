@@ -419,3 +419,42 @@ max_token=5000 was best at 900 (328) but weak at 1100+ (146, 88). max_token=3000
 1. 300-700 RPS: unchanged
 2. 900 RPS: ~310-320 (between rivet_6 and rivet_7)
 3. 1100-1300 RPS: ~150-160, ~100-110
+
+### Actual Outcomes (rivet_8)
+
+**Status:** Regression ❌
+
+| RPS | rivet_6 (max=5000) | rivet_7 (max=3000) | rivet_8 (max=4000) |
+|-----|---------------------|---------------------|---------------------|
+| 700 | **697** | 681 | 640 |
+| 900 | **328** | 301 | 293 |
+| 1100 | 146 | **165** | 132 |
+| 1300 | 88 | **116** | 102 |
+
+rivet_8 underperformed at most RPS. Run-to-run variance is significant (~±30 at 900). rivet_6 (max_token=5000) remains the best config for 900 RPS.
+
+---
+
+## Iteration 9: price_freq=1 for 100% price propagation (experiment rivet_9)
+
+**Status:** Pending
+
+### Change
+Config-only, modifying rivet_6:
+- `price_freq`: 3 → **1** (100% of responses carry price, was 33%)
+- All else same as rivet_6
+
+### Hypothesis
+With price_freq=3, only 33% of responses update the client's cached price. This stale-price lag means the client continues sending requests at a higher rate than the server wants. With price_freq=1, every response carries the current price, allowing the client to react instantly to price changes. Should reduce oscillation and improve equilibrium.
+
+---
+
+## Iteration 10: max_token=8000 to continue the higher-is-better trend (experiment rivet_10)
+
+**Status:** Pending
+
+### Change
+Config-only, modifying rivet_6:
+- `max_token`: 5000 → **8000** (accumulated 1500/8000 = 19% max rejection)
+- `tokens_left_init` / `token_update_step`: → **8000**
+- All else same as rivet_6
