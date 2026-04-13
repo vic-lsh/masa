@@ -42,8 +42,8 @@ use std::sync::OnceLock;
 ///
 /// **Client-side token bucket** (paper §3.3):
 /// Tokens replenish via a Poisson process at rate
-/// `token_update_step / token_update_rate_ms` tokens/ms, capped at
-/// `max_token`. Each outgoing request spends a *uniform random* amount
+/// `token_update_step / token_update_rate_ms` tokens/ms.
+/// Each outgoing request spends a *uniform random* amount
 /// from `[0, current_balance]` (paper §3.3 "Randomized Token Spending");
 /// deterministic "all-in" spending is explicitly called out by the paper
 /// as making AQM ineffective.
@@ -68,19 +68,6 @@ pub struct RajomonParams {
     /// range makes the controller more aggressive on the climb side.
     pub price_step_up: u64,
 
-    /// **Deprecated under paper-aligned `update_prices`.**
-    /// Paper §3.4 hardcodes the decay step at -1 token per tick when
-    /// queueing falls below half the threshold. This field is retained for
-    /// JSON-schema backward compatibility but is **ignored** by the current
-    /// `update_prices` implementation.
-    pub price_step_down: u64,
-
-    /// Maximum server price (a Rust safety extension; not in the paper).
-    /// The paper has no upper bound on price — prices are self-regulating
-    /// via the feedback loop. Default is `u64::MAX` (effectively unlimited)
-    /// to match paper fidelity. See `RUST_PORT_ALIGNMENT.md` §10 item C.
-    pub price_cap: u64,
-
     /// Initial server price on worker startup.
     /// Default 0 matches the Go reference. The paper doesn't specify.
     pub init_price: u64,
@@ -93,7 +80,7 @@ pub struct RajomonParams {
     pub price_freq: u64,
 
     /// Initial value of the client-side `CLIENT_TOKEN_BUCKET` on process
-    /// startup. The bucket then replenishes asynchronously up to `max_token`.
+    /// startup.
     pub tokens_left_init: u64,
 
     /// Mean inter-replenishment interval (in milliseconds) for the
@@ -104,12 +91,6 @@ pub struct RajomonParams {
 
     /// Tokens added on each client-bucket replenishment event.
     pub token_update_step: u64,
-
-    /// Cap on the client-side token bucket. The bucket saturates at
-    /// `max_token` regardless of how many replenishments fire. Each
-    /// outgoing request then spends a uniform random amount in
-    /// `[0, current_balance]` (paper §3.3 Randomized Token Spending).
-    pub max_token: u64,
 }
 
 impl Default for RajomonParams {
@@ -118,14 +99,11 @@ impl Default for RajomonParams {
             price_update_rate_ms: 10,
             latency_threshold_us: 5_000,
             price_step_up: 8,
-            price_step_down: 2,
-            price_cap: u64::MAX,
             init_price: 0,
             price_freq: 5,
             tokens_left_init: 10,
             token_update_rate_ms: 10,
             token_update_step: 5,
-            max_token: 100,
         }
     }
 }
@@ -251,8 +229,7 @@ mod tests {
     #[test]
     fn test_defaults_are_sane() {
         let p = PolicyParams::default();
-        assert_eq!(p.rajomon.max_token, 100);
-        assert_eq!(p.rajomon.price_cap, u64::MAX);
+        assert_eq!(p.rajomon.token_update_step, 5);
         assert!(p.pred.tau_er > 0.0);
         assert!(p.pred.aimd_alpha > 0.0);
         assert!(p.pred.aimd_beta > 0.0 && p.pred.aimd_beta < 1.0);
@@ -261,9 +238,9 @@ mod tests {
 
     #[test]
     fn test_partial_json_uses_defaults() {
-        let json = r#"{"rajomon": {"max_token": 200}}"#;
+        let json = r#"{"rajomon": {"token_update_step": 200}}"#;
         let p: PolicyParams = serde_json::from_str(json).unwrap();
-        assert_eq!(p.rajomon.max_token, 200);
+        assert_eq!(p.rajomon.token_update_step, 200);
         assert_eq!(p.rajomon.price_update_rate_ms, 10);
         assert_eq!(p.pred.tau_er, 2.0);
     }
@@ -272,7 +249,7 @@ mod tests {
     fn test_empty_json_uses_all_defaults() {
         let p: PolicyParams = serde_json::from_str("{}").unwrap();
         let d = PolicyParams::default();
-        assert_eq!(p.rajomon.max_token, d.rajomon.max_token);
+        assert_eq!(p.rajomon.token_update_step, d.rajomon.token_update_step);
         assert_eq!(p.pred.tau_er, d.pred.tau_er);
     }
 }

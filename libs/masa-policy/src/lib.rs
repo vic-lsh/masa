@@ -29,8 +29,3 @@ pub use layer::admission::rajomon::{
     ClientTokenBucket, RajomonSharedState, CLIENT_TOKEN_BUCKET, RAJOMON_STATE,
 };
 
-/// The maximum token value for Rajomon admission control (runtime-configurable).
-#[cfg(feature = "ac_rajomon")]
-pub fn max_token() -> u64 {
-    PolicyParams::global().rajomon.max_token
-}

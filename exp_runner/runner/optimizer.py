@@ -27,7 +27,8 @@ from .plotting.util import _read_request_csv, filter_excluded_errors
 
 logger = logging.getLogger(__name__)
 
-# Default Rajomon parameter values (from libs/masa-policy/src/policy_params.rs)
+# Default Rajomon parameter values (from libs/masa-policy/src/policy_params.rs).
+# Only parameters actually used by rajomon.rs are included.
 DEFAULT_RAJOMON_PARAMS: dict = {
     "latency_threshold_us": 5_000,
     "price_update_rate_ms": 10,
@@ -36,8 +37,17 @@ DEFAULT_RAJOMON_PARAMS: dict = {
     "price_freq": 3,
     "tokens_left_init": 100,
     "token_update_rate_ms": 10,
-    "fill_fraction": 1.0,
-    "max_token": 100,
+    "token_update_step": 100,
+}
+
+# Keys that the optimizer tunes (the rest are fixed).
+OPTIMIZED_KEYS = {
+    "latency_threshold_us",
+    "price_step_up",
+    "token_update_step",
+    "init_price",
+    "token_update_rate_ms",
+    "tokens_left_init",
 }
 
 # RPS multipliers for the optimization sweep
@@ -56,42 +66,28 @@ def generate_rps_sweep(saturation_rps: int) -> list[int]:
 def sample_params(trial: optuna.Trial) -> dict:
     """Sample Rajomon parameters from an Optuna trial.
 
-    Optimized parameters (5): latency_threshold_us, price_update_rate_ms,
-    price_step_up, fill_fraction, max_token.
-    Derived: token_update_step = fill_fraction × max_token, ensuring the
-    replenishment rate (token_update_step / price_update_rate_ms) scales
-    with max_token so that the token budget never becomes the goodput bottleneck.
-    price_cap is omitted — Rust default is u64::MAX (unlimited), matching the paper.
+    Optimized (6): latency_threshold_us, price_step_up, token_update_step,
+    init_price, token_update_rate_ms, tokens_left_init.
+    Fixed: price_update_rate_ms, price_freq.
     """
     latency_threshold_us = trial.suggest_int(
         "latency_threshold_us", 2000, 40000, log=True
     )
-    price_update_rate_ms = trial.suggest_int("price_update_rate_ms", 1, 20, log=True)
     price_step_up = trial.suggest_int("price_step_up", 1, 20)
-    fill_fraction = trial.suggest_float("fill_fraction", 0.5, 10.0, log=True)
-    max_token = trial.suggest_int("max_token", 50, 20000, log=True)
-
-    # Derived: replenishment rate = fill_fraction × max_token tokens per tick.
-    # fill_fraction ≥ 0.5 ensures the bucket can sustain target RPS without
-    # becoming the goodput bottleneck at equilibrium price (~10% of max_token).
-    token_update_step = max(1, int(fill_fraction * max_token))
-
-    # Fixed parameters
-    init_price = 0
-    price_freq = 3
-    tokens_left_init = max_token  # Avoid cold-start drops
-    token_update_rate_ms = price_update_rate_ms  # Couple client/server tick rates
+    token_update_step = trial.suggest_int("token_update_step", 10, 500000, log=True)
+    init_price = trial.suggest_int("init_price", 0, 1000)
+    token_update_rate_ms = trial.suggest_int("token_update_rate_ms", 1, 20, log=True)
+    tokens_left_init = trial.suggest_int("tokens_left_init", 10, 500000, log=True)
 
     return {
         "latency_threshold_us": latency_threshold_us,
-        "price_update_rate_ms": price_update_rate_ms,
+        "price_update_rate_ms": 10,  # fixed
         "price_step_up": price_step_up,
         "init_price": init_price,
-        "price_freq": price_freq,
+        "price_freq": 3,  # fixed
         "tokens_left_init": tokens_left_init,
         "token_update_rate_ms": token_update_rate_ms,
         "token_update_step": token_update_step,
-        "max_token": max_token,
     }
 
 
@@ -397,19 +393,7 @@ class RajomonOptimizer:
 
         # Enqueue default params as first trial (only optimized keys)
         study.enqueue_trial(
-            {
-                k: v
-                for k, v in DEFAULT_RAJOMON_PARAMS.items()
-                if k
-                not in (
-                    "init_price",
-                    "price_freq",
-                    "tokens_left_init",
-                    "token_update_rate_ms",
-                    "price_step_down",
-                    "price_cap",
-                )
-            }
+            {k: v for k, v in DEFAULT_RAJOMON_PARAMS.items() if k in OPTIMIZED_KEYS}
         )
 
         # Enqueue warm-start params if provided
@@ -420,27 +404,9 @@ class RajomonOptimizer:
                 # Extract rajomon section if present (nested format)
                 if "rajomon" in warm_params:
                     warm_params = warm_params["rajomon"]
-                # Convert legacy token_update_step to fill_fraction
-                if (
-                    "token_update_step" in warm_params
-                    and "fill_fraction" not in warm_params
-                ):
-                    max_tok = warm_params.get(
-                        "max_token", DEFAULT_RAJOMON_PARAMS["max_token"]
-                    )
-                    warm_params["fill_fraction"] = warm_params[
-                        "token_update_step"
-                    ] / max(1, max_tok)
                 # Filter to only optimized params
-                optimized_keys = {
-                    "latency_threshold_us",
-                    "price_update_rate_ms",
-                    "price_step_up",
-                    "fill_fraction",
-                    "max_token",
-                }
                 enqueue_params = {
-                    k: v for k, v in warm_params.items() if k in optimized_keys
+                    k: v for k, v in warm_params.items() if k in OPTIMIZED_KEYS
                 }
                 if enqueue_params:
                     study.enqueue_trial(enqueue_params)
@@ -511,11 +477,12 @@ class RajomonOptimizer:
 
             # Log key params on one line for quick scanning
             logger.info(
-                f"  Params: latency_threshold={params['latency_threshold_us']}us, "
-                f"max_token={params['max_token']}, "
-                f"token_update_step={params['token_update_step']}, "
-                f"price_step_up={params['price_step_up']}, "
-                f"update_rate={params['price_update_rate_ms']}ms"
+                f"  Params: threshold={params['latency_threshold_us']}us, "
+                f"step_up={params['price_step_up']}, "
+                f"tok_step={params['token_update_step']}, "
+                f"init_price={params['init_price']}, "
+                f"tok_rate={params['token_update_rate_ms']}ms, "
+                f"tok_init={params['tokens_left_init']}"
             )
 
             objective = self._run_experiment(trial_num, params)
@@ -581,25 +548,23 @@ class RajomonOptimizer:
 
 def sample_params_from_values(values: dict) -> dict:
     """Reconstruct full params dict from Optuna trial values (optimized keys only)."""
-    max_token = values.get("max_token", DEFAULT_RAJOMON_PARAMS["max_token"])
-    price_update_rate_ms = values.get(
-        "price_update_rate_ms", DEFAULT_RAJOMON_PARAMS["price_update_rate_ms"]
-    )
-    fill_fraction = values.get("fill_fraction", DEFAULT_RAJOMON_PARAMS["fill_fraction"])
-    token_update_step = max(1, int(fill_fraction * max_token))
-
     return {
         "latency_threshold_us": values.get(
             "latency_threshold_us", DEFAULT_RAJOMON_PARAMS["latency_threshold_us"]
         ),
-        "price_update_rate_ms": price_update_rate_ms,
+        "price_update_rate_ms": 10,
         "price_step_up": values.get(
             "price_step_up", DEFAULT_RAJOMON_PARAMS["price_step_up"]
         ),
-        "init_price": 0,
+        "init_price": values.get("init_price", DEFAULT_RAJOMON_PARAMS["init_price"]),
         "price_freq": 3,
-        "tokens_left_init": max_token,
-        "token_update_rate_ms": price_update_rate_ms,
-        "token_update_step": token_update_step,
-        "max_token": max_token,
+        "tokens_left_init": values.get(
+            "tokens_left_init", DEFAULT_RAJOMON_PARAMS["tokens_left_init"]
+        ),
+        "token_update_rate_ms": values.get(
+            "token_update_rate_ms", DEFAULT_RAJOMON_PARAMS["token_update_rate_ms"]
+        ),
+        "token_update_step": values.get(
+            "token_update_step", DEFAULT_RAJOMON_PARAMS["token_update_step"]
+        ),
     }
