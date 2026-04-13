@@ -127,3 +127,47 @@ The baseline's success at 700 RPS was partly lucky — reservation's warm-up lat
 1. 700 RPS: ~700 goodput (near perfect, rajomon essentially inactive)
 2. 1000 RPS: some improvement over baseline's 48 (rajomon only mildly active)
 3. 1300 RPS: some improvement over baseline's 26 (mild rejection only)
+
+### Actual Outcomes (rivet_2)
+
+**Status:** Regression ❌
+
+| RPS | Goodput (rivet_2) | Goodput (baseline) | Delta |
+|-----|-------------------|-------------------|-------|
+| 700 | 1.6 | 703 | −701 |
+| 1000 | 0.07 | 48 | −48 |
+| 1300 | 0.07 | 26 | −26 |
+
+**Still catastrophic collapse**, despite very conservative params and 30s warmup.
+
+**Key finding: The system is fundamentally overloaded, not a rajomon tuning issue.**
+- Reservation queue latency: 200-450ms peak (vs 22-52ms in baseline)
+- End-to-end p50 latency: 466ms at 700 RPS (vs 131ms in baseline)
+- p99: 1028ms. SLO is 200ms, so nearly ALL requests miss SLO.
+- Reservation CPU was P90=93.85% in baseline — it's right at saturation.
+
+The baseline's 703 goodput at 700 RPS was likely a lucky run where reservation happened to have lower queue latency. The rajomon params are not the primary driver.
+
+**Hypothesis for next iteration:** Before tuning rajomon, we need to establish a reproducible baseline. Test with lower RPS to find where the system is truly stable, and re-run the original baseline params to check reproducibility.
+
+---
+
+## Iteration 3: Reproducibility check + lower RPS range (experiment rivet_3)
+
+**Status:** Pending
+
+### Change
+Config-only:
+- Use EXACT baseline params (threshold=25343, price_step_up=4, no price_cap)
+- RPS range: [300, 500, 700, 900, 1100, 1300] — wider sweep to find stability boundary
+- WarmupSecs: 20 (compromise between 10s and 30s)
+- DurationSecs: 40
+
+### Hypothesis
+The baseline's 703 goodput at 700 RPS was a lucky run. By adding lower RPS points (300, 500), we'll establish where the system is genuinely stable and identify the true saturation point. If 700 RPS produces ~703 again, the baseline was reproducible and the param changes truly caused regressions. If 700 RPS collapses again, the system is fragile at 700 RPS regardless of params.
+
+### Expected outcomes:
+1. 300 RPS: ~300 goodput (well below saturation)
+2. 500 RPS: ~500 goodput (moderate load)
+3. 700 RPS: either ~703 (reproducible baseline) or <100 (fragile system)
+4. 900-1300 RPS: steep decline
