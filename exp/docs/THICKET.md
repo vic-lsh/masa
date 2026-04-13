@@ -363,3 +363,85 @@ Config-only tuning has a hard ceiling under `sched_fifo,ac_rajomon,abort_slo` on
 3. **Or change the price-climb model** so it doesn't depend on queue-latency observations that get preempted (e.g., observe request backlog length or CPU utilization instead).
 
 None of these are config-only. The user's concern that prior rajomon tuning could hit regimes where "rajomon never kicked in at all" is now diagnostically confirmed for this app/SLO combination.
+
+---
+
+## ⚠️ Pivot: the dormancy was a bug, not a structural limit
+
+After iterations 1-5 were run, user pushed commits `7336c6ee fix(ac_rajomon): propagate feature to app-utils` and `fc604183 refactor(ac_rajomon): remove max_token, price_cap, price_step_down`.
+
+Key bug: **`ac_rajomon` feature was not forwarded to `app-utils`**, so the loadgen client's `ClientTokenBucket` was compiled out. Every request was sent with `ctx.tokens = default(100)` instead of a randomized draw, bypassing rajomon's client-side rate limit entirely. This explains why thicket_1-4 showed zero `RajomonAdmissionRej` events — server rejections were fired by `should_drop`, but the whole client-bucket/price-propagation loop was inert.
+
+The `abort_slo` layer-order theory from iters 2-4 was **wrong** — it was a red herring explaining a symptom (no rejections) that was actually caused by the app-utils feature gap. Once propagated, rajomon activates properly.
+
+The deprecated params (`max_token`, `price_cap`, `price_step_down`) are now gone — bucket cap is removed (tokens accumulate via saturating_add), price_cap is absent (paper has no upper bound), and decay is hardcoded to -1/tick.
+
+### Validation re-run (thicket_7)
+
+Target policy per user request: **`sched_fifo,ac_rajomon`** (no abort_slo, no baseline). Same `rajomon_optimal` Bayesian-tuned params as thicket_3, but with deprecated fields stripped:
+
+```json
+{
+  "latency_threshold_us": 10647, "price_update_rate_ms": 4, "price_step_up": 20,
+  "init_price": 0, "price_freq": 5, "tokens_left_init": 285,
+  "token_update_rate_ms": 4, "token_update_step": 3
+}
+```
+
+**Rajomon is ACTIVE.** abort_reason_timeline:
+- `RajomonAdmissionRej`: avg 52.6/s, max 319/s
+- `RajomonChildBudgetRej`: avg 3.7/s, max 65/s
+- `ClientShed`: avg **773.8/s**, max **3006/s** ← new reason, from client_shed counter
+
+| RPS | Goodput | Fraction |
+|-----|---------|----------|
+| 800 | 800 | 1.00 |
+| 1200 | 1191 | 0.99 |
+| 1400 | 1230 | 0.88 |
+| 1600 | 806 | 0.50 |
+| 1800 | 843 | 0.47 |
+| 2000 | 893 | 0.45 |
+| 2500 | **54** | 0.02 |
+| 3000 | **27** | 0.01 |
+
+**New problem identified:** `ClientShed` dominates at high RPS. At 2500+ RPS, the client bucket is being drained faster than it replenishes, so nearly every outgoing request is dropped at the client gate. Server-side RajomonAdmissionRej stays modest precisely because so few requests make it past the client.
+
+With `max_token` removed, bucket grows via `saturating_add` with refill rate `token_update_step / token_update_rate_ms = 3 / 4ms = 750/s`. But each `try_acquire` draws `uniform[0, current]` and deducts `tok` (avg `current/2`) from the bucket. At RPS=rps with bucket-steady-state `C`, drain = `rps * C/2` must equal refill. So `C_steady ≈ 2 * refill / rps = 1500/rps`. At rps=2500, `C_steady ≈ 0.6` tokens — effectively empty. Any server-side cached price > 0 will then cause constant client sheds.
+
+The bottleneck is **refill rate**. The `rajomon_optimal` Bayesian-tuned params were presumably optimized for a different load range.
+
+---
+
+## New sub-track: post-bugfix 3-iteration search for `sched_fifo,ac_rajomon`
+
+### Open question
+What `token_update_step` / `token_update_rate_ms` ratio keeps the client bucket non-empty at 2000–3000 RPS without over-admitting at low load? And what `price_step_up` gives the right server-side rejection pressure so the ClientShed vs RajomonAdmissionRej split is productive?
+
+### Validation protocol (unchanged from original track)
+Every iteration: inspect abort_reason_timeline.csv.
+- ClientShed rate ≈ offered_rps → client-gate strangulation (bad).
+- RajomonAdmissionRej dominates and ClientShed is modest → server rejection is doing the work (good).
+- Both zero → dormancy regression (investigate).
+
+---
+
+## Iteration 1 (post-fix): raise refill rate (experiment thicket_8)
+
+**Status:** Pending
+
+### Change
+From thicket_7 config:
+- `token_update_step`: 3 → **30** (10× refill rate)
+- All other params unchanged.
+
+### Hypothesis
+thicket_7's ClientShed (max 3006/s at rps=3000) shows the client bucket is drained empty. Refill=750/s is far below sustained request rates. Raising refill 10× to 7500/s should keep the bucket populated enough that `try_acquire` rarely draws tok=0. With bucket averaging ~6 tokens at rps=2500 instead of ~0.6, client sheds should drop sharply. Server-side rajomon then takes over primary rejection.
+
+### Expected outcomes
+1. ClientShed at rps≥2000 drops from ~3000/s toward hundreds/s or less.
+2. RajomonAdmissionRej increases (takes over as dominant reason) at 1600+.
+3. Goodput at 2500/3000 recovers from <100 toward ~500-900.
+4. Goodput at 800-1400 likely unchanged (not bucket-bottlenecked there).
+
+### Experiment design
+Single policy `sched_fifo,ac_rajomon`, same RPS sweep [800, 1200, 1400, 1600, 1800, 2000, 2500, 3000], same gen_config. Only `token_update_step` changes.
