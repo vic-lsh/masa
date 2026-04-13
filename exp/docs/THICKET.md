@@ -171,4 +171,56 @@ Same gen_config and policies as thicket_1/2. Only policy_param.json changes. All
 
 ### Actual Outcomes (thicket_3)
 
+**Status:** STILL DORMANT ❌ (three consecutive dormant runs)
+
+| RPS | thicket_3 target | tailclipper (thicket_3) | Δ |
+|-----|-----|-----|-----|
+| 800 | 799.9 | 799.9 | 0 |
+| 1200 | 1194.5 | 1191.2 | +3.3 |
+| 1400 | 1266.3 | 1372.0 | -105.7 |
+| 1600 | 1118.1 | 857.3 | +260.8 |
+| 1800 | 1731.7 | 1722.1 | +9.6 |
+| 2000 | 1679.2 | 1780.7 | -101.5 |
+| 2500 | 858.7 | 968.2 | -109.5 |
+| 3000 | 13.4 | 1010.7 | -997.3 |
+
+abort_reason_timeline: still only `E2EDeadline` rows for both policies. No `RajomonAdmissionRej` ever emitted across thicket_1/2/3. The Bayesian-tuned `rajomon_optimal` params didn't help.
+
+**Root cause understood (from code dive of `libs/masa-policy/src/layer/admission/rajomon.rs` and `libs/masa-policy/src/hooks.rs`):**
+1. Layer order: `e2e_deadline_guard → estimation → admission`. e2e_deadline_guard's `before_poll` aborts past-deadline requests BEFORE rajomon's `before_poll` can run, so queue-latency observations that go to `RAJOMON_STATE.queue_stats.window_max` only come from requests that haven't yet missed their SLO.
+2. Server-side rejection requires `ctx.tokens() < accumulated_price`. `accumulated = own_price + max_downstream`. `own_price` starts at `init_price=0` and only climbs when `window_max > threshold`.
+3. On socialnet, freshly-arrived requests (those that do reach rajomon's `before_poll`) have queue latency well under any reasonable threshold — the queue-latency spike only manifests to requests that are already past their 50ms SLO and thus aborted upstream by e2e_deadline_guard.
+4. Result: `own_price` stays at 0 at every service. `accumulated` stays at 0. Every request passes server admission. Rajomon is structurally silent under `+abort_slo` for tight-SLO workloads.
+
+**Client side:** client's `try_acquire` can also rate-limit (`rng.gen_range(0..=current) < cached_price`). But `cached_price` is only updated from server responses carrying `x-masa-rajomon-price`, which is the server's `own_price`. When `own_price=0`, cached_price=0, `rng.gen_range(0..=current) < 0` never true → client never drops either.
+
+**Implication:** Tuning `latency_threshold_us`, `price_step_up`, `price_cap`, or `max_token` can't fix the circular dormancy. The only way to force activation under `+abort_slo` is to seed `own_price` with `init_price > 0` so accumulated is non-zero from the start.
+
+---
+
+## Iteration 4: Force activation via init_price=200 (experiment thicket_4)
+
+**Status:** Pending
+
+### Change
+Config-only. Single variable from thicket_3 (rajomon_optimal):
+- `init_price`: 0 → **200**
+- All other params identical to thicket_3 (threshold=10647, step_up=20, step_down=4, price_cap=66, freq=5, tokens=max=285, update_rate=4ms).
+
+Note: `price_cap=66` caps the price's *climb*, but `init_price` sets `own_price` directly without cap. So own_price starts at 200. Under no queue-latency signal, it decays by 1 per 4ms tick — 200 → 0 in 800ms. That's enough wall time at each RPS step (30s duration) to produce rajomon rejections during the initial burst of every step, and also whenever queue-latency observations reappear.
+
+### Hypothesis
+The cause of three consecutive dormant runs is that `own_price` never climbs above 0 because requests that would observe queue latency are preempted by e2e_deadline_guard. Seeding `init_price=200` forces `accumulated_price ≥ 200` from t=0 at every service, which makes `ctx.tokens() < accumulated` satisfiable for the ~70% of client tokens drawn from `[0, 285]` that fall below 200. This should produce non-zero `RajomonAdmissionRej` events at the server, AND cause response headers to propagate price back to the client, which then rate-limits locally on subsequent requests.
+
+### Expected outcomes
+1. **Primary (validation):** non-zero `RajomonAdmissionRej` events at every RPS level for the target policy. Even if price decays over the 30s step, the initial admission-rejection burst should show up in the timeline.
+2. Low RPS (800, 1200): likely regression from unnecessary rejection. This is acceptable — we're testing activation, not productivity yet.
+3. High RPS (2500, 3000): possible recovery from the 3000-RPS cliff (13 → something >0) if rajomon's ingress rejection relieves the abort_slo cascade.
+4. If **still dormant** (zero rajomon rows), there is a deeper wiring/feature-flag issue that param tuning can't fix. That would terminate the track with a clear diagnosis.
+
+### Experiment design
+Same gen_config and policies as thicket_1/2/3. Only `init_price` changes. Clean single-variable test.
+
+### Actual Outcomes (thicket_4)
+
 **Status:** _pending run_
