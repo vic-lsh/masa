@@ -334,3 +334,51 @@ At 1300 RPS: ~910 admitted (still above saturation → latency degrades but not 
 1. 300-700 RPS: unchanged (~300, ~500, ~695)
 2. 900 RPS: major improvement from 107 to 400-600
 3. 1100-1300 RPS: improvement from 30 to 100-300
+
+### Actual Outcomes (rivet_6)
+
+**Status:** Complete ✅ (best result so far)
+
+| RPS | rivet_5 (cap=1000,step=4) | rivet_6 (cap=500,step=1) | Delta |
+|-----|---------------------------|--------------------------|-------|
+| 300 | 294 | 298 | +4 |
+| 500 | 492 | 500 | +8 |
+| 700 | 694 | 697 | +3 |
+| 900 | 107 | **328** | **+221** |
+| 1100 | 31 | **146** | **+115** |
+| 1300 | 29 | **88** | **+59** |
+
+Abort reasons confirmed: `RajomonAdmissionRej` (primary, ~440-590/s at 900 RPS initial spike) + `RajomonChildBudgetRej` (secondary, ~70-140/s). All rajomon-driven.
+
+At 900 RPS: 326/s frontend ER = 36% rejection (was 69% in rivet_5). The lower price_cap and slower climb produce more proportionate rejection.
+
+At 900 RPS: 574 admitted → 328 meet SLO (57% of admitted). The gap is from latency inflation when system is near saturation.
+
+**Remaining issues:** 
+1. 900 RPS goodput (328) is still well below system capacity (~700). The admitted requests face high latency because 574 RPS is near saturation.
+2. At 1100+ RPS, rejection rate climbs to 59-67% but goodput is still low (146, 88) because admitted traffic still exceeds capacity.
+
+**Decision:** Keep. This is the best config so far.
+
+---
+
+## Iteration 7: Increase max rejection via lower max_token (experiment rivet_7)
+
+**Status:** Pending
+
+### Change
+Config-only, modifying rivet_6:
+- `max_token`: 5000 → **3000** (accumulated 1500 / 3000 = 50% max rejection)
+- `tokens_left_init`: 5000 → **3000**
+- `token_update_step`: 5000 → **3000**
+- All other params same as rivet_6 (cap=500, step=1, threshold=25343)
+
+### Hypothesis
+At 900 RPS in rivet_6, 574 admitted but only 328 meet SLO (57%). The problem is that 574 is too close to saturation (~800). More aggressive rejection would admit fewer requests with better latency, improving goodput.
+
+With max_token=3000: accumulated=1500 → 50% max rejection. At 900 RPS: ~450 admitted, well below saturation → better latency → higher SLO-meeting fraction. Expected: 450 × 0.85+ = 380+.
+
+### Expected outcomes:
+1. 300-700 RPS: unchanged (price stays low, rejection minimal)
+2. 900 RPS: improvement from 328 to 380+ (fewer admits but better quality)
+3. 1100-1300 RPS: improvement (tighter admission keeps latency manageable)
