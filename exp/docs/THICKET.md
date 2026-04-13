@@ -280,4 +280,86 @@ Same gen_config and policies. Single change: the three token/price knobs. Purely
 
 ### Actual Outcomes (thicket_5)
 
-**Status:** _pending run_
+**Status:** RAJOMON ACTIVATED ✅ (but transient, and goodput regressed — wiring confirmed, structural limit identified)
+
+| RPS | thicket_5 target | tailclipper (thicket_5) | Δ |
+|-----|-----|-----|-----|
+| 800 | 767.4 | 799.9 | **-32.5** |
+| 1200 | 1184.2 | 1175.5 | +8.7 |
+| 1400 | 1358.9 | 1191.5 | +167.4 |
+| 1600 | 810.8 | 829.9 | -19.1 |
+| 1800 | 973.3 | 986.7 | -13.4 |
+| 2000 | 1240.8 | 1721.6 | -480.8 |
+| 2500 | 903.0 | 811.9 | +91.1 |
+| 3000 | 111.5 | 971.2 | **-859.7** |
+
+**abort_reason_timeline** (target policy):
+- E2EDeadline: avg 860.3/s, max 3001.0/s
+- **RajomonAdmissionRej: avg 1.6/s, max 394.0/s** ← first time non-zero
+- **RajomonChildBudgetRej: avg 0.3/s, max 93.5/s**
+
+**Rajomon activity verdict: TRANSIENT.** Wiring is verified working — the rejection path CAN produce `RajomonAdmissionRej` events and they DO reach the abort_reason tracker. But rajomon is only active during brief windows: the max 394/s spike decays to near-zero quickly, and the 456-sample average is only 1.6/s. The init_price=500 seed decays by 1 per 4ms tick → reaches 0 in ~2s, then rajomon is dormant again until the next RPS step boundary resets observation.
+
+**Goodput regression at 800 RPS (767 vs 799.9)** confirms rajomon is doing SOMETHING — it's rejecting ~30/s of in-spec requests at the initial burst. This is the only RPS level where rajomon's rejection hurts more than it helps, because the system has plenty of capacity at 800 RPS and abort_slo alone is sufficient.
+
+**The 3000 RPS cliff persists (111 vs tailclipper 971).** Even with rajomon activated briefly, it can't keep accumulated_price high enough to relieve the abort_slo cascade at sustained deep overload.
+
+### Decision
+Keep thicket_5's diagnostic value (rajomon wiring validated) but do NOT recommend these params for production. The 800 RPS regression is the proof of unnecessary rejection.
+
+---
+
+## Final summary — THICKET track (5 iterations)
+
+### Key question answered
+
+**Can `sched_fifo,ac_rajomon,abort_slo` beat `sched_tailclipper,abort_slo` on socialnet ComposePost?**
+
+With config-only tuning: **No.** At no point across 5 iterations did the target policy beat tailclipper on the stress region (≥1400 RPS) with rajomon genuinely carrying the admission-control load.
+
+### Results table (best goodput per RPS across all 5 runs)
+
+| RPS | Best rajomon result | Tailclipper (same run) | Rajomon active? |
+|-----|-----|-----|-----|
+| 800 | 799.9 (thicket_1/2/3/4) | 799.9 | no (dormant) |
+| 1200 | 1195.1 (thicket_4) | 1184.9 | no (dormant) |
+| 1400 | 1381.9 (thicket_1) | 1317.9 | no (dormant) |
+| 1600 | 1118.1 (thicket_3) | 857.3 | no (dormant) |
+| 1800 | 1731.7 (thicket_3) | 1722.1 | no (dormant) |
+| 2000 | 1966.1 (thicket_1) | 1826.2 | no (dormant) |
+| 2500 | 968.6 (thicket_1) | 898.8 | no (dormant) |
+| 3000 | 193.7 (thicket_4) | 1066.1 | no (dormant) |
+
+The apparent wins at 1400/1600/1800/2000 were `sched_fifo` vs `sched_tailclipper` scheduling-order differences, NOT rajomon wins — abort_reason_timeline confirms rajomon was dormant in every one of those runs.
+
+### Root cause (documented in thicket_2/3/4 analyses above)
+
+Under `+abort_slo` with a 50ms SLO, rajomon's `own_price` remains at 0 because:
+1. Layer order `e2e_deadline_guard → estimation → admission` means e2e_deadline_guard preempts past-deadline requests before rajomon's `before_poll` can record queue latency to `RAJOMON_STATE.queue_stats.window_max`.
+2. Under socialnet's tight SLO, every deep-queue request has already missed its deadline before reaching rajomon's observation point.
+3. Without queue-latency samples exceeding threshold, `own_price` never climbs from `init_price`.
+4. With `init_price=0` (default), accumulated_price stays 0 → every request admitted → no rajomon activity.
+
+### Parameter ranges tried
+
+| Param | Values tested | Effect |
+|-------|-----|-----|
+| `latency_threshold_us` | 25343, 10647, 5000 | No effect — queue latency never exceeds any tested threshold due to e2e_deadline_guard preemption |
+| `price_step_up` | 1, 20 | No effect — price doesn't climb if observations are absent |
+| `price_cap` | 66, 500 | No effect — cap only applies when price is climbing, which it isn't |
+| `tokens_left_init` / `max_token` | 100, 285, 5000 | No effect alone; minor effect combined with init_price |
+| `init_price` | 0, 200, 500 | **Only knob that activates rajomon at all.** But decays by 1 per price_update_rate_ms tick once set; transient. |
+| `price_freq` | 3, 5 | No effect — server-to-client propagation is moot when own_price is 0 |
+
+### Validation protocol (the key differentiator from prior rajomon tuning)
+
+Every iteration checked `abort_reason_timeline.csv` for `RajomonAdmissionRej` / `RajomonChildBudgetRej` rows. Iterations 1-4 showed ZERO rajomon rows despite surface-level goodput results that could have looked like "wins." Only iteration 5 produced any rajomon-attributed rejections, and only transiently. This validation exposed 4 false positives that simpler tuning (surface-level goodput comparison) would have accepted.
+
+### Recommendation
+
+Config-only tuning has a hard ceiling under `sched_fifo,ac_rajomon,abort_slo` on socialnet. To make rajomon productive:
+1. **Change layer order** so `admission` runs before `e2e_deadline_guard` in `for_each_layer!`. This lets rajomon observe queue latency on all polled requests regardless of deadline state. (Code change in `libs/masa-policy/src/hooks.rs`.)
+2. **Or disable abort_slo** for the rajomon target variant (but the user explicitly requested `+abort_slo`).
+3. **Or change the price-climb model** so it doesn't depend on queue-latency observations that get preempted (e.g., observe request backlog length or CPU utilization instead).
+
+None of these are config-only. The user's concern that prior rajomon tuning could hit regimes where "rajomon never kicked in at all" is now diagnostically confirmed for this app/SLO combination.
