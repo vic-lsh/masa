@@ -1639,6 +1639,8 @@ _REASON_COLORS = {
     "RajomonAdmissionRej": "#0072B2",  # blue
     "RajomonChildBudgetRej": "#009E73",  # bluish green
     "TokenBucketRej": "#CC79A7",  # reddish purple (legacy)
+    "ClientShed": "#CC79A7",  # reddish purple
+    "ClientTimeout": "#F0E442",  # yellow
 }
 # Stable order: known reasons first, then any unexpected ones alphabetically.
 _KNOWN_REASON_ORDER = [
@@ -1653,6 +1655,53 @@ _KNOWN_REASON_ORDER = [
 ]
 
 
+def _parse_loadgen_client_shed(
+    loadgen_log_path: str,
+    rps_sequence: list[int],
+    warmup_sec: float,
+    duration_sec: float,
+) -> tuple[list[float], list[float]]:
+    """Parse per-second client_shed from loadgen.log and map to absolute timeline.
+
+    Returns (times, rates) aligned to the post-warmup timeline used by the
+    abort-reason plot.
+    """
+    import re
+
+    pattern = re.compile(r"secs:\s*(\d+),.*?client_shed:\s*(\d+)")
+    times: list[float] = []
+    rates: list[float] = []
+    if not os.path.exists(loadgen_log_path):
+        return times, rates
+
+    # Parse all per-second lines. The secs counter resets for each RPS period.
+    # We detect period boundaries by secs going back to 1.
+    per_period_rows: list[list[tuple[int, int]]] = [[]]
+    with open(loadgen_log_path) as f:
+        for line in f:
+            m = pattern.search(line)
+            if not m:
+                continue
+            sec = int(m.group(1))
+            shed = int(m.group(2))
+            if sec == 1 and per_period_rows[-1]:
+                per_period_rows.append([])
+            per_period_rows[-1].append((sec, shed))
+
+    for period_idx, rows in enumerate(per_period_rows):
+        if period_idx >= len(rps_sequence):
+            break
+        for sec, shed in rows:
+            # Skip warmup seconds
+            if sec <= warmup_sec:
+                continue
+            rel_sec = sec - warmup_sec
+            abs_sec = period_idx * duration_sec + rel_sec
+            times.append(abs_sec)
+            rates.append(float(shed))
+    return times, rates
+
+
 def plot_abort_reason_timeline(
     output_path: str,
     rps_sequence: list[int],
@@ -1661,6 +1710,9 @@ def plot_abort_reason_timeline(
     *,
     duration_sec: float,
     window_sec: float = 2.0,
+    data_dir: str | None = None,
+    iteration: int = 0,
+    warmup_sec: float = 0.0,
 ) -> None:
     """Plot per-second early-return rate by abort reason over time.
 
@@ -1676,11 +1728,15 @@ def plot_abort_reason_timeline(
         rps_data = policy_data_by_rps.get(policy, {})
         for rps in rps_sequence:
             df = rps_data.get(rps, pd.DataFrame())
-            if df.empty or "er_reason" not in df.columns:
+            if df.empty:
                 continue
-            er_mask = df.get("error_type", pd.Series(dtype=str)) == "EarlyReturn"
-            reasons = df.loc[er_mask, "er_reason"].fillna("E2EDeadline").unique()
-            all_reasons.update(reasons)
+            if "er_reason" in df.columns:
+                er_mask = df.get("error_type", pd.Series(dtype=str)) == "EarlyReturn"
+                reasons = df.loc[er_mask, "er_reason"].fillna("E2EDeadline").unique()
+                all_reasons.update(reasons)
+            if "error" in df.columns:
+                if (df["error"].astype(str) == "/ClientTimeout").any():
+                    all_reasons.add("ClientTimeout")
 
     if not all_reasons:
         return
@@ -1717,13 +1773,17 @@ def plot_abort_reason_timeline(
 
             abs_sec = rel_sec + period_idx * effective_duration
 
-            # Classify each request's reason (non-ER → None).
+            # Classify each request's reason (non-ER/non-timeout → NaN).
             if "error_type" in df.columns and "er_reason" in df.columns:
                 er_mask = df["error_type"] == "EarlyReturn"
                 req_reason = df["er_reason"].where(er_mask).fillna("E2EDeadline")
                 req_reason = req_reason.where(er_mask)  # non-ER stays NaN
             else:
                 req_reason = pd.Series(np.nan, index=df.index)
+            # Tag ClientTimeout requests.
+            if "error" in df.columns:
+                timeout_mask = df["error"].astype(str) == "/ClientTimeout"
+                req_reason = req_reason.where(~timeout_mask, "ClientTimeout")
 
             order = np.argsort(abs_sec.values)
             t_arr = abs_sec.values[order]
@@ -1759,6 +1819,27 @@ def plot_abort_reason_timeline(
                 csv_rows.append(
                     {"Time": t, "Policy": policy, "Reason": reason, "Rate": rate}
                 )
+
+        # Client-shed overlay from loadgen.log.
+        if data_dir is not None:
+            log_path = os.path.join(data_dir, str(iteration), policy, "loadgen.log")
+            shed_times, shed_rates = _parse_loadgen_client_shed(
+                log_path, rps_sequence, warmup_sec, effective_duration
+            )
+            if shed_times:
+                color = _REASON_COLORS.get("ClientShed", "#CC79A7")
+                ax.plot(
+                    shed_times,
+                    shed_rates,
+                    label="ClientShed",
+                    color=color,
+                    linewidth=1.5,
+                    linestyle="--",
+                )
+                for t, rate in zip(shed_times, shed_rates):
+                    csv_rows.append(
+                        {"Time": t, "Policy": policy, "Reason": "ClientShed", "Rate": rate}
+                    )
 
         # Offered RPS step area.
         step_t = [0.0]
@@ -2018,6 +2099,9 @@ def generate_plots(args, plot_data: PlotData | None = None) -> None:
                 ),
                 {
                     "duration_sec": duration_sec,
+                    "data_dir": args.data_dir,
+                    "iteration": i,
+                    "warmup_sec": plot_data.warmup_sec,
                 },
             )
         )

@@ -151,17 +151,17 @@ pub struct PredParams {
     /// Variance multiplier for the LatencyMeanVar estimator used by abort_slack.
     /// `estimate = mean + k * stddev`. 0.0 = pure mean estimator (default).
     pub estimator_k: f64,
-    /// AIMD additive increase per healthy 50 ms observation window.
+    /// AIMD proportional additive increase per healthy 50 ms window.
     ///
-    /// When the window's ER fraction is below `aimd_er_threshold`:
-    /// `admit_p = min(1.0, admit_p + alpha)`.
-    /// Default 0.05 recovers from 0 → 1 in ~20 healthy windows ≈ 1 s.
+    /// Actual increment is `alpha * (1 - admit_p)`, so recovery slows as
+    /// admit_p approaches 1.0.  At admit_p = 0 the step equals alpha.
+    /// Default 0.05.
     pub aimd_alpha: f64,
-    /// AIMD multiplicative decrease factor applied on an overloaded window.
+    /// AIMD base multiplicative decrease factor (severity-scaled).
     ///
-    /// When the window's ER fraction exceeds `aimd_er_threshold`:
-    /// `admit_p = admit_p * beta`. Must be in (0.0, 1.0).
-    /// Default 0.875 cuts admission by 12.5% per overloaded window.
+    /// Effective factor is `beta.powf(er_sample / aimd_er_threshold)`:
+    /// at the threshold boundary the cut equals `beta`; at 4× threshold
+    /// the cut is `beta^4`.  Must be in (0.0, 1.0).  Default 0.875.
     pub aimd_beta: f64,
     /// ER-fraction threshold above which a 50 ms window is considered overloaded.
     ///
@@ -169,6 +169,10 @@ pub struct PredParams {
     /// (e.g. 0.40 if saturation produces ~41% ER fraction).
     /// Default 0.10.
     pub aimd_er_threshold: f64,
+    /// Number of observation windows (~50 ms each) to suppress alpha increases
+    /// after a beta decrease.  Prevents premature recovery before the effect
+    /// of the decrease is observed in ER feedback.  Default 2 (~100 ms).
+    pub aimd_cooldown_windows: u32,
 }
 
 impl Default for PredParams {
@@ -179,6 +183,7 @@ impl Default for PredParams {
             aimd_alpha: 0.05,
             aimd_beta: 0.875,
             aimd_er_threshold: 0.10,
+            aimd_cooldown_windows: 2,
         }
     }
 }

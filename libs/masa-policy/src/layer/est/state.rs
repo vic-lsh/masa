@@ -176,8 +176,7 @@ impl<E: LatencyEstimator + Default + 'static> LatencyEstimators<E> {
     /// abort_slack pressure during the burst, and the estimate self-corrects once
     /// successful completions resume.
     #[allow(unused_variables)]
-    pub(crate) fn track_er_feedback(&self, key: ParentToChildKey) {
-    }
+    pub(crate) fn track_er_feedback(&self, key: ParentToChildKey) {}
 
     // ── Logging ────────────────────────────────────────────────────────
 
@@ -219,7 +218,7 @@ where
     }
 }
 
-fn log_pair_map_if_non_empty<K, E>(label: &'static str, map: &LatencyMap<K, E>)
+fn log_pair_map_if_non_empty<K, E>(_label: &'static str, map: &LatencyMap<K, E>)
 where
     K: Copy + Eq + Hash + fmt::Display + 'static,
     E: LatencyEstimator + Default + 'static,
