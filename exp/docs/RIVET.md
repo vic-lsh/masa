@@ -215,3 +215,47 @@ The baseline's low threshold provides necessary early backpressure at moderate l
 2. 700 RPS: unchanged (~630 goodput)
 3. 900 RPS: significant improvement from 69 to 300-400 (partial rejection instead of total shutdown)
 4. 1100-1300 RPS: improvement from ~30 to 100-300
+
+### Actual Outcomes (rivet_4)
+
+**Status:** Mixed
+
+| RPS | rivet_3 (no cap) | rivet_4 (cap=1000) | Delta |
+|-----|-------------------|---------------------|-------|
+| 300 | 298 | 300 | +2 |
+| 500 | 497 | 500 | +3 |
+| 700 | 630 | 695 | **+65** |
+| 900 | 69 | 83 | +14 |
+| 1100 | 30 | 39 | +9 |
+| 1300 | 31 | 30 | -1 |
+
+No early returns at 300-700 RPS (good). At 900 RPS: 640/s frontend rejections = 71% — same as rivet_3 despite price_cap=1000.
+
+**Root cause: Accumulated price exceeds max_token.** The admission check uses `accumulated_price = own_price + max(downstream_prices)`. With frontend and reservation each capped at 1000, accumulated = 2000 = max_token → 100% rejection at server. The price_cap prevents individual price runaway but doesn't cap the SUM across the call chain.
+
+For Hotel Search path: frontend → search → {geo, rate, profile, reservation}. Reservation is the bottleneck. Frontend accumulated = own + max(downstream for HandleSearch) = 1000 + 1000 = 2000.
+
+**Key insight: max_token must be >> sum of all price_caps along the critical call path.**
+
+---
+
+## Iteration 5: Raise max_token for accumulated price headroom (experiment rivet_5)
+
+**Status:** Pending
+
+### Change
+Config-only — keeping price_cap=1000, raising token budget:
+- `max_token`: 2000 → **5000** (accumulated 2000 = 40% rejection max, not 100%)
+- `tokens_left_init`: 2000 → **5000**
+- `token_update_step`: 2000 → **5000** (keep bucket full)
+- All other params unchanged (threshold=25343, step_up=4, price_cap=1000)
+
+### Hypothesis
+With max_token=5000, even when both frontend and reservation reach price_cap=1000, accumulated_price=2000 gives rejection prob = 2000/5000 = 40%. This should convert the cliff into graceful degradation:
+- At 900 RPS with 40% rejection: ~540 admitted, below saturation (~800), should meet SLO
+- At 1300 RPS with 40% rejection: ~780, near saturation, some SLO misses but much better than 30 goodput
+
+### Expected outcomes:
+1. 300-700 RPS: unchanged (~300, ~500, ~695 goodput)
+2. 900 RPS: major improvement from 83 to ~400-500 
+3. 1100-1300 RPS: improvement from 30-39 to 200+
