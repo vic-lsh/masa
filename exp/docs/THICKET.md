@@ -547,3 +547,91 @@ Risk: a too-slow price climb might under-admit at moderate overload, allowing qu
 
 ### Experiment design
 Single variable: from thicket_8's best-known refill (`token_update_step=30`), lower `price_step_up` from 20 to 3. Single policy. Same RPS sweep.
+
+### Actual Outcomes (thicket_10)
+
+**Status:** Regression ❌ (worst of the 3)
+
+Abort reasons (target policy):
+- `RajomonAdmissionRej`: avg 72.0/s, max 609.5/s (≈thicket_8)
+- `RajomonChildBudgetRej`: avg **38.3/s** (6× thicket_8), max 505.5/s
+- `ClientTimeout`: avg **23.9/s**, max **1566.5/s** (new, large)
+- `ClientShed`: avg 130.3/s, max 1319/s (down from thicket_8's 275.8/2842 — slower price growth worked)
+
+| RPS | thicket_8 | thicket_10 | Δ |
+|-----|-----------|------------|-----|
+| 800 | 800 | 800 | 0 |
+| 1200 | 1195 | 1185 | -10 |
+| 1400 | 1267 | 1282 | +15 |
+| 1600 | 812 | 701 | -111 |
+| 1800 | 1777 | **1131** | **-646** |
+| 2000 | 1711 | 1462 | -249 |
+| 2500 | 218 | **69** | -149 |
+| 3000 | 206 | **52** | -154 |
+
+**Why this went wrong:** lowering `price_step_up` from 20 to 3 slowed server price growth so much that rajomon couldn't throttle admission in time. Too many requests got admitted into an already-overloaded system. `ClientTimeout` max 1566/s shows requests waiting for server responses that never came fast enough. `ChildBudgetRej` 6× higher confirms admitted requests ran out of budget partway through their call graph. The ClientShed reduction was real (131 vs 276 avg) — but it wasn't because rajomon was working better; it was because the server was less frequently reporting a high price when saturated with in-flight requests.
+
+**Lesson:** at this SLO (50ms) and saturation point (~1500 RPS), rajomon needs a fast price climb to pre-empt overload. `price_step_up=20` is approximately correct; lower values break the control loop.
+
+---
+
+## Post-bugfix final summary (3 iterations)
+
+### Best config: thicket_8
+
+```json
+{
+  "rajomon": {
+    "sched_fifo": {
+      "latency_threshold_us": 10647,
+      "price_update_rate_ms": 4,
+      "price_step_up": 20,
+      "init_price": 0,
+      "price_freq": 5,
+      "tokens_left_init": 285,
+      "token_update_rate_ms": 4,
+      "token_update_step": 30
+    }
+  }
+}
+```
+
+### Goodput comparison (sched_fifo,ac_rajomon across 3 iters)
+
+| RPS | thicket_7 (orig) | thicket_8 (best) | thicket_9 (refill+) | thicket_10 (climb-) |
+|-----|------:|------:|------:|------:|
+| 800 | 800 | 800 | 800 | 800 |
+| 1200 | 1191 | **1195** | 1192 | 1185 |
+| 1400 | 1230 | 1267 | 1267 | **1282** |
+| 1600 | 806 | **812** | 728 | 701 |
+| 1800 | 843 | **1777** | 1723 | 1131 |
+| 2000 | 893 | **1711** | 1532 | 1462 |
+| 2500 | 54 | 218 | **482** | 69 |
+| 3000 | 27 | 206 | **216** | 52 |
+| sum  | 5844 | **7986** | 7940 | 6680 |
+
+### What each knob does
+
+| Param | Direction | Effect |
+|-------|-----------|--------|
+| `token_update_step` | raise 3→30 | huge win at 1800/2000 (+934/+818 vs thicket_7); partial fix for 2500 (+164) |
+| `token_update_step` | raise 30→100 | modest further gain at 2500 (+264) but regression at 1600-2000 (-320 sum) from over-admission |
+| `price_step_up` | lower 20→3 | broke the control loop — too-slow price growth lets system oversaturate |
+
+### Structural observation
+The 3000 RPS collapse has a fundamental root: at deep overload, server's own_price grows faster (O(rps·excess_us·step_up) per tick) than any bucket refill can match. This is a known property of the rajomon price feedback loop as implemented. A config-only fix doesn't exist — algorithmic changes to the price model (e.g., log-scale climb, AIMD-style back-off, or absolute cap tied to system capacity) would be needed to cleanly handle 2× saturation loads.
+
+### Comparison to `sched_tailclipper,abort_slo` (reference from thicket_5 run)
+
+| RPS | Best rajomon (thicket_8) | Tailclipper (thicket_5) | Winner |
+|-----|------:|------:|--------|
+| 800 | 800 | 800 | tie |
+| 1200 | 1195 | 1175 | **rajomon** (+20) |
+| 1400 | 1267 | 1192 | **rajomon** (+75) |
+| 1600 | 812 | 830 | tailclipper (+18) |
+| 1800 | 1777 | 987 | **rajomon** (+790) |
+| 2000 | 1711 | 1722 | tie |
+| 2500 | 218 | 812 | tailclipper (+594) |
+| 3000 | 206 | 971 | tailclipper (+765) |
+
+Rajomon wins in the saturation shoulder (1200-1800) — especially 1800 where it's ~1.8× better. Tailclipper holds the deep-overload region (2500-3000) by a wide margin because it doesn't have rajomon's price-runaway failure mode. A hybrid policy would be ideal, but that's out of scope for config tuning.
