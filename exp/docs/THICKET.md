@@ -495,3 +495,55 @@ Risk: if refill is too high, rajomon may admit too freely at moderate overload (
 
 ### Experiment design
 Identical to thicket_8 except `token_update_step`. Single variable.
+
+### Actual Outcomes (thicket_9)
+
+**Status:** Mixed ❌ (trade 1600-2000 for 2500)
+
+Abort reasons (target policy):
+- `RajomonAdmissionRej`: avg 84.8/s, max 642.5/s
+- `RajomonChildBudgetRej`: avg **20.7/s** (3.2× thicket_8), max 324.5/s
+- `ClientShed`: avg 289.2/s (≈unchanged from 275.8), max 2734/s (≈unchanged)
+
+| RPS | thicket_8 | thicket_9 | Δ |
+|-----|-----------|-----------|-----|
+| 800 | 800 | 800 | 0 |
+| 1200 | 1195 | 1192 | -3 |
+| 1400 | 1267 | 1267 | 0 |
+| 1600 | 812 | **728** | -84 |
+| 1800 | 1777 | **1723** | -54 |
+| 2000 | 1711 | **1532** | -179 |
+| 2500 | 218 | **482** | +264 |
+| 3000 | 206 | 216 | +10 |
+
+Sum goodput across sweep: thicket_8 = 7986, thicket_9 = 7940. Net ≈ equal — thicket_9 trades 1600-2000 ground for 2500 ground.
+
+**Diagnosis of the shared 3000 cliff:** at rps=3000, bucket C_steady ≈ 17 tokens (refill=25000/s, drain=rps·C/2). But ClientShed max is still 2734/s — the bucket draining isn't the bottleneck. The bottleneck is now **server cached price growth**. With `price_step_up=20` and excess_us ≈ 40000us (system saturated to queue latency ~50ms, threshold=10.6ms), server's own_price climbs by `40000·20/1000 = 800/tick` = 200000/s. Clients cache this price; when `try_acquire` sees `current (~17) < price (huge)`, it returns None → ClientShed. Hiking refill further can't outpace the exponential price climb.
+
+**Mechanism insight:** at steady-state overload, server price equilibrium is set by `price_step_up` × `excess_us` (climb) vs `-1/tick` (decay). Decay is 250/s. Climb is 200000/s. Server price is driven unboundedly high during overload spikes. Client shed rate then equals offered load.
+
+---
+
+## Iteration 3 (post-fix): slow server price climb to keep bucket viable (experiment thicket_10)
+
+**Status:** Pending
+
+### Change
+Revert refill to thicket_8's value and lower server price climb:
+- `token_update_step`: 100 → **30** (back to thicket_8 best-known refill rate)
+- `price_step_up`: 20 → **3** (6.7× slower server price climb)
+- All other params unchanged.
+
+### Hypothesis
+thicket_8 had the best mid-range goodput. thicket_9 showed refill alone doesn't fix the 3000 RPS cliff because server price still runs away. Lowering `price_step_up` from 20 to 3 reduces price climb rate from ≈200000/s to ≈30000/s at the same saturation level. With refill=7500/s and a slower-growing price, the bucket steady-state has a chance to keep up. Server-side RajomonAdmissionRej should still fire (price>0 is enough for accumulated>0 check), but the price shouldn't spike to a level that forces every client request into a shed.
+
+Risk: a too-slow price climb might under-admit at moderate overload, allowing queues to build before rajomon reacts. The 1600-2000 region is where we'd see this.
+
+### Expected outcomes
+1. ClientShed max at rps=3000 drops substantially (from 2734 toward <1500/s).
+2. Goodput at 2500/3000 improves over thicket_8 (218→>300; 206→>300).
+3. Goodput at 1800/2000 stays near thicket_8 (~1700).
+4. If the price climbs too slowly, 1400-1600 may see slight regression from delayed admission control.
+
+### Experiment design
+Single variable: from thicket_8's best-known refill (`token_update_step=30`), lower `price_step_up` from 20 to 3. Single policy. Same RPS sweep.
