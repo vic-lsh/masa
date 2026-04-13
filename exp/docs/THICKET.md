@@ -223,4 +223,61 @@ Same gen_config and policies as thicket_1/2/3. Only `init_price` changes. Clean 
 
 ### Actual Outcomes (thicket_4)
 
+**Status:** STILL DORMANT ❌ (four consecutive dormant runs)
+
+| RPS | thicket_4 target | tailclipper (thicket_4) | Δ |
+|-----|-----|-----|-----|
+| 800 | 799.9 | 799.8 | +0.1 |
+| 1200 | 1195.1 | 1182.7 | +12.4 |
+| 1400 | 1225.4 | 1294.1 | -68.7 |
+| 1600 | 834.1 | 846.3 | -12.2 |
+| 1800 | 1413.9 | 1560.3 | -146.4 |
+| 2000 | 1612.2 | 1824.6 | -212.4 |
+| 2500 | 895.4 | 958.9 | -63.5 |
+| 3000 | 193.7 | 1066.1 | **-872.4** |
+
+abort_reason_timeline again contains only E2EDeadline rows. Zero RajomonAdmissionRej / RajomonChildBudgetRej. init_price=200 did not produce any detectable rajomon-attributable rejection.
+
+**Verified the generated policy_param.json was mounted with init_price=200 correctly** (at `exp/socialnet/out/thicket_4/0/sched_fifo,ac_rajomon,abort_slo/policy_param.json`). So this is not a param-loading bug.
+
+**Analysis of why init_price=200 should have worked but didn't:**
+- Server new() runs `if ctx.tokens() < accumulated` where `accumulated = own_price(=init_price=200) + max_downstream(=0) = 200`.
+- Client sends ctx.tokens = `uniform[0, 285]`, avg 142. Prob(tokens < 200) ≈ 70%.
+- With should_drop=true, `before_poll` issues `Status::resource_exhausted("/EarlyReturn?src=...&reason=RajomonAdmissionRej")`.
+- e2e_deadline_guard runs first in for_each_layer! but for fresh requests the deadline isn't past — e2e check should return Ok, passing to rajomon.
+
+At least the first tens-to-hundreds of requests per RPS step should produce RajomonAdmissionRej. They don't. This suggests either:
+- A feature-flag interaction where the rajomon layer isn't actually running under `sched_fifo,ac_rajomon,abort_slo` (worth checking the AdmissionLayer cfg under abort_slo).
+- An error-propagation path that turns the rajomon Status into a different reason before it's logged.
+- e2e_deadline_guard preempting every request (perhaps via some interaction with warmup/startup phase that makes deadlines effectively always past).
+
+**This is now a code-level investigation question, not a param-tuning question.** Remaining iteration will do one more maximum-forcing attempt and stop.
+
+---
+
+## Iteration 5: Maximum activation forcing (experiment thicket_5)
+
+**Status:** Pending
+
+### Change
+Config-only. From thicket_4, push three knobs simultaneously to make server-side rejection mathematically inevitable for every request:
+- `init_price`: 200 → **500** (dominates any plausible ctx.tokens draw)
+- `tokens_left_init`: 285 → **100** (caps max possible ctx.tokens at 100; every client request has tokens ≤ 100)
+- `max_token`: 285 → **100** (matches init; no replenishment can lift tokens above init_price)
+
+With `tokens_left_init=100` and `init_price=500`, ctx.tokens is uniform `[0, 100]` and accumulated_price = 500 at every service. Every request on every hop satisfies `tokens < accumulated` → server-side should_drop=true → rajomon fires on before_poll (unless preempted by e2e_deadline_guard).
+
+### Hypothesis
+If rajomon's rejection path is mechanically wired correctly, this config must produce non-zero `RajomonAdmissionRej` events. If thicket_5's abort_reason_timeline still contains zero RajomonAdmissionRej, the wiring is broken for `sched_fifo,ac_rajomon,abort_slo` and no amount of parameter tuning will activate rajomon under this feature combination. That outcome is worth knowing.
+
+### Expected outcomes
+- Goodput will likely collapse at low RPS (rajomon should reject 100% when active).
+- `abort_reason_timeline` should show substantial `RajomonAdmissionRej` at every RPS if wiring works.
+- Alternatively, it may show zero again — definitive diagnostic that rajomon's rejection path is not reaching the ER tracker under this config.
+
+### Experiment design
+Same gen_config and policies. Single change: the three token/price knobs. Purely diagnostic, not a productive config.
+
+### Actual Outcomes (thicket_5)
+
 **Status:** _pending run_
