@@ -61,6 +61,21 @@ pub struct RajomonSharedState {
     pub max_downstream_for_method: DashMap<CowGrpcMethod, u64>,
     /// Global queue stats (single instance, not per-method).
     pub queue_stats: QueueStats,
+    // ── Diagnostic counters (reset every log_pricing_tables call) ───
+    /// Requests admitted at inbound check.
+    pub diag_admitted: AtomicU64,
+    /// Requests rejected at inbound check.
+    pub diag_rejected: AtomicU64,
+    /// Requests rejected at child-budget check.
+    pub diag_child_budget_rej: AtomicU64,
+    /// Price controller ticks where price increased.
+    pub diag_price_up_ticks: AtomicU64,
+    /// Price controller ticks where price decreased.
+    pub diag_price_down_ticks: AtomicU64,
+    /// Price controller ticks where price held (hysteresis band).
+    pub diag_price_hold_ticks: AtomicU64,
+    /// Sum of (accumulated_price - inbound_tokens) for rejected requests.
+    pub diag_token_deficit_sum: AtomicU64,
 }
 
 impl RajomonSharedState {
@@ -70,6 +85,13 @@ impl RajomonSharedState {
             downstream_prices: DashMap::new(),
             max_downstream_for_method: DashMap::new(),
             queue_stats: QueueStats::new(),
+            diag_admitted: AtomicU64::new(0),
+            diag_rejected: AtomicU64::new(0),
+            diag_child_budget_rej: AtomicU64::new(0),
+            diag_price_up_ticks: AtomicU64::new(0),
+            diag_price_down_ticks: AtomicU64::new(0),
+            diag_price_hold_ticks: AtomicU64::new(0),
+            diag_token_deficit_sum: AtomicU64::new(0),
         }
     }
 
@@ -145,15 +167,25 @@ impl RajomonSharedState {
             // The paper gives a typical range of 3-13 tokens per ms.
             let excess_us = max_us - p.latency_threshold_us;
             let increment = ((excess_us * p.price_step_up) / 1000).max(1);
+            self.diag_price_up_ticks.fetch_add(1, Ordering::Relaxed);
             own.saturating_add(increment).min(p.price_cap)
         } else if own > 0 && max_us < p.latency_threshold_us / 2 {
             // Paper: hardcoded -1 when below half-threshold.
+            self.diag_price_down_ticks.fetch_add(1, Ordering::Relaxed);
             own.saturating_sub(1)
         } else {
             // Paper: hysteresis hold band [threshold/2, threshold].
+            self.diag_price_hold_ticks.fetch_add(1, Ordering::Relaxed);
             own
         };
         self.own_price.store(new_price, Ordering::Relaxed);
+        log::trace!(
+            "Rajomon tick: max_us={} own={}->{} threshold={}",
+            max_us,
+            own,
+            new_price,
+            p.latency_threshold_us,
+        );
     }
 
     /// Exponential decay on cached downstream prices.
@@ -240,6 +272,30 @@ impl RajomonSharedState {
             "Rajomon queue_latency (peak_window_max over 5s): {} us",
             peak
         );
+        // ── Diagnostic counters (500-tick window) ──
+        let admitted = self.diag_admitted.swap(0, Ordering::Relaxed);
+        let rejected = self.diag_rejected.swap(0, Ordering::Relaxed);
+        let child_rej = self.diag_child_budget_rej.swap(0, Ordering::Relaxed);
+        let up = self.diag_price_up_ticks.swap(0, Ordering::Relaxed);
+        let down = self.diag_price_down_ticks.swap(0, Ordering::Relaxed);
+        let hold = self.diag_price_hold_ticks.swap(0, Ordering::Relaxed);
+        let deficit_sum = self.diag_token_deficit_sum.swap(0, Ordering::Relaxed);
+        let mean_deficit = if rejected > 0 {
+            deficit_sum / rejected
+        } else {
+            0
+        };
+        log::info!(
+            "Rajomon diag: admitted={} rejected={} child_budget_rej={} \
+             price_direction(up/down/hold)={}/{}/{} mean_token_deficit={}",
+            admitted,
+            rejected,
+            child_rej,
+            up,
+            down,
+            hold,
+            mean_deficit,
+        );
     }
 
     // Helper to start the background worker once
@@ -318,10 +374,15 @@ impl Layer for RajomonLayer {
         layer.inbound_tokens.store(ctx.tokens(), Ordering::Relaxed);
         if ctx.tokens() < accumulated {
             layer.should_drop = true;
+            RAJOMON_STATE.diag_rejected.fetch_add(1, Ordering::Relaxed);
+            RAJOMON_STATE
+                .diag_token_deficit_sum
+                .fetch_add(accumulated - ctx.tokens(), Ordering::Relaxed);
         } else {
             layer
                 .remaining_tokens
                 .store(ctx.tokens() - own, Ordering::Relaxed);
+            RAJOMON_STATE.diag_admitted.fetch_add(1, Ordering::Relaxed);
         }
 
         layer
@@ -361,6 +422,9 @@ impl Layer for RajomonLayer {
         let price = RAJOMON_STATE.child_price(child_method);
         let current = self.remaining_tokens.load(Ordering::Relaxed);
         if current < price {
+            RAJOMON_STATE
+                .diag_child_budget_rej
+                .fetch_add(1, Ordering::Relaxed);
             return Err(self.issue_error(Some(child_method), "RajomonChildBudgetRej"));
         }
 
