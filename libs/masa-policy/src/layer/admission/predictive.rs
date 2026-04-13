@@ -221,6 +221,9 @@ struct AdmissionState {
     log_counter: u64,
     /// AIMD-controlled admission probability [0.0, 1.0]. Starts at 1.0 (fully open).
     admit_p: f64,
+    /// Windows remaining in post-decrease cooldown. While > 0, alpha increases
+    /// are suppressed; decremented each window boundary.
+    cooldown_remaining: u32,
 }
 
 impl std::fmt::Debug for AdmissionState {
@@ -233,11 +236,19 @@ impl std::fmt::Debug for AdmissionState {
 
 /// AIMD admission controller.
 ///
-/// `admit_p` is updated per 50 ms window: multiplicative decrease (`admit_p *= beta`)
-/// when the window's ER fraction exceeds `aimd_er_threshold`; additive increase
-/// (`admit_p += alpha`) when healthy. Rejection probability is
-/// `(1 - admit_p) * exp(-idle_elapsed / tau_er)` — the exponential term provides
-/// natural phase reset when no outcomes arrive (idle traffic → admission opens).
+/// `admit_p` is updated per 50 ms window:
+/// - **Severity-scaled decrease**: `admit_p *= beta.powf(er_sample / threshold)`.
+///   At the threshold boundary effective_beta = beta; far above threshold the cut
+///   is much more aggressive.
+/// - **Proportional increase**: `admit_p += alpha * (1 - admit_p)`.  Recovery
+///   slows as admit_p approaches 1.0.
+/// - **Post-decrease cooldown**: alpha increases are suppressed for
+///   `aimd_cooldown_windows` windows after any decrease to let the feedback
+///   from the decrease arrive before recovering.
+///
+/// Rejection probability is `(1 - admit_p) * exp(-idle_elapsed / tau_er)` —
+/// the exponential term provides natural phase reset when no outcomes arrive
+/// (idle traffic → admission opens).
 #[derive(Debug)]
 pub(crate) struct PredictiveAdmission {
     state: Mutex<AdmissionState>,
@@ -253,6 +264,7 @@ impl PredictiveAdmission {
                 window_total: 0,
                 log_counter: 0,
                 admit_p: 1.0,
+                cooldown_remaining: 0,
             }),
         }
     }
@@ -279,11 +291,20 @@ impl PredictiveAdmission {
         if elapsed > 0.05 {
             let er_sample = state.er_count as f64 / state.window_total as f64;
             if er_sample > p.aimd_er_threshold {
-                // Overloaded window: multiplicative decrease.
-                state.admit_p = (state.admit_p * p.aimd_beta).max(0.0);
+                // Severity-scaled multiplicative decrease.
+                let severity = if p.aimd_er_threshold > 0.0 {
+                    er_sample / p.aimd_er_threshold
+                } else {
+                    1.0
+                };
+                state.admit_p = (state.admit_p * p.aimd_beta.powf(severity)).max(0.0);
+                state.cooldown_remaining = p.aimd_cooldown_windows;
+            } else if state.cooldown_remaining > 0 {
+                // Post-decrease cooldown: suppress alpha, decrement counter.
+                state.cooldown_remaining -= 1;
             } else {
-                // Healthy window: additive increase, capped at 1.0.
-                state.admit_p = (state.admit_p + p.aimd_alpha).min(1.0);
+                // Proportional additive increase.
+                state.admit_p = (state.admit_p + p.aimd_alpha * (1.0 - state.admit_p)).min(1.0);
             }
             state.er_last_update = now;
 
@@ -296,9 +317,10 @@ impl PredictiveAdmission {
         state.log_counter += 1;
         if state.log_counter % 1000 == 0 {
             log::info!(
-                "[ac_pred] outcomes={} admit_p={:.4}",
+                "[ac_pred] outcomes={} admit_p={:.4} cooldown={}",
                 state.log_counter,
                 state.admit_p,
+                state.cooldown_remaining,
             );
         }
     }
@@ -438,6 +460,145 @@ mod tests {
         assert!(
             admitted_after > 900,
             "idle decay should open admission after 3×tau_er, got {admitted_after}/1000"
+        );
+    }
+
+    #[test]
+    fn test_proportional_alpha_slows_near_one() {
+        let ac = PredictiveAdmission::new();
+        {
+            let mut state = ac.state.lock().unwrap();
+            state.admit_p = 0.90;
+        }
+        // One healthy window: increment = 0.05 * (1 - 0.90) = 0.005 → 0.905.
+        backdate_window(&ac);
+        ac.record_outcome(false);
+        let state = ac.state.lock().unwrap();
+        assert!(
+            state.admit_p > 0.90 && state.admit_p < 0.92,
+            "proportional alpha at admit_p=0.90 should give ~0.905, got {}",
+            state.admit_p
+        );
+    }
+
+    #[test]
+    fn test_severity_beta_aggressive_under_heavy_overload() {
+        let ac = PredictiveAdmission::new();
+        {
+            let mut state = ac.state.lock().unwrap();
+            state.admit_p = 0.50;
+        }
+        // One 100% ER window: severity = 1.0/0.10 = 10, beta^10 = 0.875^10 ≈ 0.263.
+        // admit_p = 0.50 * 0.263 ≈ 0.132.
+        backdate_window(&ac);
+        ac.record_outcome(true);
+        let state = ac.state.lock().unwrap();
+        assert!(
+            state.admit_p < 0.20,
+            "severity beta at 100% ER should cut aggressively, got {}",
+            state.admit_p
+        );
+    }
+
+    #[test]
+    fn test_severity_beta_gentle_near_threshold() {
+        let ac = PredictiveAdmission::new();
+        {
+            let mut state = ac.state.lock().unwrap();
+            state.admit_p = 0.50;
+        }
+        // Accumulate 88 successes + 12 ERs within the window, then trigger.
+        for _ in 0..88 {
+            ac.record_outcome(false);
+        }
+        for _ in 0..12 {
+            ac.record_outcome(true);
+        }
+        // er_sample = 12/101 ≈ 0.119, severity ≈ 1.19, beta^1.19 ≈ 0.853.
+        // admit_p = 0.50 * 0.853 ≈ 0.426.
+        backdate_window(&ac);
+        ac.record_outcome(false); // triggers window close
+        let state = ac.state.lock().unwrap();
+        assert!(
+            state.admit_p > 0.40 && state.admit_p < 0.50,
+            "severity beta near threshold should be gentle, got {}",
+            state.admit_p
+        );
+    }
+
+    #[test]
+    fn test_cooldown_suppresses_alpha_after_decrease() {
+        let ac = PredictiveAdmission::new();
+        {
+            let mut state = ac.state.lock().unwrap();
+            state.admit_p = 0.50;
+        }
+        // Trigger an overloaded window → cooldown_remaining = 2.
+        backdate_window(&ac);
+        ac.record_outcome(true);
+        let p_after_decrease = ac.state.lock().unwrap().admit_p;
+        assert!(p_after_decrease < 0.50);
+
+        // Two healthy windows: cooldown suppresses alpha.
+        for _ in 0..2 {
+            backdate_window(&ac);
+            ac.record_outcome(false);
+        }
+        let p_during_cooldown = ac.state.lock().unwrap().admit_p;
+        assert_eq!(
+            p_during_cooldown, p_after_decrease,
+            "admit_p should not change during cooldown"
+        );
+
+        // Third healthy window: cooldown expired, alpha fires.
+        backdate_window(&ac);
+        ac.record_outcome(false);
+        let p_after_cooldown = ac.state.lock().unwrap().admit_p;
+        assert!(
+            p_after_cooldown > p_after_decrease,
+            "admit_p should increase after cooldown expires, got {} vs {}",
+            p_after_cooldown,
+            p_after_decrease
+        );
+    }
+
+    #[test]
+    fn test_cooldown_resets_on_second_decrease() {
+        let ac = PredictiveAdmission::new();
+        {
+            let mut state = ac.state.lock().unwrap();
+            state.admit_p = 0.50;
+        }
+        // First decrease → cooldown = 2.
+        backdate_window(&ac);
+        ac.record_outcome(true);
+
+        // One healthy window → cooldown = 1.
+        backdate_window(&ac);
+        ac.record_outcome(false);
+
+        // Second decrease → cooldown resets to 2.
+        backdate_window(&ac);
+        ac.record_outcome(true);
+        let p_after_second = ac.state.lock().unwrap().admit_p;
+
+        // Two healthy windows → cooldown 2→1→0, no alpha.
+        for _ in 0..2 {
+            backdate_window(&ac);
+            ac.record_outcome(false);
+        }
+        assert_eq!(
+            ac.state.lock().unwrap().admit_p,
+            p_after_second,
+            "cooldown should reset after second decrease"
+        );
+
+        // Third healthy window → alpha fires.
+        backdate_window(&ac);
+        ac.record_outcome(false);
+        assert!(
+            ac.state.lock().unwrap().admit_p > p_after_second,
+            "admit_p should increase after reset cooldown expires"
         );
     }
 }
