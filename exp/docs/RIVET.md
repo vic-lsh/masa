@@ -449,12 +449,70 @@ With price_freq=3, only 33% of responses update the client's cached price. This 
 
 ---
 
-## Iteration 10: max_token=8000 to continue the higher-is-better trend (experiment rivet_10)
+## Iteration 9 & 10 Results
 
-**Status:** Pending
+### rivet_9 (price_freq=1): Regression ❌
+100% price propagation makes client react too aggressively. 900 RPS: 287 vs rivet_6's 328.
 
-### Change
-Config-only, modifying rivet_6:
-- `max_token`: 5000 → **8000** (accumulated 1500/8000 = 19% max rejection)
-- `tokens_left_init` / `token_update_step`: → **8000**
-- All else same as rivet_6
+### rivet_10 (max_token=8000): Neutral
+
+| RPS | rivet_6 (max=5000) | rivet_10 (max=8000) | Delta |
+|-----|---------------------|----------------------|-------|
+| 300 | 298 | 302 | +4 |
+| 500 | 500 | 504 | +4 |
+| 700 | 697 | 698 | +1 |
+| 900 | 328 | 327 | -1 |
+| 1100 | 146 | 156 | +10 |
+| 1300 | 88 | 111 | +23 |
+
+Essentially equivalent to rivet_6. Higher max_token helps slightly at deep overload but 900 RPS is unchanged. The bottleneck at 900 is system capacity, not max rejection rate.
+
+---
+
+## Final Summary (10 iterations)
+
+### Best config: rivet_6
+```json
+{
+  "latency_threshold_us": 25343,
+  "price_update_rate_ms": 25,
+  "price_step_up": 1,
+  "price_cap": 500,
+  "price_freq": 3,
+  "tokens_left_init": 5000,
+  "token_update_rate_ms": 1,
+  "token_update_step": 5000,
+  "max_token": 5000
+}
+```
+
+### Progress from baseline to best
+
+| RPS | Baseline (no cap) | Best (rivet_6) | Improvement |
+|-----|-------------------|----------------|-------------|
+| 300 | 298 | 298 | — |
+| 500 | 497 | 500 | — |
+| 700 | 630 | 697 | **+67** |
+| 900 | 69 | **328** | **+259 (4.8×)** |
+| 1100 | 30 | **146** | **+116 (4.9×)** |
+| 1300 | 31 | **88** | **+57 (2.8×)** |
+
+### What each parameter does
+
+| Parameter | Tuning direction | Effect |
+|-----------|-----------------|--------|
+| `latency_threshold_us` | Keep original (25ms) | Provides essential early backpressure; raising it causes warm-up cascades |
+| `price_step_up` | Lower (4→1) | Slower climb prevents overshoot; critical for stability |
+| `price_cap` | Add (∞→500) | Limits per-service price; prevents accumulated price from exceeding max_token |
+| `max_token` | Raise (2000→5000) | Provides headroom for accumulated price across multi-hop call chain |
+| `price_freq` | Keep original (3) | 33% propagation provides natural smoothing; 100% is too reactive |
+
+### What was tried and failed
+- Raising latency_threshold to 100-200ms (rivet_1, rivet_2): warm-up cascade at reservation
+- price_cap alone without raised max_token (rivet_4): accumulated price still exceeds max_token
+- Lower max_token (3000, 4000) for more rejection (rivet_7, rivet_8): trades 900 RPS for 1100+ but net worse
+- price_freq=1 (rivet_9): too reactive, increases rejection at moderate overload
+- max_token=8000 (rivet_10): negligible improvement over 5000, bottleneck is elsewhere
+
+### Fundamental limitation
+Rajomon's config-only ceiling appears to be ~328 goodput at 900 RPS (~36% of offered load). Reference baselines from hotel_search_v3: tailclipper,abort_slo achieves 645 at 900 and pred+ac_pred achieves 699. The gap is architectural — rajomon's blind admission control (reject at the door) can't match informed scheduling (process in order, drop confirmed-late). Algorithmic changes would be needed to close this gap.
