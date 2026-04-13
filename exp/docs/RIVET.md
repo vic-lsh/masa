@@ -259,3 +259,59 @@ With max_token=5000, even when both frontend and reservation reach price_cap=100
 1. 300-700 RPS: unchanged (~300, ~500, ~695 goodput)
 2. 900 RPS: major improvement from 83 to ~400-500 
 3. 1100-1300 RPS: improvement from 30-39 to 200+
+
+### Actual Outcomes (rivet_5)
+
+**Status:** Regression ❌ (negligible improvement)
+
+| RPS | rivet_4 (max=2000) | rivet_5 (max=5000) | Delta |
+|-----|---------------------|---------------------|-------|
+| 300 | 300 | 294 | -6 |
+| 500 | 500 | 492 | -8 |
+| 700 | 695 | 694 | -1 |
+| 900 | 83 | 107 | +24 |
+| 1100 | 39 | 31 | -8 |
+| 1300 | 30 | 29 | -1 |
+
+Raising max_token to 5000 barely helped. At 900 RPS: 618/s frontend rejections = 69%, nearly unchanged from rivet_4's 71%. The max_token increase should limit rejection to 40% (accumulated/max_token = 2000/5000), but actual rejection is 69%.
+
+**Root cause: Accumulated price exceeds 2000.** Hotel Search has a 3+ hop critical path (frontend → search → {geo, rate}; frontend → reservation). With price_cap=1000 per service and ~3 contributing services, accumulated_price ≈ 3000. With max_token=5000, rejection = 3000/5000 = 60%. This matches the observed 69% (with some additional variance from downstream dynamics).
+
+**Fundamental insight:** Rajomon's price propagation creates accumulated prices proportional to call graph depth. For Hotel Search (~3 hops), max_token would need to be ~4x the sum of all price_caps to achieve reasonable (<30%) max rejection. This requires very careful tuning specific to each application's call graph topology.
+
+---
+
+## Summary of RIVET Track
+
+### What we learned
+
+1. **The baseline (hotel_search_v4) had cliff behavior at ~800 RPS** — good at 700, catastrophic at 900+. The original 703 goodput at 700 was somewhat lucky (rivet_3 got 630, rivet_4 got 695 with same params).
+
+2. **Rajomon's unbounded price growth is the primary cliff driver.** Without price_cap, price exceeds max_token in <1 second when overloaded, causing 100% rejection.
+
+3. **Raising latency_threshold backfires.** The low threshold (25ms) provides essential early backpressure that protects downstream services (especially reservation) from warm-up cascades. Raising it to 100-200ms removes this protection and makes things worse (rivet_1, rivet_2).
+
+4. **price_cap helps at moderate load but doesn't solve the cliff.** Adding price_cap=1000 improved 700 RPS from 630→695 but barely dented 900 RPS (69→83). The reason: accumulated price across the call chain exceeds a single service's price_cap.
+
+5. **Accumulated price inflation is the core structural issue.** With ~3 services in the critical path, accumulated_price ≈ 3 × price_cap. Even with max_token 2.5× higher (5000), rejection rate at 900 RPS stays ~69%.
+
+### Parameter tuning levers explored
+
+| Parameter | Baseline | Best | Effect |
+|-----------|----------|------|--------|
+| latency_threshold_us | 25343 | 25343 | Must keep LOW — protects warm-up |
+| price_cap | u64::MAX | 1000 | Small improvement at 700 RPS |
+| max_token | 2000 | 5000 | Negligible improvement |
+
+### Abort reason verification
+All rejections confirmed 100% rajomon-driven via `abort_reason_timeline.csv`:
+- **`RajomonAdmissionRej`**: ~640-960/s at overloaded RPS — server rejects when `ctx.tokens < accumulated_price`
+- **`RajomonChildBudgetRej`**: ~280/s at 1100-1300 RPS — admitted requests can't afford downstream child calls (e.g., frontend → reservation). This secondary mechanism wastes work: the request passes initial admission but fails mid-flight.
+- No other abort reasons (no SLO-based aborts, no timeouts) — this is purely rajomon.
+
+### Open hypotheses (not tested)
+- Reduce price_cap to ~200-300 per service so accumulated stays well under max_token=5000 (would give ~15-20% max rejection)
+- Use per-service-specific price_cap calibrated to call graph depth
+- Algorithmic change: cap accumulated_price rather than individual own_price
+- Algorithmic change: faster price decay (not hardcoded to -1/tick)
+- Algorithmic change: address RajomonChildBudgetRej wasted work — if a request was admitted at the frontend, it should be able to complete its children without mid-flight rejection
