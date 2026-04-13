@@ -310,8 +310,27 @@ All rejections confirmed 100% rajomon-driven via `abort_reason_timeline.csv`:
 - No other abort reasons (no SLO-based aborts, no timeouts) — this is purely rajomon.
 
 ### Open hypotheses (not tested)
-- Reduce price_cap to ~200-300 per service so accumulated stays well under max_token=5000 (would give ~15-20% max rejection)
-- Use per-service-specific price_cap calibrated to call graph depth
-- Algorithmic change: cap accumulated_price rather than individual own_price
-- Algorithmic change: faster price decay (not hardcoded to -1/tick)
-- Algorithmic change: address RajomonChildBudgetRej wasted work — if a request was admitted at the frontend, it should be able to complete its children without mid-flight rejection
+- Reduce price_cap to ~200-300 per service so accumulated stays well under max_token=5000
+
+---
+
+## Iteration 6: Lower price_cap + slower climb (experiment rivet_6)
+
+**Status:** Pending
+
+### Change
+Config-only, building on rivet_5 (max_token=5000):
+- `price_cap`: 1000 → **500** (accumulated ≈ 3×500 = 1500, rejection = 1500/5000 = 30% max)
+- `price_step_up`: 4 → **1** (slowest climb, prevents oscillation)
+- Keep: threshold=25343, rate=25ms, max_token=5000, init/refill=5000
+
+### Hypothesis
+The rivet_5 cliff was because accumulated_price (3×1000=3000) was too close to max_token (5000), giving ~60% rejection. By halving price_cap to 500, accumulated maxes at ~1500 → 30% max rejection. Combined with price_step_up=1, the system should approach equilibrium smoothly instead of overshooting.
+
+At 900 RPS with 30% rejection: ~630 admitted (below ~800 saturation → good latency → good goodput).
+At 1300 RPS: ~910 admitted (still above saturation → latency degrades but not cliff).
+
+### Expected outcomes:
+1. 300-700 RPS: unchanged (~300, ~500, ~695)
+2. 900 RPS: major improvement from 107 to 400-600
+3. 1100-1300 RPS: improvement from 30 to 100-300
