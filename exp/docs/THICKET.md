@@ -114,4 +114,61 @@ Identical gen_config and policies as thicket_1. Only `policy_param.json` changes
 
 ### Actual Outcomes (thicket_2)
 
+**Status:** Still DORMANT ❌ (regression + zero rajomon activity)
+
+| RPS | thicket_2 target | thicket_1 target | tailclipper (thicket_2) | Δ vs baseline |
+|-----|-----|-----|-----|-----|
+| 800 | 799.8 | 799.8 | 799.9 | -0.1 |
+| 1200 | 1190.4 | 1193.3 | 1184.9 | +5.5 |
+| 1400 | 1330.0 | 1381.9 | 1317.9 | +12.2 |
+| 1600 | 846.4 | 879.3 | 873.1 | -26.7 |
+| 1800 | 963.4 | 1161.4 | 1436.7 | -473.3 |
+| 2000 | 1382.4 | 1966.1 | 1871.2 | -488.8 |
+| 2500 | 899.2 | 968.6 | 913.5 | -14.3 |
+| 3000 | 66.1 | 137.0 | 1032.2 | -966.1 |
+
+**Rajomon activity: STILL DORMANT.** abort_reason_timeline contains only E2EDeadline rows. Dropping threshold 25343→5000us did not produce a single RajomonAdmissionRej or RajomonChildBudgetRej event.
+
+**Why the threshold knob alone can't activate rajomon here** (from code dive):
+- Server rejection condition: `ctx.tokens() < accumulated_price` where `accumulated = own_price + max(downstream_prices)`.
+- `own_price` starts at `init_price=0` and only climbs when `queue_latency > threshold` (per-hop, at each service).
+- `ctx.tokens()` is a uniform random draw from `[0, client_bucket]` attached by the client.
+- If per-hop queue latency never exceeds threshold, every service's `own_price` stays at 0, `accumulated=0`, every request trivially admitted regardless of threshold.
+- Socialnet's `abort_slo` drains queues aggressively at 50ms SLO: per-hop queue latency likely caps well below 5ms even at 3000 RPS. Rajomon's trigger signal is simply absent. Lowering threshold further won't help — the queue latency isn't there.
+
+**Regression explanation:** thicket_2 regressed vs thicket_1 despite rajomon being inactive in both. This is run-to-run variance on sched_fifo at socialnet's bistable region (1600-2000 RPS; note tailclipper also moved from 1436→991 between the two runs). Not informative about rajomon.
+
+**Decision:** Switch away from "tune threshold to trigger latency-based price". Next iteration adopts a differently-tuned config where activation is more plausible.
+
+---
+
+## Iteration 3: Adopt rajomon_optimal Bayesian-tuned params (experiment thicket_3)
+
+**Status:** Pending
+
+### Change
+Replace `policy_param.json` with the `rajomon_optimal` config (from commit 3e935f77, "Bayesian-optimized values" previously placed in `exp/socialnet/in/rajomon_optimal/`):
+- `latency_threshold_us`: 5000 → **10647** (slightly higher than thicket_2 but still 1/5 of SLO)
+- `price_update_rate_ms`: 25 → **4** (6× faster price adjustment)
+- `price_step_up`: 1 → **20** (much steeper climb when latency exceeds threshold)
+- `price_step_down`: absent → **4** (non-default decay rate)
+- `price_cap`: 500 → **66**
+- `price_freq`: 3 → **5**
+- `tokens_left_init` / `max_token`: 5000 → **285** (tiny client bucket)
+- `token_update_step`: 5000 → **3** (very slow refill)
+- `token_update_rate_ms`: 1 → **4**
+
+### Hypothesis
+The Bayesian-tuned `rajomon_optimal` config was optimized against socialnet (commit message explicit). Its knobs favor fast, aggressive price climb (`step_up=20`, `rate=4ms`) over large buckets — this should drive `own_price` up quickly once any queue latency >10.6ms is observed, and the tiny `max_token=285` means even a modest accumulated price yields real rejection probability. This is the most plausible single config in the repo for getting rajomon to actually fire on socialnet.
+
+### Expected outcomes
+1. **Primary (validation):** non-zero `RajomonAdmissionRej` rows in abort_reason_timeline at some RPS ≥ 1400. If still zero, we have a wiring concern to investigate.
+2. If active: goodput profile will shift — possibly lower at low RPS (unnecessary rejections from aggressive climb) but recovery at 2500-3000 (admission gate blunts abort_slo cascade).
+3. Abort-reason timeline should show `RajomonAdmissionRej` dominant at 2500-3000 (the loads where thicket_1/2 hit the cliff).
+
+### Experiment design
+Same gen_config and policies as thicket_1/2. Only policy_param.json changes. Allows direct comparison across all three thicket runs.
+
+### Actual Outcomes (thicket_3)
+
 **Status:** _pending run_
