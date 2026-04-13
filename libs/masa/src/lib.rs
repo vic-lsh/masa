@@ -72,8 +72,8 @@ pub fn update_rajomon_price(method: &tonic::CowGrpcMethod, price: u64) {
     masa_policy::CLIENT_TOKEN_BUCKET.update_price(method, price);
 }
 
-/// Maximum token value for Rajomon admission control (runtime-configurable).
+/// Initial token value for Rajomon admission control (runtime-configurable).
 #[cfg(feature = "ac_rajomon")]
-pub fn max_token() -> u64 {
-    masa_policy::max_token()
+pub fn tokens_left_init() -> u64 {
+    masa_policy::PolicyParams::global().rajomon.tokens_left_init
 }

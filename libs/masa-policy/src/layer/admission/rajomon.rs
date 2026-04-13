@@ -168,7 +168,7 @@ impl RajomonSharedState {
             let excess_us = max_us - p.latency_threshold_us;
             let increment = ((excess_us * p.price_step_up) / 1000).max(1);
             self.diag_price_up_ticks.fetch_add(1, Ordering::Relaxed);
-            own.saturating_add(increment).min(p.price_cap)
+            own.saturating_add(increment)
         } else if own > 0 && max_us < p.latency_threshold_us / 2 {
             // Paper: hardcoded -1 when below half-threshold.
             self.diag_price_down_ticks.fetch_add(1, Ordering::Relaxed);
@@ -698,12 +698,12 @@ impl ClientTokenBucket {
         }
     }
 
-    /// Replenish token pool by `token_update_step`, capped at `max_token`.
+    /// Replenish token pool by `token_update_step`.
     pub fn replenish(&self) {
         let p = &PolicyParams::global().rajomon;
         loop {
             let current = self.tokens_left.load(Ordering::Relaxed);
-            let new_val = (current + p.token_update_step).min(p.max_token);
+            let new_val = current.saturating_add(p.token_update_step);
             if self
                 .tokens_left
                 .compare_exchange_weak(current, new_val, Ordering::Relaxed, Ordering::Relaxed)
@@ -760,16 +760,11 @@ mod tests {
 
     // Default parameter values matching PolicyParams defaults.
     // Tests verify algorithmic behaviour with these specific values.
-    // NOTE: `price_step_down` is intentionally not referenced — under the
-    // paper's algorithm decay is hardcoded to -1 per tick (see §10.4 in
-    // 3rd_party/rajomon/RUST_PORT_ALIGNMENT.md).
     const LATENCY_THRESHOLD_US: u64 = 5_000;
     const INIT_PRICE: u64 = 0;
     const PRICE_STEP_UP: u64 = 8;
-    const PRICE_CAP: u64 = u64::MAX;
     const TOKENS_LEFT_INIT: u64 = 10;
     const TOKEN_UPDATE_STEP: u64 = 5;
-    const MAX_TOKEN: u64 = 100;
 
     /// Mutex to serialize tests that modify the global RAJOMON_STATE.own_price,
     /// since it's a single global value shared across all test threads.
@@ -1129,57 +1124,58 @@ mod tests {
     /// returned value should fall within the bucket balance and not equal the
     /// balance with any deterministic regularity. We probe the distribution
     /// with multiple draws and assert at least one falls strictly below the
-    /// max — a deterministic "all" strategy would always return `current`.
+    /// current level — a deterministic "all" strategy would always return
+    /// `current`.
     #[test]
     fn test_client_token_spending_is_randomized() {
         let bucket = ClientTokenBucket::new();
-        // Refill to MAX_TOKEN so each draw has a wide [0, MAX_TOKEN] range.
-        for _ in 0..((MAX_TOKEN / TOKEN_UPDATE_STEP) + 2) {
+        // Refill so the bucket has a wide range for draws.
+        let refills = 22; // enough to build up a meaningful balance
+        for _ in 0..refills {
             bucket.replenish();
         }
-        assert_eq!(bucket.tokens_left(), MAX_TOKEN);
+        let level = bucket.tokens_left();
+        assert!(level > TOKENS_LEFT_INIT);
 
         // After 50 draws against a high bucket level (replenished each time),
-        // a uniform-random strategy will produce values strictly below MAX
-        // with overwhelming probability. The deterministic "all" strategy
-        // would never produce such a value.
+        // a uniform-random strategy will produce values strictly below the
+        // current level with overwhelming probability.
         let mut saw_strict_below = false;
         let method = CowGrpcMethod::new("svc", "m");
         for _ in 0..50 {
-            // Top up the bucket between draws so the balance stays near MAX.
-            for _ in 0..((MAX_TOKEN / TOKEN_UPDATE_STEP) + 2) {
+            // Top up the bucket between draws.
+            for _ in 0..refills {
                 bucket.replenish();
             }
+            let current = bucket.tokens_left();
             let tok = bucket.try_acquire(&method).expect("should succeed");
-            assert!(tok <= MAX_TOKEN);
-            if tok < MAX_TOKEN {
+            assert!(tok <= current);
+            if tok < current {
                 saw_strict_below = true;
             }
         }
         assert!(
             saw_strict_below,
-            "uniform-random spending should produce at least one tok < MAX_TOKEN over 50 draws"
+            "uniform-random spending should produce at least one tok < current over 50 draws"
         );
     }
 
-    /// `replenish` saturates at `max_token`. After enough refills, the bucket
-    /// balance equals `MAX_TOKEN` (independent of randomized spending).
+    /// `replenish` accumulates tokens.
     #[test]
-    fn test_client_replenish_caps_at_max() {
+    fn test_client_replenish_accumulates() {
         let bucket = ClientTokenBucket::new();
-        // Replenish enough times to reach MAX_TOKEN from TOKENS_LEFT_INIT
-        // and exceed it (to verify the cap clamps it back to MAX_TOKEN).
-        for _ in 0..((MAX_TOKEN - TOKENS_LEFT_INIT) / TOKEN_UPDATE_STEP + 5) {
+        for _ in 0..25 {
             bucket.replenish();
         }
-        assert_eq!(bucket.tokens_left(), MAX_TOKEN);
+        assert!(bucket.tokens_left() > TOKENS_LEFT_INIT);
     }
 
     #[test]
     fn test_client_rate_limits_when_insufficient() {
         let bucket = ClientTokenBucket::new();
         let method = CowGrpcMethod::new("svc", "method");
-        bucket.update_price(&method, MAX_TOKEN + 1);
+        // Set price higher than the bucket balance to force rate limiting.
+        bucket.update_price(&method, TOKENS_LEFT_INIT + TOKEN_UPDATE_STEP * 100 + 1);
 
         let result = bucket.try_acquire(&method);
         assert!(result.is_none());
