@@ -21,6 +21,7 @@ from .goodput import (
     _plot_early_return_breakdown,
     compute_early_return_breakdown,
     compute_early_return_last_child_breakdown,
+    plot_abort_reason_timeline,
 )
 from .util import (
     _read_request_csv,
@@ -148,7 +149,9 @@ def _load_policy_data(policy_dir: Path, warmup_sec: float) -> Dict[float, pd.Dat
             print(f"Warning: missing e2e_latency_us in {csv_path}")
             continue
 
-        df = filter_excluded_errors(df)
+        # NOTE: do not drop EarlyReturn/ClientTimeout rows here. Downstream
+        # compute paths (goodput, latency percentiles, CDF) filter them out
+        # locally, while early-return and abort-reason plots need those rows.
         df = _filter_after_warmup(df, warmup_sec, csv_path)
         if df.empty:
             continue
@@ -824,6 +827,16 @@ def generate_plots(args) -> None:
             rps_sequence,
             policy_data,
             duration_sec=duration_sec,
+        )
+        plot_abort_reason_timeline(
+            str(iteration_output / "abort_reason_timeline.png"),
+            rps_sequence,
+            list(policies),
+            policy_data,
+            duration_sec=duration_sec,
+            data_dir=str(data_dir),
+            iteration=iteration,
+            warmup_sec=warmup_sec,
         )
 
         # Plot early return breakdowns
