@@ -16,9 +16,11 @@ from unittest.mock import Mock, patch
 from exp_runner.runner.apps.hotel import (
     HotelApp,
     HotelBuilder,
+)
+from exp_runner.runner.apps.utils import (
+    normalize_features_to_tag,
     resolve_policy_params,
 )
-from exp_runner.runner.apps.utils import normalize_features_to_tag
 
 
 class TestNormalizeFeaturesToTag:
