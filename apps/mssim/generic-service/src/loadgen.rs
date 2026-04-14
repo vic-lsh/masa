@@ -436,15 +436,23 @@ async fn print_stats_task(
     let mut last_ok = 0;
     let mut last_err = 0;
     let mut last_throttled = 0;
+    // `secs` is a 1-based tick counter within the current RPS period. The
+    // exp_runner plotter (`_parse_loadgen_client_shed` in
+    // exp_runner/runner/plotting/goodput.py) relies on `secs=1` to
+    // demarcate period boundaries and on the same line carrying
+    // `client_shed=<N>`. See the wire-contract doc on that function.
+    let mut secs: u64 = 0;
     let mut ticker = tokio::time::interval(stats_interval);
     let mut latency_buffer = Vec::new();
     loop {
         tokio::select! {
             _ = ticker.tick() => {
+                secs += 1;
                 let sent = stats.sent.load(Ordering::Relaxed);
                 let ok = stats.ok.load(Ordering::Relaxed);
                 let err = stats.err.load(Ordering::Relaxed);
                 let throttled = stats.throttled.load(Ordering::Relaxed);
+                let client_shed = stats.client_shed.load(Ordering::Relaxed);
                 let percentiles = {
                     if latency_buffer.is_empty() {
                         None
@@ -460,7 +468,8 @@ async fn print_stats_task(
                     None => ("n/a".to_string(), "n/a".to_string(), "n/a".to_string(), "n/a".to_string()),
                 };
                 tracing::info!(
-                    "[stats] sent={} (+{}), ok={} (+{}), err={} (+{}), throttled={} (+{}), p50={}, p90={}, p95={}, p99={}",
+                    "[stats] secs={}, sent={} (+{}), ok={} (+{}), err={} (+{}), throttled={} (+{}), client_shed={}, p50={}, p90={}, p95={}, p99={}",
+                    secs,
                     sent,
                     sent - last_sent,
                     ok,
@@ -469,6 +478,7 @@ async fn print_stats_task(
                     err - last_err,
                     throttled,
                     throttled - last_throttled,
+                    client_shed,
                     p50_str,
                     p90_str,
                     p95_str,
