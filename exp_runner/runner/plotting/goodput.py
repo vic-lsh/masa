@@ -926,6 +926,7 @@ def _plot_all_api_goodput_clean(
         else f"{title} - Aggregated"
     )
     ax1.legend(ncols=3, frameon=False, loc="upper left")
+    ax1.set_ylim(bottom=0)
 
     fig1.tight_layout()
     fig1.savefig(aggregated_path, dpi=300, bbox_inches="tight")
