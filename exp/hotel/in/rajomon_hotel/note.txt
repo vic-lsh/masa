@@ -1,0 +1,4 @@
+This experiment the Rajomon (admission control) with different types of scheduler including fifo, tailclipper, and our priority scheduler.
+As Rajomon use the queue latency as signal, lower price up step or token replenish step will lead to conservative admission decision.
+With our current configuration from 50 iterations of bayesian optimization, we conclude that scheduler will not cause major improvment in the goodput.
+This is because the queue does not build and system is under-utlized.
