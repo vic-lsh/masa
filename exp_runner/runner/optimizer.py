@@ -94,7 +94,9 @@ def sample_params(trial: optuna.Trial) -> dict:
 def compute_objective(
     out_dir: Path,
     policy: str,
-    gen_config: dict,
+    apis: list,
+    slos: list,
+    rps_values: list,
     penalty_weight: float = 10.0,
 ) -> float:
     """Compute the optimization objective from experiment results.
@@ -104,16 +106,14 @@ def compute_objective(
     Args:
         out_dir: Experiment output directory (contains 0/<policy>/r<RPS>_<API>.csv)
         policy: Policy string (feature flags)
-        gen_config: gen_config dict with Apis, Slos, Rps keys
+        apis: API names to aggregate over (per-trace name for mssim)
+        slos: Parallel list of SLOs in microseconds, one per API
+        rps_values: RPS levels swept in the experiment
         penalty_weight: Multiplier for worst p99 SLO violation (in seconds)
 
     Returns:
         Objective value (higher is better). Large negative on failure.
     """
-    apis = gen_config["Apis"]
-    slos = gen_config["Slos"]
-    rps_values = gen_config["Rps"]
-
     api_to_slo = dict(zip(apis, slos))
 
     total_goodput = 0.0
@@ -346,15 +346,35 @@ class RajomonOptimizer:
             return -1e9
 
         # Compute objective
-        gen_config = self._build_gen_config()
+        apis, slos = self._resolve_apis_and_slos()
         objective = compute_objective(
             config.out_dir,
             self.config.policy,
-            gen_config,
+            apis,
+            slos,
+            self.rps_sweep,
             self.config.penalty_weight,
         )
 
         return objective
+
+    def _resolve_apis_and_slos(self) -> tuple[list, list]:
+        """Return (apis, slos_us) for the current app.
+
+        hotel/socialnet: read from gen_config Apis/Slos.
+        mssim: derive one api per callgraph_dir basename, with a single
+        global slo from app_config["slo_ms"] (converted to microseconds).
+        """
+        app_name = self.app_plugin.get_app_name()
+        if app_name == "mssim":
+            app_config = self.base_config.app_config
+            apis = [Path(d).name for d in app_config["callgraph_dirs"]]
+            slo_us = int(app_config["slo_ms"]) * 1000
+            slos = [slo_us] * len(apis)
+            return apis, slos
+
+        gen_config = self.base_config.gen_config
+        return list(gen_config["Apis"]), list(gen_config["Slos"])
 
     def _log_trial(
         self, trial_number: int, params: dict, objective: float, is_best: bool
