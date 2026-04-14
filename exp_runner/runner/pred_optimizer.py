@@ -79,6 +79,7 @@ EMBER_WINNER_PARAMS: dict = {
 
 # ── Parameter sampling ────────────────────────────────────────────────────────
 
+
 def sample_params(trial: optuna.Trial) -> dict:
     """Sample PredParams from an Optuna trial.
 
@@ -113,7 +114,10 @@ def sample_params_from_values(values: dict) -> dict:
 
 # ── Windowed goodput ──────────────────────────────────────────────────────────
 
-def compute_windowed_goodput(df: "pd.DataFrame", window_secs: float = 5.0) -> list[float]:
+
+def compute_windowed_goodput(
+    df: "pd.DataFrame", window_secs: float = 5.0
+) -> list[float]:
     """Split a request CSV into time windows and return per-window goodput (req/s).
 
     Uses start_at (microseconds) to assign requests to windows.  Only requests
@@ -152,6 +156,7 @@ def compute_windowed_goodput(df: "pd.DataFrame", window_secs: float = 5.0) -> li
 
 
 # ── Objective function ────────────────────────────────────────────────────────
+
 
 def _score_rps(
     windows: list[float],
@@ -259,22 +264,23 @@ def compute_pred_objective(
 
 # ── Optimizer ─────────────────────────────────────────────────────────────────
 
+
 @dataclass
 class PredOptimizerConfig:
     """Configuration for the predictive-admission parameter optimizer."""
 
     app: str
-    experiment_base: str       # Existing experiment to copy topology from
-    policy: str                # e.g., "sched_pred,ac_pred,abort_slack,est_mean_var"
+    experiment_base: str  # Existing experiment to copy topology from
+    policy: str  # e.g., "sched_pred,ac_pred,abort_slack,est_mean_var"
     saturation_rps: int
     n_iterations: int = 30
-    objective_mode: str = "sharpe"    # "sharpe" | "floor" | "penalized"
+    objective_mode: str = "sharpe"  # "sharpe" | "floor" | "penalized"
     stability_weight: float = 0.3
     window_secs: float = 5.0
     floor_percentile: float = 10.0
     warm_start_path: Optional[Path] = None  # Previous best_params.json
     warmup_secs: int = 15
-    duration_secs: int = 45           # Longer than Rajomon — need stability signal
+    duration_secs: int = 45  # Longer than Rajomon — need stability signal
     output_path: Optional[Path] = None
 
 
@@ -363,19 +369,24 @@ class PredOptimizer:
         try:
             result = subprocess.run(
                 ["docker", "ps", "-aq", "--filter", f"name={pattern}"],
-                capture_output=True, text=True, check=False,
+                capture_output=True,
+                text=True,
+                check=False,
             )
             container_ids = result.stdout.strip().split()
             if container_ids and container_ids[0]:
                 logger.info(f"Removing {len(container_ids)} stale optimizer containers")
                 subprocess.run(
                     ["docker", "rm", "-f", *container_ids],
-                    capture_output=True, check=False,
+                    capture_output=True,
+                    check=False,
                 )
 
             result = subprocess.run(
                 ["docker", "network", "ls", "--filter", f"name={pattern}", "-q"],
-                capture_output=True, text=True, check=False,
+                capture_output=True,
+                text=True,
+                check=False,
             )
             network_ids = result.stdout.strip().split()
             if network_ids and network_ids[0]:
@@ -383,7 +394,8 @@ class PredOptimizer:
                 for nid in network_ids:
                     subprocess.run(
                         ["docker", "network", "rm", nid],
-                        capture_output=True, check=False,
+                        capture_output=True,
+                        check=False,
                     )
         except Exception as e:
             logger.warning(f"Docker cleanup failed (non-fatal): {e}")
@@ -442,7 +454,9 @@ class PredOptimizer:
         self._cleanup_trial_dirs(exp_name, config.out_dir)
         return objective
 
-    def _log_trial(self, trial_number: int, params: dict, objective: float, is_best: bool) -> None:
+    def _log_trial(
+        self, trial_number: int, params: dict, objective: float, is_best: bool
+    ) -> None:
         write_header = not self.log_csv_path.exists()
         fieldnames = ["trial", "objective", "is_best"] + sorted(params.keys())
         row = {"trial": trial_number, "objective": objective, "is_best": is_best}
@@ -490,10 +504,14 @@ class PredOptimizer:
                     warm = json.load(f)
                 if "pred" in warm:
                     warm = warm["pred"]
-                warm_filtered = {k: v for k, v in warm.items() if k in DEFAULT_PRED_PARAMS}
+                warm_filtered = {
+                    k: v for k, v in warm.items() if k in DEFAULT_PRED_PARAMS
+                }
                 if warm_filtered:
                     study.enqueue_trial(warm_filtered)
-                    logger.info(f"Enqueued warm-start from {self.config.warm_start_path}")
+                    logger.info(
+                        f"Enqueued warm-start from {self.config.warm_start_path}"
+                    )
             except Exception as e:
                 logger.warning(f"Failed to load warm-start params: {e}")
 
@@ -530,7 +548,9 @@ class PredOptimizer:
         remaining = max(0, self.config.n_iterations - completed)
 
         if completed > 0:
-            logger.info(f"Resuming from {completed} completed trials, {remaining} remaining")
+            logger.info(
+                f"Resuming from {completed} completed trials, {remaining} remaining"
+            )
             try:
                 bt = study.best_trial
                 best_objective = bt.value
@@ -567,7 +587,9 @@ class PredOptimizer:
             if is_best:
                 best_objective = objective
                 best_params = params
-                logger.info(f"  Score: {objective:.4f} ** NEW BEST ** ({trial_elapsed:.1f}s)")
+                logger.info(
+                    f"  Score: {objective:.4f} ** NEW BEST ** ({trial_elapsed:.1f}s)"
+                )
             else:
                 logger.info(
                     f"  Score: {objective:.4f} (best: {best_objective:.4f}) ({trial_elapsed:.1f}s)"
