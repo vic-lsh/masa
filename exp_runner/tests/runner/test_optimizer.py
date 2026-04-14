@@ -67,12 +67,6 @@ class TestComputeObjective:
         slos = [200000, 100000]  # 200ms, 100ms in microseconds
         rps_values = [1000]
 
-        gen_config = {
-            "Apis": apis,
-            "Slos": slos,
-            "Rps": rps_values,
-        }
-
         # Create directory structure
         policy_dir = tmp_path / "0" / policy
         policy_dir.mkdir(parents=True)
@@ -106,7 +100,9 @@ class TestComputeObjective:
         res_df = pd.DataFrame(res_data)
         res_df.to_csv(policy_dir / "r1000_Reservation.csv", index=False)
 
-        objective = compute_objective(tmp_path, policy, gen_config, penalty_weight=10.0)
+        objective = compute_objective(
+            tmp_path, policy, apis, slos, rps_values, penalty_weight=10.0
+        )
 
         # Should have positive goodput and a penalty for Reservation p99 violation
         # Reservation p99 ~ 150000, SLO = 100000, violation = 50000us = 0.05s
@@ -120,38 +116,23 @@ class TestComputeObjective:
     def test_empty_data(self, tmp_path):
         """Returns large negative value on missing data."""
         policy = "sched_slo,ac_rajomon,abort_slo"
-        gen_config = {
-            "Apis": ["Search"],
-            "Slos": [200000],
-            "Rps": [1000],
-        }
 
         # Don't create any CSVs
         (tmp_path / "0" / policy).mkdir(parents=True)
 
-        objective = compute_objective(tmp_path, policy, gen_config)
+        objective = compute_objective(tmp_path, policy, ["Search"], [200000], [1000])
         assert objective == -1e9
 
     def test_missing_directory(self, tmp_path):
         """Returns large negative value when policy dir doesn't exist."""
         policy = "sched_slo,ac_rajomon,abort_slo"
-        gen_config = {
-            "Apis": ["Search"],
-            "Slos": [200000],
-            "Rps": [1000],
-        }
 
-        objective = compute_objective(tmp_path, policy, gen_config)
+        objective = compute_objective(tmp_path, policy, ["Search"], [200000], [1000])
         assert objective == -1e9
 
     def test_excludes_early_return_errors(self, tmp_path):
         """EarlyReturn errors should be filtered from goodput and p99."""
         policy = "sched_slo,ac_rajomon,abort_slo"
-        gen_config = {
-            "Apis": ["Search"],
-            "Slos": [200000],
-            "Rps": [1000],
-        }
 
         policy_dir = tmp_path / "0" / policy
         policy_dir.mkdir(parents=True)
@@ -169,7 +150,9 @@ class TestComputeObjective:
         df = pd.DataFrame(data)
         df.to_csv(policy_dir / "r1000_Search.csv", index=False)
 
-        objective = compute_objective(tmp_path, policy, gen_config, penalty_weight=10.0)
+        objective = compute_objective(
+            tmp_path, policy, ["Search"], [200000], [1000], penalty_weight=10.0
+        )
 
         # The 5 EarlyReturn requests with latency 300000 should be excluded
         # Only the 5 good requests with latency 50000 should count
