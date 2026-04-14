@@ -436,12 +436,15 @@ async fn print_stats_task(
     let mut last_ok = 0;
     let mut last_err = 0;
     let mut last_throttled = 0;
+    let mut last_client_shed = 0;
     // `secs` is a 1-based tick counter within the current RPS period. The
     // exp_runner plotter (`_parse_loadgen_client_shed` in
     // exp_runner/runner/plotting/goodput.py) relies on `secs=1` to
     // demarcate period boundaries and on the same line carrying
-    // `client_shed=<N>`. See the wire-contract doc on that function.
+    // `client_shed=<rate-per-second>`. See the wire-contract doc on that
+    // function for the full wire format.
     let mut secs: u64 = 0;
+    let interval_secs = stats_interval.as_secs_f64();
     let mut ticker = tokio::time::interval(stats_interval);
     let mut latency_buffer = Vec::new();
     loop {
@@ -452,7 +455,13 @@ async fn print_stats_task(
                 let ok = stats.ok.load(Ordering::Relaxed);
                 let err = stats.err.load(Ordering::Relaxed);
                 let throttled = stats.throttled.load(Ordering::Relaxed);
-                let client_shed = stats.client_shed.load(Ordering::Relaxed);
+                let client_shed_cum = stats.client_shed.load(Ordering::Relaxed);
+                // Emit client_shed as a per-second rate (delta / interval)
+                // to match hotel/socialnet's app-utils stats_logger, which
+                // logs delta("client_shed") against a 1s interval. The
+                // plotter treats the logged value as requests/sec.
+                let client_shed_rate =
+                    (client_shed_cum - last_client_shed) as f64 / interval_secs;
                 let percentiles = {
                     if latency_buffer.is_empty() {
                         None
@@ -468,7 +477,7 @@ async fn print_stats_task(
                     None => ("n/a".to_string(), "n/a".to_string(), "n/a".to_string(), "n/a".to_string()),
                 };
                 tracing::info!(
-                    "[stats] secs={}, sent={} (+{}), ok={} (+{}), err={} (+{}), throttled={} (+{}), client_shed={}, p50={}, p90={}, p95={}, p99={}",
+                    "[stats] secs={}, sent={} (+{}), ok={} (+{}), err={} (+{}), throttled={} (+{}), client_shed={:.1}, p50={}, p90={}, p95={}, p99={}",
                     secs,
                     sent,
                     sent - last_sent,
@@ -478,7 +487,7 @@ async fn print_stats_task(
                     err - last_err,
                     throttled,
                     throttled - last_throttled,
-                    client_shed,
+                    client_shed_rate,
                     p50_str,
                     p90_str,
                     p95_str,
@@ -487,6 +496,7 @@ async fn print_stats_task(
                 last_sent = sent;
                 last_ok = ok;
                 last_err = err;
+                last_client_shed = client_shed_cum;
                 last_throttled = throttled;
             }
             maybe_sample = latency_rx.recv() => {
