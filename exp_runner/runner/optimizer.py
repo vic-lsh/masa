@@ -444,8 +444,19 @@ class RajomonOptimizer:
         best_objective = -float("inf")
         best_params: dict = {}
 
-        # Already-completed trials count toward total
-        completed = len(study.trials)
+        # Only count finished trials toward the budget. study.trials includes
+        # WAITING (queued-but-not-popped) entries, so using len() would charge
+        # the iteration budget for trials that haven't run yet.
+        completed = len(
+            study.get_trials(
+                deepcopy=False,
+                states=(
+                    optuna.trial.TrialState.COMPLETE,
+                    optuna.trial.TrialState.FAIL,
+                    optuna.trial.TrialState.PRUNED,
+                ),
+            )
+        )
         remaining = max(0, self.config.n_iterations - completed)
 
         if completed > 0:
