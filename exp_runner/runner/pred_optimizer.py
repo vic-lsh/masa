@@ -43,12 +43,15 @@ import logging
 import shutil
 import subprocess
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 import numpy as np
 import optuna
+
+if TYPE_CHECKING:
+    import pandas as pd
 
 from .apps import get_app_plugin
 from .config import ExperimentConfig
@@ -125,8 +128,6 @@ def compute_windowed_goodput(
 
     Returns an empty list if the run is shorter than one window.
     """
-    import pandas as pd
-
     df_filtered = filter_excluded_errors(df)
     if df_filtered.empty:
         return []
