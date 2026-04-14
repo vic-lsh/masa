@@ -1,5 +1,18 @@
 test_e2e_hotel:
     stage: test
+    rules:
+        - changes:
+              - libs/**/*
+              - apps/hotel/**/*
+              - apps/app-utils/**/*
+              - apps/app-util-macros/**/*
+              - exp/hotel/**/*
+              - exp_runner/**/*
+              - scripts/**/*
+              - Cargo.*
+              - pyproject.toml
+              - uv.lock
+              - .gitlab/**/*
     variables:
         CI: "true"
         CARGO_BUILD_JOBS: "16"
