@@ -1679,13 +1679,17 @@ def _parse_loadgen_client_shed(
 
       `secs` is a 1-based tick counter within the current RPS period; it
       MUST reset to 1 at the start of each new RPS period (that is how
-      this parser demarcates periods).
+      this parser demarcates periods). Ticks MUST be spaced at 1-second
+      intervals — this parser maps `secs` directly onto the plot's
+      wallclock x-axis, so any other interval would offset ClientShed
+      points relative to the server-side abort rates (which are
+      resampled in wallclock time). Configure mssim's
+      `stats_interval_sec` to 1; hotel/socialnet are hard-coded to 1s.
 
       `client_shed` is the **client-side admission shed rate for the tick,
-      in requests per second**. Loadgens with a 1s stats interval MAY log
-      the raw delta (hotel/socialnet via app-utils), since delta == rate.
-      Loadgens with a longer interval MUST divide delta by the interval
-      so the value remains a per-second rate (mssim does this).
+      in requests per second**. Hotel/socialnet log the raw delta; with
+      a 1s tick that equals rate. mssim explicitly emits delta/interval
+      so the value is always rate regardless of interval drift.
 
       Values may be integers or decimals. Separator between key and
       value may be ":", "=", or whitespace; other fields on the line are
