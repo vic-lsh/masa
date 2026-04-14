@@ -287,6 +287,16 @@ class MssimApp(AppPlugin):
         # SKIP LOADGEN in compose generation, ExpDriver will run it as a task
         env["MSSIM_SKIP_LOADGEN"] = "1"
 
+        # Write policy_param.json and forward POLICY_PARAMS_PATH to the
+        # orchestrator subprocess. The generic-service containers pick it up
+        # via env + volume injection in apps/mssim/simulator/orchestrator.py;
+        # the loadgen is wired separately in get_loadgen_spec since ExpDriver
+        # runs it outside docker-compose.
+        policy_params_path = self._write_policy_params(
+            output_dir, config.policy_params, policy
+        )
+        env["POLICY_PARAMS_PATH"] = str(policy_params_path)
+
         project_name = generate_project_name(
             prefix="mssim",
             experiment_name=config.experiment_name,
@@ -525,6 +535,16 @@ class MssimApp(AppPlugin):
 
         frontend_json_path = output_dir / "frontend.json"
 
+        volumes = {str(frontend_json_path): "/app/frontend.json"}
+        policy_params_mount = self._policy_params_loadgen_mount(output_dir)
+        if policy_params_mount:
+            volumes.update(policy_params_mount)
+            # mssim's generic-service Dockerfile doesn't use the shared
+            # entrypoint that hotel/socialnet rely on, so set the env var
+            # explicitly here — the mssim-loadgen image uses the same image
+            # style, so the same direct-env approach applies.
+            loadgen_env["MASA_POLICY_PARAMS_PATH"] = self.POLICY_PARAMS_CONTAINER_PATH
+
         # Artifacts
         artifacts = [("/app/loadgen_output/.", "")]  # Copy to output_dir
 
@@ -537,7 +557,7 @@ class MssimApp(AppPlugin):
             name="mssim-loadgen",
             image=MSSIM_LOADGEN_IMAGE,
             env_vars=loadgen_env,
-            volumes={str(frontend_json_path): "/app/frontend.json"},
+            volumes=volumes,
             artifacts=artifacts,
             network=network,
             command=[

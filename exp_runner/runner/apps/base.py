@@ -10,7 +10,9 @@ from typing import TYPE_CHECKING, Optional, Tuple
 
 from ..deployment_manager import TaskSpec
 from ..executor import CommandExecutor
-from .utils import verify_standard_workload
+import json
+
+from .utils import resolve_policy_params, verify_standard_workload
 
 logger = logging.getLogger(__name__)
 
@@ -336,3 +338,41 @@ class AppPlugin(ABC):
             no_cache=no_cache,
             dry_run=dry_run,
         )
+
+    # Policy-params plumbing shared by all apps.
+    #
+    # The wire path for the Rust binaries: a JSON file sits at
+    # /usr/policy_params.json inside each container, and the loader at
+    # libs/masa-policy/src/policy_params.rs reads MASA_POLICY_PARAMS_PATH
+    # from the env. Hotel/socialnet rely on the shared entrypoint
+    # (exp_runner/common/docker-build/entrypoint.sh) to set the env var from
+    # the mounted file; mssim's Dockerfile bypasses that entrypoint and must
+    # set MASA_POLICY_PARAMS_PATH directly on each service.
+
+    POLICY_PARAMS_CONTAINER_PATH = "/usr/policy_params.json"
+
+    def _write_policy_params(
+        self,
+        output_dir: Path,
+        config_policy_params: Optional[dict],
+        policy: str,
+    ) -> Path:
+        """Resolve per-policy overrides and write policy_param.json.
+
+        Returns the absolute path to the written file. Caller sets the
+        POLICY_PARAMS_PATH env var (or equivalent) for downstream consumers.
+        """
+        output_dir.mkdir(parents=True, exist_ok=True)
+        path = output_dir / "policy_param.json"
+        resolved = resolve_policy_params(config_policy_params or {}, policy)
+        with path.open("w") as f:
+            json.dump(resolved, f, indent=2)
+        return path.resolve()
+
+    def _policy_params_loadgen_mount(self, output_dir: Path) -> dict[str, str]:
+        """Return a volumes-dict fragment mounting policy_param.json into the
+        loadgen container, or an empty dict when the file doesn't exist."""
+        path = output_dir / "policy_param.json"
+        if not path.exists():
+            return {}
+        return {str(path.resolve()): self.POLICY_PARAMS_CONTAINER_PATH}

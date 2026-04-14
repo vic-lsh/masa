@@ -22,7 +22,6 @@ from .base import AppBuilder, AppPlugin, DockerConfig
 from .utils import (
     get_docker_progress_flag,
     normalize_features_to_tag,
-    resolve_policy_params,
 )
 
 logger = logging.getLogger(__name__)
@@ -632,16 +631,15 @@ class HotelApp(AppPlugin):
 
         # Add image tag based on policy/features
         tag = self.get_image_tag(features=policy)
-        # Write policy_param.json, resolving policy-specific overrides.
-        project_policy_params_path = output_dir / "policy_param.json"
-        resolved_params = resolve_policy_params(config.policy_params or {}, policy)
-        with project_policy_params_path.open("w") as f:
-            json.dump(resolved_params, f, indent=2)
+        # Write policy_param.json via the shared AppPlugin helper.
+        project_policy_params_path = self._write_policy_params(
+            output_dir, config.policy_params, policy
+        )
 
         env_vars["HOTEL_IMAGE_TAG"] = tag if tag else "latest"
         env_vars["DOCKER_COMPOSE_PROJECT_NAME"] = project_name
         env_vars["PROJECT_CONFIG_PATH"] = str(project_config_path.resolve())
-        env_vars["POLICY_PARAMS_PATH"] = str(project_policy_params_path.resolve())
+        env_vars["POLICY_PARAMS_PATH"] = str(project_policy_params_path)
 
         # Clean up old build logs - handled by ExpDriver now (it uses output_dir/build_logs)
         # But we might want to ensure we don't have stale ones if output_dir is reused?
@@ -697,12 +695,10 @@ class HotelApp(AppPlugin):
         # And `HotelApp.run_workload` passed `project_gen_config_path`.
 
         gen_config_path = output_dir / "gen_config.json"
-        policy_params_path = output_dir / "policy_param.json"
         volumes = {}
         if gen_config_path.exists():
             volumes[str(gen_config_path)] = "/usr/gen_config.json"
-        if policy_params_path.exists():
-            volumes[str(policy_params_path)] = "/usr/policy_params.json"
+        volumes.update(self._policy_params_loadgen_mount(output_dir))
 
         return TaskSpec(
             name=f"{project_name}-loadgen" if project_name else "hotel-loadgen",
