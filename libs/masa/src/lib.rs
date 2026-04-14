@@ -72,6 +72,18 @@ pub fn update_rajomon_price(method: &tonic::CowGrpcMethod, price: u64) {
     masa_policy::CLIENT_TOKEN_BUCKET.update_price(method, price);
 }
 
+/// Check the client-side Rajomon bucket and draw a random token count for an
+/// outgoing request. Returns `None` when the bucket can't cover the cached
+/// price for the method (client-side shed). Use this from loadgens that build
+/// their own `Context` (and therefore can't use `try_create_context`).
+#[cfg(feature = "ac_rajomon")]
+pub fn try_acquire_tokens(api: &str) -> Option<u64> {
+    use masa_policy::CLIENT_TOKEN_BUCKET;
+    let method = tonic::CowGrpcMethod::new("", api.to_string());
+    masa_policy::ClientTokenBucket::ensure_worker_started();
+    CLIENT_TOKEN_BUCKET.try_acquire(&method)
+}
+
 /// Initial token value for Rajomon admission control (runtime-configurable).
 #[cfg(feature = "ac_rajomon")]
 pub fn tokens_left_init() -> u64 {
