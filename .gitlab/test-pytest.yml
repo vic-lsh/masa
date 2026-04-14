@@ -1,6 +1,14 @@
 pytest:
     image: python:3.11
     stage: quick-checks
+    rules:
+        - changes:
+              - "**/*.py"
+              - pyproject.toml
+              - uv.lock
+              - pytest.ini
+              - scripts/test_python.sh
+              - .gitlab/test-pytest.yml
     variables:
         CI: "true"
     before_script:
