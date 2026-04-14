@@ -1666,10 +1666,30 @@ def _parse_loadgen_client_shed(
 
     Returns (times, rates) aligned to the post-warmup timeline used by the
     abort-reason plot.
+
+    Wire contract (the canonical definition; loadgens in apps/ must honor
+    this or their client-side shedding will not render on the abort-reason
+    plot):
+
+      Every periodic stats line emitted by a load generator MUST contain,
+      somewhere on the same line, two substrings matching:
+
+          secs[=: ]<N>
+          client_shed[=: ]<N>
+
+      `secs` is a 1-based second counter within the current RPS period; it
+      MUST reset to 1 at the start of each new RPS period (that is how this
+      parser demarcates periods). `client_shed` is the cumulative count of
+      client-side admission rejections for the current RPS period.
+
+      Separator between key and value may be ":", "=", or whitespace; other
+      fields on the line are ignored. See:
+        - apps/app-utils/src/load_gen.rs (hotel/socialnet stats_logger)
+        - apps/mssim/generic-service/src/loadgen.rs (mssim print_stats_task)
     """
     import re
 
-    pattern = re.compile(r"secs:\s*(\d+),.*?client_shed:\s*(\d+)")
+    pattern = re.compile(r"secs[=:\s]\s*(\d+).*?client_shed[=:\s]\s*(\d+)")
     times: list[float] = []
     rates: list[float] = []
     if not os.path.exists(loadgen_log_path):
