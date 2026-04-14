@@ -34,11 +34,7 @@ compile_error!(
     sched_tailclipper implements the TailClipper paper's policy as-is"
 );
 
-#[cfg(all(feature = "sched_tailclipper", feature = "ac_pred"))]
-compile_error!(
-    "'sched_tailclipper' cannot be combined with 'ac_pred': \
-    sched_tailclipper implements the TailClipper paper's policy as-is"
-);
+
 
 // === Admission control constraints ===
 // ac_pred (estimation-based) and ac_rajomon (token-based) are two different admission
