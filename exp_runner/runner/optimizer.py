@@ -385,7 +385,12 @@ class RajomonOptimizer:
             storage=storage,
             load_if_exists=True,
             direction="maximize",
-            sampler=optuna.samplers.TPESampler(seed=42),
+            # n_startup_trials=2 so TPE switches to history-aware sampling
+            # after the seeded default + warm-start. Default is 10, which meant
+            # the first 10 draws were deterministic from the seed — on resume,
+            # the sampler's RNG reset caused those early random draws to repeat
+            # exactly (trials 2/3 getting re-sampled as trials 7/8, etc.).
+            sampler=optuna.samplers.TPESampler(seed=42, n_startup_trials=2),
         )
 
         # Only seed the queue on a fresh study. On resume, re-enqueueing would
