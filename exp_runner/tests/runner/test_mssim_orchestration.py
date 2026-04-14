@@ -82,6 +82,7 @@ def test_mssim_run_workload_orchestration(tmp_path, mock_executor, mock_deployme
     config.gen_config = {"Rps": [100], "DurationSecs": 10}
     config.app_config = {"callgraph_dirs": [str(tmp_path / "graphs")], "slo_ms": 50}
     config.policies = ["sched_slo"]
+    config.policy_params = None
 
     output_dir = tmp_path / "out"
     output_dir.mkdir()
@@ -217,6 +218,7 @@ def test_mssim_orchestration_k8s(tmp_path, mock_executor):
     (graphs_dir / "edges.csv").write_text("caller,callee,weight\nsvc_a,svc_b,1\n")
     (graphs_dir / "latency_percentiles.json").write_text("{}\n")
     config.app_config = {"callgraph_dirs": [str(graphs_dir)], "slo_ms": 50}
+    config.policy_params = None
 
     # Run
     output_dir = tmp_path / "out_k8s"
