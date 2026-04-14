@@ -48,18 +48,24 @@ pub enum ArrivalProcess {
 /// arrival process type (constant vs exponential) and RPS.
 pub struct ArrivalTimer {
     arrival_process: ArrivalProcess,
-    rps: u64,
+    rps: f64,
     exp_dist: Option<Exp<f64>>,
     rng: StdRng,
     elapse: f64,
 }
 
 impl ArrivalTimer {
+    /// Create a new arrival timer from a u64 seed. Decouples callers from this
+    /// crate's specific `rand` version.
+    pub fn with_seed(arrival_process: ArrivalProcess, rps: f64, seed: u64) -> Self {
+        Self::new(arrival_process, rps, StdRng::seed_from_u64(seed))
+    }
+
     /// Create a new arrival timer with the specified arrival process, RPS, and RNG seed.
-    pub fn new(arrival_process: ArrivalProcess, rps: u64, rng: StdRng) -> Self {
+    pub fn new(arrival_process: ArrivalProcess, rps: f64, rng: StdRng) -> Self {
         let exp_dist = match arrival_process {
             ArrivalProcess::Exp => {
-                Some(Exp::new(rps as f64).expect("Failed to create exponential distribution"))
+                Some(Exp::new(rps).expect("Failed to create exponential distribution"))
             }
             ArrivalProcess::Const => None,
         };
@@ -78,7 +84,7 @@ impl ArrivalTimer {
         let interval = match self.arrival_process {
             ArrivalProcess::Const => {
                 // Constant inter-arrival time (fixed interval)
-                1f64 / self.rps as f64
+                1f64 / self.rps
             }
             ArrivalProcess::Exp => {
                 // Sample exponential inter-arrival time for Poisson process
@@ -238,6 +244,24 @@ pub struct TraceRecord {
     pub q_lat_init: u64,
     pub q_lat_resume: u64,
     pub additional_metrics: Vec<String>,
+}
+
+/// Read the Rajomon `x-masa-rajomon-price` header from response metadata and
+/// update the client-side cached price for `api`. Shared between
+/// `Handler::send_request` and bespoke loadgens (e.g. mssim) so the same
+/// Ok+Err-aware parsing is applied everywhere. See
+/// `apps/app-utils/src/load_gen.rs:406-418` for the reasoning behind reading
+/// from error responses too.
+#[cfg(feature = "ac_rajomon")]
+pub fn update_rajomon_price_from_metadata(md: &tonic::metadata::MetadataMap, api: &str) {
+    if let Some(h) = md.get("x-masa-rajomon-price") {
+        if let Ok(s) = h.to_str() {
+            if let Ok(price) = s.parse::<u64>() {
+                let method = tonic::CowGrpcMethod::new("", api.to_string());
+                masa::update_rajomon_price(&method, price);
+            }
+        }
+    }
 }
 
 impl TraceRecord {
@@ -424,14 +448,7 @@ where
                 Err(_) => None,
             };
             if let Some(md) = metadata {
-                if let Some(price_header) = md.get("x-masa-rajomon-price") {
-                    if let Ok(price_str) = price_header.to_str() {
-                        if let Ok(price) = price_str.parse::<u64>() {
-                            let method = tonic::CowGrpcMethod::new("", self.api.clone());
-                            masa::update_rajomon_price(&method, price);
-                        }
-                    }
-                }
+                update_rajomon_price_from_metadata(md, &self.api);
             }
         }
 
@@ -637,7 +654,8 @@ where
         };
 
         // Create arrival timer to manage inter-arrival times
-        let mut arrival_timer = ArrivalTimer::new(self.gen_cfg.gap, self.rps, self.rng.clone());
+        let mut arrival_timer =
+            ArrivalTimer::new(self.gen_cfg.gap, self.rps as f64, self.rng.clone());
 
         while Instant::now() < pause_at {
             // XXX: tokio's sleep has millisecond granularity, so for small intervals this may be

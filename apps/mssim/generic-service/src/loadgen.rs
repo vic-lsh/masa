@@ -7,9 +7,8 @@ use std::{
     time::Duration,
 };
 
-use app_utils::load_gen::TraceRecord;
+use app_utils::load_gen::{ArrivalProcess, ArrivalTimer, TraceRecord};
 use masa::{time_now, ContextBuilder as MasaContextBuilder};
-use rand_distr::{Distribution, Exp};
 use serde::Deserialize;
 use serde_json;
 use sim_config::svc::GraphId;
@@ -38,12 +37,21 @@ type RpcClient = ServiceClient<LoadBalancedChannel>;
 const PERIODIC_FLUSH_INTERVAL_SECS: u64 = 10;
 const OUTPUT_DIR: &str = "loadgen_output";
 
+/// The `api` string used on both send-side (`try_acquire_tokens`) and
+/// receive-side (`update_rajomon_price_from_metadata`) so the client-side
+/// `cached_prices` map uses a single key for all root() traffic. The mssim
+/// server exposes one RPC (`Root`); different graphs are dispatched inside the
+/// handler, so per-graph rajomon pricing is not meaningful here.
+#[cfg(feature = "ac_rajomon")]
+const RAJOMON_API: &str = "root";
+
 #[derive(Default)]
 struct Stats {
     sent: AtomicUsize,
     ok: AtomicUsize,
     err: AtomicUsize,
     throttled: AtomicUsize,
+    client_shed: AtomicUsize,
 }
 
 async fn flush_root_samples(
@@ -219,11 +227,9 @@ async fn run_root_load(
     finish_after: Option<Duration>,
     latency_sample_tx: mpsc::UnboundedSender<u64>,
 ) -> anyhow::Result<()> {
-    // Create exponential distribution for Poisson process
-    // For Poisson process with rate lambda (rps), inter-arrival times are exponential with rate lambda
-    let exp_dist = Exp::new(rps)
-        .map_err(|e| anyhow::anyhow!("Invalid RPS for exponential distribution: {}", e))?;
-    let mut rng = rand::rng();
+    // Poisson arrivals at rate `rps`. Shared with the other loadgens via
+    // `app_utils::load_gen::ArrivalTimer`.
+    let mut arrival_timer = ArrivalTimer::with_seed(ArrivalProcess::Exp, rps, rps.to_bits());
 
     let run_start = Instant::now();
     let finish_deadline = finish_after.map(|duration| run_start + duration);
@@ -256,8 +262,7 @@ async fn run_root_load(
 
             _ = time::sleep_until(next_request_time) => {
                 // Schedule the next arrival relative to the previous target time to avoid losing RPS to processing overheads.
-                let inter_arrival_secs = exp_dist.sample(&mut rng);
-                let inter_arrival = Duration::from_secs_f64(inter_arrival_secs);
+                let inter_arrival = Duration::from_secs_f64(arrival_timer.tick());
                 next_request_time = next_request_time + inter_arrival;
 
                 // request max-in-flight control
@@ -268,6 +273,20 @@ async fn run_root_load(
                         stats.throttled.fetch_add(1, Ordering::Relaxed);
                         continue;
                     },
+                };
+
+                // Client-side Rajomon gate: consult the shared token bucket
+                // before spending a request slot. Drops here are counted as
+                // `client_shed` so the downstream accounting matches app-utils
+                // (see `apps/app-utils/src/load_gen.rs:666-678`). `sent` is
+                // only bumped once we've committed to dispatching.
+                #[cfg(feature = "ac_rajomon")]
+                let tokens = match masa::try_acquire_tokens(RAJOMON_API) {
+                    Some(t) => t,
+                    None => {
+                        stats.client_shed.fetch_add(1, Ordering::Relaxed);
+                        continue;
+                    }
                 };
 
                 let entry = client_pool.acquire();
@@ -301,12 +320,7 @@ async fn run_root_load(
                             .deadline(deadline);
                         #[cfg(feature = "ac_rajomon")]
                         {
-                            use rand::Rng;
-                            // Bid is a uniform random value in [0, tokens_left_init].
-                            // The server admits requests whose bid >= its current price.
-                            let init = masa::tokens_left_init();
-                            let tok = rand::rng().random_range(0..=init);
-                            builder = builder.tokens(tok);
+                            builder = builder.tokens(tokens);
                         }
                         builder.build()
                     };
@@ -315,6 +329,19 @@ async fn run_root_load(
                     let start_time = Instant::now();
                     let res = rpc_client.root(request).await;
                     let elapsed = start_time.elapsed().as_micros() as u64;
+                    #[cfg(feature = "ac_rajomon")]
+                    {
+                        let md = match &res {
+                            Ok(resp) => Some(resp.metadata()),
+                            Err(status) => Some(status.metadata()),
+                        };
+                        if let Some(md) = md {
+                            app_utils::load_gen::update_rajomon_price_from_metadata(
+                                md,
+                                RAJOMON_API,
+                            );
+                        }
+                    }
                     match res {
                         Ok(resp) => {
                             stats.ok.fetch_add(1, Ordering::Relaxed);
@@ -374,12 +401,14 @@ async fn run_root_load(
     let o = stats.ok.load(Ordering::Relaxed);
     let e = stats.err.load(Ordering::Relaxed);
     let t = stats.throttled.load(Ordering::Relaxed);
+    let cs = stats.client_shed.load(Ordering::Relaxed);
     tracing::info!(
-        "Final stats: sent={}, ok={}, err={}, throttled={}",
+        "Final stats: sent={}, ok={}, err={}, throttled={}, client_shed={}",
         s,
         o,
         e,
-        t
+        t,
+        cs
     );
 
     Ok(())
