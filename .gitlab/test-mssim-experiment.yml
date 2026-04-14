@@ -1,5 +1,18 @@
 test_mssim_experiment:
     stage: test
+    rules:
+        - changes:
+              - libs/**/*
+              - apps/mssim/**/*
+              - apps/app-utils/**/*
+              - apps/app-util-macros/**/*
+              - exp/mssim/**/*
+              - exp_runner/**/*
+              - scripts/**/*
+              - Cargo.*
+              - pyproject.toml
+              - uv.lock
+              - .gitlab/**/*
     parallel:
         matrix:
             - DEPLOY_MODE: [docker, kind]
