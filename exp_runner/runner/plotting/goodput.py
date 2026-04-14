@@ -1677,19 +1677,27 @@ def _parse_loadgen_client_shed(
           secs[=: ]<N>
           client_shed[=: ]<N>
 
-      `secs` is a 1-based second counter within the current RPS period; it
-      MUST reset to 1 at the start of each new RPS period (that is how this
-      parser demarcates periods). `client_shed` is the cumulative count of
-      client-side admission rejections for the current RPS period.
+      `secs` is a 1-based tick counter within the current RPS period; it
+      MUST reset to 1 at the start of each new RPS period (that is how
+      this parser demarcates periods).
 
-      Separator between key and value may be ":", "=", or whitespace; other
-      fields on the line are ignored. See:
+      `client_shed` is the **client-side admission shed rate for the tick,
+      in requests per second**. Loadgens with a 1s stats interval MAY log
+      the raw delta (hotel/socialnet via app-utils), since delta == rate.
+      Loadgens with a longer interval MUST divide delta by the interval
+      so the value remains a per-second rate (mssim does this).
+
+      Values may be integers or decimals. Separator between key and
+      value may be ":", "=", or whitespace; other fields on the line are
+      ignored. See:
         - apps/app-utils/src/load_gen.rs (hotel/socialnet stats_logger)
         - apps/mssim/generic-service/src/loadgen.rs (mssim print_stats_task)
     """
     import re
 
-    pattern = re.compile(r"secs[=:\s]\s*(\d+).*?client_shed[=:\s]\s*(\d+)")
+    pattern = re.compile(
+        r"secs[=:\s]\s*(\d+).*?client_shed[=:\s]\s*(\d+(?:\.\d+)?)"
+    )
     times: list[float] = []
     rates: list[float] = []
     if not os.path.exists(loadgen_log_path):
@@ -1697,14 +1705,14 @@ def _parse_loadgen_client_shed(
 
     # Parse all per-second lines. The secs counter resets for each RPS period.
     # We detect period boundaries by secs going back to 1.
-    per_period_rows: list[list[tuple[int, int]]] = [[]]
+    per_period_rows: list[list[tuple[int, float]]] = [[]]
     with open(loadgen_log_path) as f:
         for line in f:
             m = pattern.search(line)
             if not m:
                 continue
             sec = int(m.group(1))
-            shed = int(m.group(2))
+            shed = float(m.group(2))
             if sec == 1 and per_period_rows[-1]:
                 per_period_rows.append([])
             per_period_rows[-1].append((sec, shed))
