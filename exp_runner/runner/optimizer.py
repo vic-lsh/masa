@@ -327,12 +327,12 @@ class RajomonOptimizer:
             app_plugin=self.app_plugin,
         )
 
-        # Run the experiment (no plots, no cache rebuild, remove old data)
+        # Run the experiment (plots enabled so per-trial artifacts are inspectable)
         experiment = Experiment(
             app=self.app_plugin,
             config=config,
             repo_root=self.repo_root,
-            plot=False,
+            plot=True,
             no_cache=False,
             rm_data=True,
             dry_run=False,
@@ -353,9 +353,6 @@ class RajomonOptimizer:
             gen_config,
             self.config.penalty_weight,
         )
-
-        # Clean up trial directories to save disk space
-        self._cleanup_trial_dirs(exp_name, config.out_dir)
 
         return objective
 
@@ -391,30 +388,30 @@ class RajomonOptimizer:
             sampler=optuna.samplers.TPESampler(seed=42),
         )
 
-        # Enqueue default params as first trial (only optimized keys)
-        study.enqueue_trial(
-            {k: v for k, v in DEFAULT_RAJOMON_PARAMS.items() if k in OPTIMIZED_KEYS}
-        )
+        # Only seed the queue on a fresh study. On resume, re-enqueueing would
+        # waste trials re-running already-evaluated default/warm-start points
+        # (Optuna persists the queue in SQLite across invocations).
+        if len(study.trials) == 0:
+            study.enqueue_trial(
+                {k: v for k, v in DEFAULT_RAJOMON_PARAMS.items() if k in OPTIMIZED_KEYS}
+            )
 
-        # Enqueue warm-start params if provided
-        if self.config.warm_start_path:
-            try:
-                with open(self.config.warm_start_path) as f:
-                    warm_params = json.load(f)
-                # Extract rajomon section if present (nested format)
-                if "rajomon" in warm_params:
-                    warm_params = warm_params["rajomon"]
-                # Filter to only optimized params
-                enqueue_params = {
-                    k: v for k, v in warm_params.items() if k in OPTIMIZED_KEYS
-                }
-                if enqueue_params:
-                    study.enqueue_trial(enqueue_params)
-                    logger.info(
-                        f"Enqueued warm-start params from {self.config.warm_start_path}"
-                    )
-            except Exception as e:
-                logger.warning(f"Failed to load warm-start params: {e}")
+            if self.config.warm_start_path:
+                try:
+                    with open(self.config.warm_start_path) as f:
+                        warm_params = json.load(f)
+                    if "rajomon" in warm_params:
+                        warm_params = warm_params["rajomon"]
+                    enqueue_params = {
+                        k: v for k, v in warm_params.items() if k in OPTIMIZED_KEYS
+                    }
+                    if enqueue_params:
+                        study.enqueue_trial(enqueue_params)
+                        logger.info(
+                            f"Enqueued warm-start params from {self.config.warm_start_path}"
+                        )
+                except Exception as e:
+                    logger.warning(f"Failed to load warm-start params: {e}")
 
         # Print startup summary
         logger.info(f"{'=' * 60}")
