@@ -29,7 +29,7 @@ ARG CACHE_ID=mssim
 # Use BuildKit cache mounts for faster rebuilds (requires BuildKit/buildx).
 # Keep the target directory in the image so runtime stages can copy the binaries.
 RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry-${CACHE_ID},sharing=locked \
-    cargo build --release --bin mssim-loadgen
+    cargo build --release --bin mssim-loadgen --features "${FEATURE_ARG}"
 RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry-${CACHE_ID},sharing=locked \
     cargo build --release --bin generic-service --features "${FEATURE_ARG}"
 
