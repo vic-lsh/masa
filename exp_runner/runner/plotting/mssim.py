@@ -179,11 +179,13 @@ def _load_policy_data(policy_dir: Path, warmup_sec: float) -> Dict[float, pd.Dat
     return combined
 
 
-def _effective_duration_sec(
-    df: pd.DataFrame, duration_sec: float, warmup_sec: float
-) -> float:
-    if duration_sec and duration_sec > warmup_sec:
-        return duration_sec - warmup_sec
+def _effective_duration_sec(df: pd.DataFrame, duration_sec: float) -> float:
+    # The loadgen drops warmup samples at the source (commit b42e6656), so the
+    # per-RPS CSV covers exactly `DurationSecs` of post-warmup traffic. Use
+    # that as the goodput denominator directly — do NOT subtract warmup here,
+    # or the numerator (30s of samples) / denominator (15s) → 2× inflation.
+    if duration_sec and duration_sec > 0:
+        return duration_sec
 
     if df.empty or "start_at" not in df.columns:
         return 1.0
@@ -201,9 +203,7 @@ def _effective_duration_sec(
     return duration if duration > 0 else 1.0
 
 
-def _compute_goodput(
-    df: pd.DataFrame, slo_ms: float, duration_sec: float, warmup_sec: float
-) -> float:
+def _compute_goodput(df: pd.DataFrame, slo_ms: float, duration_sec: float) -> float:
     if df.empty:
         return 0.0
 
@@ -225,7 +225,7 @@ def _compute_goodput(
         return 0.0
 
     meets_slo = df["e2e_latency_ms"] <= slo_ms
-    denom = _effective_duration_sec(df, duration_sec, warmup_sec)
+    denom = _effective_duration_sec(df, duration_sec)
     return float(meets_slo.sum()) / denom
 
 
@@ -768,9 +768,7 @@ def generate_plots(args) -> None:
 
             for rps in rps_values:
                 df = policy_data.get(policy, {}).get(rps, pd.DataFrame())
-                goodput_values.append(
-                    _compute_goodput(df, slo_ms, duration_sec, warmup_sec)
-                )
+                goodput_values.append(_compute_goodput(df, slo_ms, duration_sec))
                 pct = _compute_latency_percentiles(df, percentiles)
                 for p in percentiles:
                     percentile_values[p].append(pct[p])
@@ -966,7 +964,9 @@ def generate_plots(args) -> None:
                 for iteration in iteration_ids:
                     iteration_dir = data_dir / str(iteration)
                     policy_dir = iteration_dir / policy
-                    policy_data_iter = _load_policy_data(policy_dir, warmup_sec)
+                    # warmup_sec=0: loadgen already drops warmup samples at
+                    # source (see parallel call at _load_policy_data above).
+                    policy_data_iter = _load_policy_data(policy_dir, 0.0)
                     df = policy_data_iter.get(rps, pd.DataFrame())
                     if not df.empty:
                         combined_dfs.append(df)
