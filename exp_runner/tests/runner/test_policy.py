@@ -199,7 +199,9 @@ class TestColor:
         assert Policy.parse("sched_slo,abort_slo").color == "#000000"
 
     def test_e2e_slo_abort_slo_ac_pred(self):
-        assert Policy.parse("sched_slo,abort_slo,ac_pred,est_mean_var").color == "#000000"
+        assert (
+            Policy.parse("sched_slo,abort_slo,ac_pred,est_mean_var").color == "#000000"
+        )
 
     # prio=oldest: dark-pink / reddish-purple / dark-wine by drop
     def test_oldest_no_drop(self):
@@ -220,7 +222,10 @@ class TestColor:
 
     def test_slack_abort_slack_ac_pred(self):
         # AC does not change color.
-        assert Policy.parse("sched_pred,abort_slack,ac_pred,est_mean_var").color == "#009E73"
+        assert (
+            Policy.parse("sched_pred,abort_slack,ac_pred,est_mean_var").color
+            == "#009E73"
+        )
 
     # Key invariant: the problematic pair must have different colors
     def test_fifo_abort_slo_vs_abort_slack_differ(self):
@@ -255,7 +260,9 @@ class TestMarker:
 
     def test_ac_rajomon(self):
         assert Policy.parse("sched_fifo,ac_rajomon").marker == "^"
-        assert Policy.parse("sched_pred,ac_rajomon,abort_slo,est_mean_var").marker == "^"
+        assert (
+            Policy.parse("sched_pred,ac_rajomon,abort_slo,est_mean_var").marker == "^"
+        )
 
     def test_drop_does_not_change_marker(self):
         # Drop is encoded by color + linestyle, not marker.

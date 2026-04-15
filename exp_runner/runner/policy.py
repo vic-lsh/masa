@@ -168,18 +168,18 @@ class Policy:
             abort_slack → bluish green  #009E73
         """
         _color_map: dict[tuple[str | None, str | None], str] = {
-            ("fifo",    None):       "#999999",
-            ("fifo",    "e2e_slo"): "#56B4E9",
-            ("fifo",    "slack"):   "#0072B2",
-            ("e2e_slo", None):      "#F0E442",
+            ("fifo", None): "#999999",
+            ("fifo", "e2e_slo"): "#56B4E9",
+            ("fifo", "slack"): "#0072B2",
+            ("e2e_slo", None): "#F0E442",
             ("e2e_slo", "e2e_slo"): "#000000",
-            ("e2e_slo", "slack"):   "#88CCEE",
-            ("oldest",  None):      "#AA3377",
-            ("oldest",  "e2e_slo"): "#CC79A7",
-            ("oldest",  "slack"):   "#882255",
-            ("slack",   None):      "#D55E00",
-            ("slack",   "e2e_slo"): "#E69F00",
-            ("slack",   "slack"):   "#009E73",
+            ("e2e_slo", "slack"): "#88CCEE",
+            ("oldest", None): "#AA3377",
+            ("oldest", "e2e_slo"): "#CC79A7",
+            ("oldest", "slack"): "#882255",
+            ("slack", None): "#D55E00",
+            ("slack", "e2e_slo"): "#E69F00",
+            ("slack", "slack"): "#009E73",
         }
         return _color_map.get((self.prio, self.drop))
 
