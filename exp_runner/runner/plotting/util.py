@@ -326,6 +326,14 @@ def parse_args() -> Namespace:
     return args
 
 
+def apply_plot_defaults() -> None:
+    """Apply shared matplotlib rcParams defaults for all Masa plots."""
+    import matplotlib.pyplot as plt
+
+    plt.rcParams["legend.fontsize"] = 13
+    plt.rcParams["legend.title_fontsize"] = 13
+
+
 def get_policy_color(policy: str) -> str | None:
     """Get matplotlib color for a policy, or None for the default cycle."""
     from exp_runner.runner.policy import Policy

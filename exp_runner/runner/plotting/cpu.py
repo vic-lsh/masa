@@ -9,7 +9,9 @@ import numpy as np
 import pandas as pd
 
 from ..container_utils import extract_service_name
-from .util import get_policy_display_name, get_policy_line_style, get_policy_linestyle
+from .util import apply_plot_defaults, get_policy_display_name, get_policy_line_style, get_policy_linestyle
+
+apply_plot_defaults()
 
 logger = logging.getLogger(__name__)
 
@@ -196,7 +198,7 @@ def _plot_service_cpu(
     ax.set_xlabel("Time (seconds)", fontsize=12)
     ax.set_ylabel("CPU Utilization (%)", fontsize=12)
     ax.set_title(f"CPU Utilization - {service}", fontsize=14, fontweight="bold")
-    ax.legend(loc="best", fontsize=10)
+    ax.legend(loc="best")
     ax.grid(True, alpha=0.3)
     ax.set_ylim(0, 100)  # CPU utilization ranges from 0 to 100%
 
