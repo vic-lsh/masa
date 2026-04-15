@@ -169,42 +169,64 @@ class TestDisplayName:
 
 
 class TestColor:
-    """Colors are from the Okabe-Ito color-blind-safe palette.
-
-    The `drop` dimension is encoded by `linestyle` (see TestLinestyle), so
-    drop variants share the same base color as their no-drop counterparts.
+    """Color encodes (prio, drop) so any two policies differing in scheduling
+    priority or abort mechanism get distinct colors.  The AC dimension is
+    encoded by marker instead.
     """
 
-    def test_fifo(self):
+    # prio=fifo: grey / sky-blue / blue by drop
+    def test_fifo_no_drop(self):
         assert Policy.parse("sched_fifo").color == "#999999"
 
-    def test_fifo_drop(self):
-        # Same color as no-drop; drop is encoded via linestyle.
-        assert Policy.parse("sched_fifo,abort_slo").color == "#999999"
+    def test_fifo_abort_slo(self):
+        assert Policy.parse("sched_fifo,abort_slo").color == "#56B4E9"
 
-    def test_e2e_slo(self):
-        assert Policy.parse("sched_slo").color == "#0072B2"
+    def test_fifo_abort_slack(self):
+        assert Policy.parse("sched_fifo,abort_slack").color == "#0072B2"
 
-    def test_e2e_slo_drop(self):
-        assert Policy.parse("sched_slo,abort_slo").color == "#0072B2"
+    def test_fifo_abort_slo_ac_pred(self):
+        # AC does not change color — marker changes instead.
+        assert Policy.parse("sched_fifo,abort_slo,ac_pred").color == "#56B4E9"
 
-    def test_e2e_slo_with_ac_slack(self):
-        assert Policy.parse("sched_slo,ac_pred,est_mean_var").color == "#009E73"
+    def test_fifo_abort_slack_ac_pred(self):
+        assert Policy.parse("sched_fifo,abort_slack,ac_pred").color == "#0072B2"
 
-    def test_e2e_slo_with_ac_rajomon(self):
-        assert Policy.parse("sched_slo,ac_rajomon").color == "#E69F00"
+    # prio=e2e_slo: yellow / black / light-blue by drop
+    def test_e2e_slo_no_drop(self):
+        assert Policy.parse("sched_slo").color == "#F0E442"
 
-    def test_oldest(self):
-        assert Policy.parse("sched_tailclipper").color == "#CC79A7"
+    def test_e2e_slo_abort_slo(self):
+        assert Policy.parse("sched_slo,abort_slo").color == "#000000"
 
-    def test_oldest_drop(self):
+    def test_e2e_slo_abort_slo_ac_pred(self):
+        assert Policy.parse("sched_slo,abort_slo,ac_pred,est_mean_var").color == "#000000"
+
+    # prio=oldest: dark-pink / reddish-purple / dark-wine by drop
+    def test_oldest_no_drop(self):
+        assert Policy.parse("sched_tailclipper").color == "#AA3377"
+
+    def test_oldest_abort_slo(self):
         assert Policy.parse("sched_tailclipper,abort_slo").color == "#CC79A7"
 
-    def test_slack_with_est(self):
+    # prio=slack: vermillion / orange / bluish-green by drop
+    def test_slack_no_drop(self):
         assert Policy.parse("sched_pred,est_mean_var").color == "#D55E00"
 
-    def test_slack_with_ac(self):
-        assert Policy.parse("sched_pred,ac_pred,est_mean_var").color == "#009E73"
+    def test_slack_abort_slo(self):
+        assert Policy.parse("sched_pred,abort_slo,est_mean_var").color == "#E69F00"
+
+    def test_slack_abort_slack(self):
+        assert Policy.parse("sched_pred,abort_slack,est_mean_var").color == "#009E73"
+
+    def test_slack_abort_slack_ac_pred(self):
+        # AC does not change color.
+        assert Policy.parse("sched_pred,abort_slack,ac_pred,est_mean_var").color == "#009E73"
+
+    # Key invariant: the problematic pair must have different colors
+    def test_fifo_abort_slo_vs_abort_slack_differ(self):
+        c1 = Policy.parse("sched_fifo,abort_slo,ac_pred").color
+        c2 = Policy.parse("sched_fifo,abort_slack,ac_pred").color
+        assert c1 != c2, f"abort_slo and abort_slack must not share a color: {c1}"
 
     def test_unknown(self):
         assert Policy.parse("custom").color is None
@@ -214,30 +236,38 @@ class TestColor:
 
 
 class TestMarker:
-    """Marker is a redundant encoding of `prio` (so plots survive greyscale)."""
+    """Marker encodes the admission control mechanism.
 
-    def test_fifo(self):
+    no AC     → circle  "o"
+    ac_pred   → diamond "D"
+    ac_rajomon → triangle "^"
+    """
+
+    def test_no_ac(self):
         assert Policy.parse("sched_fifo").marker == "o"
+        assert Policy.parse("sched_slo").marker == "o"
+        assert Policy.parse("sched_tailclipper").marker == "o"
+        assert Policy.parse("sched_pred,est_mean_var").marker == "o"
 
-    def test_e2e_slo(self):
-        assert Policy.parse("sched_slo").marker == "s"
+    def test_ac_pred(self):
+        assert Policy.parse("sched_fifo,abort_slo,ac_pred").marker == "D"
+        assert Policy.parse("sched_pred,abort_slack,ac_pred,est_mean_var").marker == "D"
 
-    def test_oldest(self):
-        assert Policy.parse("sched_tailclipper").marker == "^"
-
-    def test_slack(self):
-        assert Policy.parse("sched_pred,est_mean_var").marker == "D"
+    def test_ac_rajomon(self):
+        assert Policy.parse("sched_fifo,ac_rajomon").marker == "^"
+        assert Policy.parse("sched_pred,ac_rajomon,abort_slo,est_mean_var").marker == "^"
 
     def test_drop_does_not_change_marker(self):
+        # Drop is encoded by color + linestyle, not marker.
         assert Policy.parse("sched_fifo,abort_slo").marker == "o"
-        assert Policy.parse("sched_slo,abort_slo").marker == "s"
+        assert Policy.parse("sched_fifo,abort_slack").marker == "o"
 
     def test_unknown_fallback(self):
         assert Policy.parse("custom").marker == "o"
 
 
 class TestLinestyle:
-    """Linestyle encodes the `drop` dimension orthogonally."""
+    """Linestyle encodes the drop mechanism as a 3-way split."""
 
     def test_no_drop_is_solid(self):
         assert Policy.parse("sched_fifo").linestyle == "-"
@@ -247,9 +277,17 @@ class TestLinestyle:
     def test_abort_slo_is_dashed(self):
         assert Policy.parse("sched_fifo,abort_slo").linestyle == "--"
         assert Policy.parse("sched_slo,abort_slo").linestyle == "--"
+        assert Policy.parse("sched_pred,abort_slo,est_mean_var").linestyle == "--"
 
-    def test_abort_slack_is_dashed(self):
-        assert Policy.parse("sched_pred,abort_slack,est_mean_var").linestyle == "--"
+    def test_abort_slack_is_dash_dot(self):
+        # abort_slack gets a distinct linestyle from abort_slo.
+        assert Policy.parse("sched_pred,abort_slack,est_mean_var").linestyle == "-."
+        assert Policy.parse("sched_fifo,abort_slack,ac_pred").linestyle == "-."
+
+    def test_abort_slo_vs_abort_slack_differ(self):
+        ls1 = Policy.parse("sched_pred,abort_slo").linestyle
+        ls2 = Policy.parse("sched_pred,abort_slack").linestyle
+        assert ls1 != ls2
 
     def test_unknown_fallback(self):
         assert Policy.parse("custom").linestyle == "-"

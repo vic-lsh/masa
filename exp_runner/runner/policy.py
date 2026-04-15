@@ -141,53 +141,77 @@ class Policy:
     def color(self) -> str | None:
         """Matplotlib color for this policy, or None for the default cycle.
 
-        Colour-blind-safe scheme (Okabe-Ito palette). Encodes prio + ac family;
-        the `drop` dimension is encoded by `linestyle` instead of a lighter shade.
+        Encodes (prio, drop) so that any two policies differing in scheduling
+        priority or abort mechanism get distinct colors.  The AC dimension is
+        encoded by `marker` instead.
 
-        - fifo:    grey         (#999999)
-        - e2e_slo: blue         (#0072B2)
-        - oldest:  reddish purple (#CC79A7)
-        - slack:   vermillion   (#D55E00)  — no AC
-                   bluish green (#009E73)  — ac=slack (cost-aware AC)
-                   orange       (#E69F00)  — ac=rajomon
+        Palette (Okabe-Ito color-blind-safe + grey):
+
+          prio=fifo:
+            no drop     → grey          #999999
+            abort_slo   → sky blue      #56B4E9
+            abort_slack → blue          #0072B2
+
+          prio=e2e_slo:
+            no drop     → yellow        #F0E442
+            abort_slo   → black         #000000
+            abort_slack → light blue    #88CCEE  (rare)
+
+          prio=oldest (tailclipper):
+            no drop     → dark pink     #AA3377  (rare)
+            abort_slo   → reddish purple #CC79A7
+            abort_slack → dark wine     #882255  (rare)
+
+          prio=slack (pred):
+            no drop     → vermillion    #D55E00
+            abort_slo   → orange        #E69F00
+            abort_slack → bluish green  #009E73
         """
-        if self.prio == "fifo":
-            return "#999999"
-        if self.prio == "e2e_slo":
-            if self.ac == "slack":
-                return "#009E73"
-            if self.ac == "rajomon":
-                return "#E69F00"
-            return "#0072B2"
-        if self.prio == "oldest":
-            return "#CC79A7"
-        if self.prio == "slack":
-            if self.ac == "slack":
-                return "#009E73"
-            if self.ac == "rajomon":
-                return "#E69F00"
-            return "#D55E00"
-        return None
+        _color_map: dict[tuple[str | None, str | None], str] = {
+            ("fifo",    None):       "#999999",
+            ("fifo",    "e2e_slo"): "#56B4E9",
+            ("fifo",    "slack"):   "#0072B2",
+            ("e2e_slo", None):      "#F0E442",
+            ("e2e_slo", "e2e_slo"): "#000000",
+            ("e2e_slo", "slack"):   "#88CCEE",
+            ("oldest",  None):      "#AA3377",
+            ("oldest",  "e2e_slo"): "#CC79A7",
+            ("oldest",  "slack"):   "#882255",
+            ("slack",   None):      "#D55E00",
+            ("slack",   "e2e_slo"): "#E69F00",
+            ("slack",   "slack"):   "#009E73",
+        }
+        return _color_map.get((self.prio, self.drop))
 
     @property
     def marker(self) -> str:
-        """Matplotlib marker shape for this policy. Redundant encoding of `prio`
-        so categories survive greyscale printing and CVD viewers."""
-        if self.prio == "fifo":
-            return "o"
-        if self.prio == "e2e_slo":
-            return "s"
-        if self.prio == "oldest":
-            return "^"
-        if self.prio == "slack":
+        """Matplotlib marker shape for this policy.
+
+        Encodes the admission control mechanism so that policies with the same
+        (prio, drop) but different AC are visually distinct:
+          no AC       → circle   "o"
+          ac_pred     → diamond  "D"
+          ac_rajomon  → triangle "^"
+        """
+        if self.ac == "slack":
             return "D"
+        if self.ac == "rajomon":
+            return "^"
         return "o"
 
     @property
     def linestyle(self) -> str:
-        """Matplotlib linestyle. Encodes the `drop` dimension orthogonally:
-        solid = no drop, dashed = any drop variant."""
-        return "--" if self.drop is not None else "-"
+        """Matplotlib linestyle. Encodes the drop mechanism as a 3-way split so
+        abort_slo and abort_slack are visually distinct even when color is similar:
+          no drop     → solid     "-"
+          abort_slo   → dashed    "--"
+          abort_slack → dash-dot  "-."
+        """
+        if self.drop == "e2e_slo":
+            return "--"
+        if self.drop == "slack":
+            return "-."
+        return "-"
 
     @property
     def hatch(self) -> str:
