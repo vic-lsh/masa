@@ -532,6 +532,8 @@ class MssimApp(AppPlugin):
         }
         if "MAX_IN_FLIGHT" in env_vars:
             loadgen_env["MAX_IN_FLIGHT"] = env_vars["MAX_IN_FLIGHT"]
+        if "WARMUP_SEC" in env_vars:
+            loadgen_env["WARMUP_SEC"] = env_vars["WARMUP_SEC"]
 
         frontend_json_path = output_dir / "frontend.json"
 
