@@ -650,6 +650,52 @@ def _style_axes(ax):
     ax.spines["right"].set_visible(False)
 
 
+def _place_line_chart_legend(
+    fig,
+    ax,
+    *,
+    max_cols: int = 4,
+    top_margin: float = 0.91,
+) -> None:
+    handles, labels = ax.get_legend_handles_labels()
+    if handles:
+        fig.legend(
+            handles,
+            labels,
+            loc="upper center",
+            bbox_to_anchor=(0.5, 0.975),
+            ncols=min(max_cols, len(handles)),
+            frameon=False,
+        )
+        fig.tight_layout(rect=[0, 0, 1, top_margin])
+        return
+
+    fig.tight_layout()
+
+
+def _set_line_chart_ylim(
+    ax,
+    series_by_policy: dict[str, list[float]],
+    *,
+    top_factor: float = 1.2,
+    minimum_top: float = 1.0,
+) -> None:
+    ymax = 0.0
+    for values in series_by_policy.values():
+        if values:
+            ymax = max(ymax, max(float(v or 0.0) for v in values))
+    ymax = max(minimum_top, ymax)
+    ax.set_ylim(0, ymax * top_factor)
+
+
+def _simplify_all_api_line_title(title: str, *, fraction: bool = False) -> str:
+    simplified = title.replace(" and breakdown by request type", "").strip()
+    if fraction:
+        simplified = simplified.replace("goodput vs load", "goodput fraction vs load")
+        simplified = simplified.replace("Goodput vs load", "Goodput fraction vs load")
+    return simplified
+
+
 def _request_type_order_and_collapse(
     policy_goodputs_by_type: dict,
     *,
@@ -923,15 +969,10 @@ def _plot_all_api_goodput_clean(
         )
     ax1.set_ylabel("Goodput (req/s meeting SLO)")
     ax1.set_xlabel("Load (requests per second)")
-    ax1.set_title(
-        title
-        if "aggregated" in title.lower() or "total" in title.lower()
-        else f"{title} - Aggregated"
-    )
-    ax1.legend(ncols=3, frameon=False, loc="upper left")
-    ax1.set_ylim(bottom=0)
+    ax1.set_title(_simplify_all_api_line_title(title))
+    _set_line_chart_ylim(ax1, policy_total_goodputs)
 
-    fig1.tight_layout()
+    _place_line_chart_legend(fig1, ax1, max_cols=3, top_margin=0.91)
     fig1.savefig(aggregated_path, dpi=300, bbox_inches="tight")
     plt.close(fig1)
 
@@ -957,17 +998,19 @@ def _plot_all_api_goodput_clean(
             markersize=6,
             **get_policy_line_style(policy),
         )
+    fraction_series = {
+        policy: [
+            (float(val) / rps) if rps else 0.0
+            for val, rps in zip(policy_total_goodputs.get(policy, []), rps_values)
+        ]
+        for policy in sorted_policies
+    }
     ax3.set_ylabel("Goodput / Offered Load")
     ax3.set_xlabel("Load (requests per second)")
-    ax3.set_title(
-        title
-        if "aggregated" in title.lower() or "total" in title.lower()
-        else f"{title} - Goodput Fraction"
-    )
-    ax3.legend(ncols=3, frameon=False, loc="upper left")
-    ax3.set_ylim(0, 1.1)  # Goodput fraction should be between 0 and 1
+    ax3.set_title(_simplify_all_api_line_title(title, fraction=True))
+    _set_line_chart_ylim(ax3, fraction_series, minimum_top=0.1)
 
-    fig3.tight_layout()
+    _place_line_chart_legend(fig3, ax3, max_cols=3, top_margin=0.91)
     fig3.savefig(fraction_path, dpi=300, bbox_inches="tight")
     plt.close(fig3)
 
@@ -1497,8 +1540,7 @@ def plot_goodput_timeline(
     ax.set_xlim(left=0, right=len(rps_sequence) * effective_duration)
     ax.set_ylim(bottom=0)
     ax.grid(True, which="both", linestyle="--", alpha=0.4)
-    ax.legend()
-    fig.tight_layout()
+    _place_line_chart_legend(fig, ax, top_margin=0.90)
     fig.savefig(output_path, dpi=300)
     plt.close(fig)
 
@@ -1621,8 +1663,7 @@ def plot_early_return_timeline(
     ax.set_xlim(left=0, right=len(rps_sequence) * effective_duration)
     ax.set_ylim(bottom=0)
     ax.grid(True, which="both", linestyle="--", alpha=0.4)
-    ax.legend()
-    fig.tight_layout()
+    _place_line_chart_legend(fig, ax, top_margin=0.90)
     fig.savefig(output_path, dpi=300)
     plt.close(fig)
 
