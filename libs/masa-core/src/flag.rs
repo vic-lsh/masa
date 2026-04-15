@@ -34,8 +34,6 @@ compile_error!(
     sched_tailclipper implements the TailClipper paper's policy as-is"
 );
 
-
-
 // === Admission control constraints ===
 // ac_pred (estimation-based) and ac_rajomon (token-based) are two different admission
 // control strategies. Only one can be active at a time.
