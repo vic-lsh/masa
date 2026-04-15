@@ -120,14 +120,29 @@ class Policy:
 
     @property
     def display_name(self) -> str:
-        """Human-readable key=value display name.
+        """Human-readable display name for legends.
 
-        Token order: prio → drop → ac [→ est (only for slack policies)].
         Unrecognised policies fall back to the raw string.
         """
         if self.prio is None:
             return self.raw
 
+        # Any policy using Masa's predictive features (sched_pred, ac_pred,
+        # abort_slack) maps to a single "Masa" label.
+        if self.prio == "slack" or self.ac == "slack" or self.drop == "slack":
+            return "Masa"
+
+        # TailClipper variants.
+        if self.prio == "oldest":
+            if self.ac == "rajomon":
+                return "tailclipper+rajomon"
+            return "tailclipper"
+
+        # FIFO + Rajomon.
+        if self.prio == "fifo" and self.ac == "rajomon":
+            return "fifo+rajomon"
+
+        # Fallback: key=value format for remaining combinations.
         parts = [
             f"prio={self.prio}",
             f"drop={self.drop or 'none'}",

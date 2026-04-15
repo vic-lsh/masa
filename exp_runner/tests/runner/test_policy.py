@@ -102,15 +102,12 @@ class TestDisplayName:
         )
 
     def test_fifo_with_ac(self):
-        assert (
-            Policy.parse("sched_fifo,ac_rajomon").display_name
-            == "prio=fifo, drop=none, ac=rajomon"
-        )
+        assert Policy.parse("sched_fifo,ac_rajomon").display_name == "fifo+rajomon"
 
     def test_fifo_with_drop_and_ac(self):
         assert (
             Policy.parse("sched_fifo,abort_slo,ac_rajomon").display_name
-            == "prio=fifo, drop=e2e_slo, ac=rajomon"
+            == "fifo+rajomon"
         )
 
     def test_e2e_slo_bare(self):
@@ -125,41 +122,32 @@ class TestDisplayName:
         )
 
     def test_oldest_bare(self):
-        assert (
-            Policy.parse("sched_tailclipper").display_name
-            == "prio=oldest, drop=none, ac=none"
-        )
+        assert Policy.parse("sched_tailclipper").display_name == "tailclipper"
 
     def test_oldest_with_drop(self):
+        assert Policy.parse("sched_tailclipper,abort_slo").display_name == "tailclipper"
+
+    def test_oldest_with_ac_rajomon(self):
         assert (
-            Policy.parse("sched_tailclipper,abort_slo").display_name
-            == "prio=oldest, drop=e2e_slo, ac=none"
+            Policy.parse("sched_tailclipper,ac_rajomon").display_name
+            == "tailclipper+rajomon"
         )
 
     def test_slack_default_est(self):
-        assert (
-            Policy.parse("sched_pred").display_name
-            == "prio=slack, drop=none, ac=none, est=mean_var"
-        )
+        assert Policy.parse("sched_pred").display_name == "Masa"
 
     def test_slack_explicit_est(self):
-        assert (
-            Policy.parse("sched_pred,est_mean_var").display_name
-            == "prio=slack, drop=none, ac=none, est=mean_var"
-        )
+        assert Policy.parse("sched_pred,est_mean_var").display_name == "Masa"
 
     def test_slack_full(self):
         assert (
             Policy.parse("sched_pred,abort_slo,ac_pred,est_mean_var").display_name
-            == "prio=slack, drop=e2e_slo, ac=slack, est=mean_var"
+            == "Masa"
         )
 
     def test_e2e_slo_with_ac_slack(self):
-        """ac=slack on a non-slack prio still shows est."""
-        assert (
-            Policy.parse("sched_slo,ac_pred,est_mean_var").display_name
-            == "prio=e2e_slo, drop=none, ac=slack, est=mean_var"
-        )
+        """ac_pred (ac=slack) triggers the Masa label."""
+        assert Policy.parse("sched_slo,ac_pred,est_mean_var").display_name == "Masa"
 
     def test_unknown_fallback(self):
         assert Policy.parse("custom").display_name == "custom"
