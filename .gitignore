@@ -6,6 +6,8 @@ tags
 .env
 .codex
 !.codex/prompts/
+.claude/scheduled_tasks.lock
+.claude/worktrees/
 .vscode/settings.json
 .vscode/launch.json
 **/__pycache__/**
