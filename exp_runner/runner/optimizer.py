@@ -58,9 +58,11 @@ def generate_rps_sweep(saturation_rps: int) -> list[int]:
     """Generate RPS values for the optimization sweep.
 
     Returns [0.8x, 1.0x, 1.2x, 1.5x, 2.0x] of saturation_rps,
-    each rounded to the nearest 100.
+    each rounded to the nearest 50. Fine-grained rounding matters at low
+    saturation — at saturation=200, rounding to 100 collapses 0.8x/1.0x/1.2x
+    all to 200 (three duplicate sweep points).
     """
-    return [int(round(saturation_rps * m / 100) * 100) for m in RPS_MULTIPLIERS]
+    return [int(round(saturation_rps * m / 50) * 50) for m in RPS_MULTIPLIERS]
 
 
 def sample_params(trial: optuna.Trial) -> dict:
