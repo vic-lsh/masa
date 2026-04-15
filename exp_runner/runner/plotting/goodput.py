@@ -9,6 +9,7 @@ import pandas as pd
 from exp_runner.runner.policy import Policy
 
 from .util import (
+    configure_plot_font_sizes,
     filter_excluded_errors,
     get_plot_worker_count,
     get_policy_bar_style,
@@ -20,6 +21,7 @@ from .util import (
     parse_args,
     PlotData,
     prepare_output_dir,
+    scale_fontsize,
 )
 
 matplotlib.use("Agg")  # Use non-interactive backend for thread safety
@@ -28,6 +30,7 @@ import matplotlib.pyplot as plt
 # Suppress warning about too many open figures when running in parallel
 # We properly close all figures, but many may be open simultaneously during parallel execution
 plt.rcParams["figure.max_open_warning"] = 0
+configure_plot_font_sizes()
 
 
 def get_request_type_hatch(request_type: str):
@@ -505,19 +508,19 @@ def _plot_early_return_breakdown(
                         rotation=45,
                         ha="right",
                         va="top",
-                        fontsize=12,
+                        fontsize=scale_fontsize(12),
                         rotation_mode="anchor",
                     )
 
-        ax.set_title(get_policy_display_name(policy), fontsize=14)
+        ax.set_title(get_policy_display_name(policy), fontsize=scale_fontsize(14))
         ax.set_ylim(0, ymax)
         ax.set_xticks(x)
         # Move RPS labels down to make room for subbar labels
-        ax.tick_params(axis="x", which="major", pad=40, labelsize=12)
-        ax.tick_params(axis="y", labelsize=12)
+        ax.tick_params(axis="x", which="major", pad=40, labelsize=scale_fontsize(12))
+        ax.tick_params(axis="y", labelsize=scale_fontsize(12))
         ax.set_xticklabels([str(v) for v in rps_values], rotation=0)
-        ax.set_xlabel("RPS", fontsize=12)
-        ax.set_ylabel("Early-return rate (req/s)", fontsize=12)
+        ax.set_xlabel("RPS", fontsize=scale_fontsize(12))
+        ax.set_ylabel("Early-return rate (req/s)", fontsize=scale_fontsize(12))
 
     # Hide unused subplots
     for idx in range(n, len(axes)):
@@ -558,7 +561,7 @@ def _plot_early_return_breakdown(
             loc="upper center",
             bbox_to_anchor=(0.3, 1.02),
             ncols=min(4, len(svc_handles)),
-            fontsize=12,
+            fontsize=scale_fontsize(12),
         )
         fig.add_artist(l2)
 
@@ -571,10 +574,10 @@ def _plot_early_return_breakdown(
             loc="upper center",
             bbox_to_anchor=(0.7, 1.02),
             ncols=min(4, len(method_handles)),
-            fontsize=12,
+            fontsize=scale_fontsize(12),
         )
 
-    fig.suptitle(title, fontsize=18, y=1.13)  # Moved up to make room for legends
+    fig.suptitle(title, fontsize=scale_fontsize(18), y=1.13)
     fig.tight_layout(rect=[0, 0, 1, 0.88])
     fig.savefig(breakdown_path, dpi=300, bbox_inches="tight")
     plt.close(fig)
@@ -822,7 +825,7 @@ def _plot_slo_miss_breakdown(
             )
             bottom += np.array(values)
 
-        ax.set_title(get_policy_display_name(policy), fontsize=11)
+        ax.set_title(get_policy_display_name(policy), fontsize=scale_fontsize(11))
         ax.set_ylim(0, ymax)
         ax.set_xticks(x)
         ax.set_xticklabels([str(v) for v in rps_values], rotation=0)
@@ -851,7 +854,7 @@ def _plot_slo_miss_breakdown(
         ncols=len(request_types),
     )
 
-    fig.suptitle(title, fontsize=14, y=0.98)
+    fig.suptitle(title, fontsize=scale_fontsize(14), y=0.98)
     fig.tight_layout(rect=[0, 0, 1, 0.90])
     fig.savefig(breakdown_path, dpi=300, bbox_inches="tight")
     plt.close(fig)
@@ -1019,7 +1022,7 @@ def _plot_all_api_goodput_clean(
             )
             bottom += np.array(values)
 
-        ax.set_title(get_policy_display_name(policy), fontsize=11)
+        ax.set_title(get_policy_display_name(policy), fontsize=scale_fontsize(11))
         ax.set_ylim(0, ymax)
         ax.set_xticks(x)
         ax.set_xticklabels([str(v) for v in rps_values], rotation=0)
@@ -1911,7 +1914,11 @@ def plot_abort_reason_timeline(
 
     axes[-1, 0].set_xlabel("Time (s)")
     axes[-1, 0].set_xlim(left=0, right=len(rps_sequence) * effective_duration)
-    fig.suptitle(f"Abort-reason timeline ({window_sec:g}s window)", fontsize=14, y=1.0)
+    fig.suptitle(
+        f"Abort-reason timeline ({window_sec:g}s window)",
+        fontsize=scale_fontsize(14),
+        y=1.0,
+    )
     fig.tight_layout()
     fig.savefig(output_path, dpi=300)
     plt.close(fig)

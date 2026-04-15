@@ -17,15 +17,17 @@ plotting_all = importlib.import_module("exp_runner.runner.plotting.all")
 
 def test_get_policy_display_name_delegates_to_policy():
     """Verify get_policy_display_name delegates to Policy.parse().display_name."""
-    assert get_policy_display_name("sched_fifo") == "prio=fifo, drop=none, ac=none"
-    assert (
-        get_policy_display_name("sched_fifo,abort_slo")
-        == "prio=fifo, drop=e2e_slo, ac=none"
-    )
-    assert get_policy_display_name("sched_slo") == "prio=e2e_slo, drop=none, ac=none"
+    assert get_policy_display_name("sched_fifo") == "FIFO"
+    assert get_policy_display_name("sched_fifo,abort_slo") == "FIFO (drop@SLO)"
+    assert get_policy_display_name("sched_slo") == "SLO priority"
     assert (
         get_policy_display_name("sched_pred,abort_slo,est_mean_var")
-        == "prio=slack, drop=e2e_slo, ac=none, est=mean_var"
+        == "Masa priority (drop@SLO)"
+    )
+    assert get_policy_display_name("sched_pred,abort_slack,ac_pred") == "Masa"
+    assert (
+        get_policy_display_name("sched_tailclipper,ac_rajomon")
+        == "Rajomon (w/ TailClipper)"
     )
     assert get_policy_display_name("custom") == "custom"
 

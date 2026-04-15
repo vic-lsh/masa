@@ -14,7 +14,14 @@ matplotlib.use("Agg")  # Non-interactive backend for file output
 import matplotlib.pyplot as plt
 import numpy as np
 
-from .util import get_policy_display_name, get_policy_line_style
+from .util import (
+    configure_plot_font_sizes,
+    get_policy_display_name,
+    get_policy_line_style,
+    scale_fontsize,
+)
+
+configure_plot_font_sizes()
 
 _EXPERIMENT_DIR_RE = re.compile(r"^(?P<policy>.+)_(?P<rps>\d+)$")
 _DEFAULT_SERVICE_ORDER = [
@@ -127,7 +134,7 @@ def _plot_replica_distribution(
 
     axes[-1].set_xlabel("Requests Per Second (RPS)")
     if axes[0].get_legend_handles_labels()[0]:
-        axes[0].legend(title="Service", ncol=3, fontsize="small")
+        axes[0].legend(title="Service", ncol=3, fontsize=scale_fontsize(8.33))
 
     output_path = output_dir / "replica_distribution.png"
     fig.tight_layout()
