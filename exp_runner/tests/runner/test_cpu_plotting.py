@@ -106,27 +106,31 @@ class TestGetPolicyStyles:
     """Tests for _get_policy_styles function (color + marker + linestyle bundle)."""
 
     def test_standard_policies(self):
-        """Standard policies map to the Okabe-Ito palette and per-prio markers."""
+        """Standard policies map to the Okabe-Ito palette.
+
+        Color encodes (prio, drop); marker encodes AC.
+        No-drop + no-AC policies: all markers are circle "o".
+        """
         policies = ["sched_fifo", "sched_slo", "sched_pred,est_mean_var"]
         styles = _get_policy_styles(policies)
 
-        # fifo: grey, circle, solid
+        # fifo + no drop + no AC: grey, circle, solid
         assert styles["sched_fifo"]["color"] == "#999999"
         assert styles["sched_fifo"]["marker"] == "o"
         assert styles["sched_fifo"]["linestyle"] == "-"
 
-        # e2e_slo: blue, square, solid
-        assert styles["sched_slo"]["color"] == "#0072B2"
-        assert styles["sched_slo"]["marker"] == "s"
+        # e2e_slo + no drop + no AC: yellow, circle, solid
+        assert styles["sched_slo"]["color"] == "#F0E442"
+        assert styles["sched_slo"]["marker"] == "o"
         assert styles["sched_slo"]["linestyle"] == "-"
 
-        # slack (no ac): vermillion, diamond, solid
+        # slack + no drop + no AC: vermillion, circle, solid
         assert styles["sched_pred,est_mean_var"]["color"] == "#D55E00"
-        assert styles["sched_pred,est_mean_var"]["marker"] == "D"
+        assert styles["sched_pred,est_mean_var"]["marker"] == "o"
         assert styles["sched_pred,est_mean_var"]["linestyle"] == "-"
 
     def test_abort_policies(self):
-        """Abort policies share the base color but switch to a dashed linestyle."""
+        """Abort_slo policies get distinct colors from their no-drop counterparts."""
         policies = [
             "sched_fifo,abort_slo",
             "sched_slo,abort_slo",
@@ -134,12 +138,12 @@ class TestGetPolicyStyles:
         ]
         styles = _get_policy_styles(policies)
 
-        # Color matches the no-drop counterpart
-        assert styles["sched_fifo,abort_slo"]["color"] == "#999999"
-        assert styles["sched_slo,abort_slo"]["color"] == "#0072B2"
-        assert styles["sched_pred,abort_slo,est_mean_var"]["color"] == "#D55E00"
+        # Color encodes (prio, drop=e2e_slo) — different from no-drop
+        assert styles["sched_fifo,abort_slo"]["color"] == "#56B4E9"    # sky blue
+        assert styles["sched_slo,abort_slo"]["color"] == "#000000"     # black
+        assert styles["sched_pred,abort_slo,est_mean_var"]["color"] == "#E69F00"  # orange
 
-        # All drop variants are dashed
+        # All abort_slo variants are dashed "--"
         for policy in policies:
             assert styles[policy]["linestyle"] == "--"
 
@@ -152,8 +156,8 @@ class TestGetPolicyStyles:
             assert policy in styles
             assert styles[policy]["color"] is not None
 
-        # Drop variant differs from base only in linestyle
-        assert styles["sched_fifo"]["color"] == styles["sched_fifo,abort_slo"]["color"]
+        # fifo and fifo+abort_slo now differ in color (the key fix)
+        assert styles["sched_fifo"]["color"] != styles["sched_fifo,abort_slo"]["color"]
         assert styles["sched_fifo"]["linestyle"] == "-"
         assert styles["sched_fifo,abort_slo"]["linestyle"] == "--"
 
