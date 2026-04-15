@@ -5,6 +5,7 @@ import matplotlib
 import numpy as np
 
 from .util import (
+    configure_plot_font_sizes,
     filter_excluded_errors,
     get_plot_worker_count,
     get_policy_display_name,
@@ -13,6 +14,7 @@ from .util import (
     PlotData,
     prepare_output_dir,
     read_data,
+    scale_fontsize,
 )
 
 matplotlib.use("Agg")  # Use non-interactive backend for thread safety
@@ -21,6 +23,7 @@ import matplotlib.pyplot as plt
 # Suppress warning about too many open figures when running in parallel
 # We properly close all figures, but many may be open simultaneously during parallel execution
 plt.rcParams["figure.max_open_warning"] = 0
+configure_plot_font_sizes()
 
 MS_TO_US = 10**3
 
@@ -155,7 +158,7 @@ def _plot_queueing_breakdown(
             )
             bottom += np.array(values)
 
-        ax.set_title(get_policy_display_name(policy), fontsize=11)
+        ax.set_title(get_policy_display_name(policy), fontsize=scale_fontsize(11))
         ax.set_ylim(0, ymax)
         ax.set_xticks(x)
         ax.set_xticklabels([str(v) for v in rps_values], rotation=0)
@@ -181,7 +184,7 @@ def _plot_queueing_breakdown(
         ncols=min(5, len(component_names)),
     )
 
-    fig.suptitle(title, fontsize=14, y=0.98)
+    fig.suptitle(title, fontsize=scale_fontsize(14), y=0.98)
     fig.tight_layout(rect=[0, 0, 1, 0.90])
     fig.savefig(output_path, dpi=300, bbox_inches="tight")
     plt.close(fig)
