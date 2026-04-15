@@ -13,7 +13,6 @@ from .util import (
     configure_plot_font_sizes,
     get_policy_display_name,
     get_policy_line_style,
-    get_policy_linestyle,
     scale_fontsize,
 )
 
@@ -421,12 +420,13 @@ def _plot_policy_services(
 
         # Single line per axes; use the policy's style so per-policy figures
         # are visually consistent with the multi-policy comparison plot.
+        style = get_policy_line_style(policy)
         ax.plot(
             df_grouped["time_rounded"],
             df_grouped["cpu_percent"],
             linewidth=2,
             markersize=3,
-            linestyle=get_policy_linestyle(policy),
+            **style,
         )
 
         ax.set_xlabel("Time (s)", fontsize=scale_fontsize(10))

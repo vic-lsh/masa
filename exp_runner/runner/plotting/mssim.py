@@ -414,16 +414,14 @@ def _plot_latency_cdf(
 
         values = np.sort(latencies.to_numpy())
         cdf = (np.arange(1, len(values) + 1) / len(values)).astype(float)
-        # CDF: dense lines, drop the marker dimension to avoid clutter.
         style = get_policy_line_style(policy)
-        style.pop("marker", None)
-        if style["color"] is None:
-            style["color"] = cmap(idx % cmap.N)
+        style["markevery"] = max(len(values) // 12, 1)
         ax.plot(
             values,
             cdf,
             label=get_policy_display_name(policy),
             linewidth=2,
+            markersize=5,
             **style,
         )
         any_data = True
