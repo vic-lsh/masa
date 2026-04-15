@@ -225,6 +225,7 @@ async fn run_root_load(
     max_in_flight: usize,
     root_samples: Arc<Mutex<Vec<RootLatencySample>>>,
     finish_after: Option<Duration>,
+    warmup: Duration,
     latency_sample_tx: mpsc::UnboundedSender<u64>,
 ) -> anyhow::Result<()> {
     // Poisson arrivals at rate `rps`. Shared with the other loadgens via
@@ -232,7 +233,12 @@ async fn run_root_load(
     let mut arrival_timer = ArrivalTimer::with_seed(ArrivalProcess::Exp, rps, rps.to_bits());
 
     let run_start = Instant::now();
-    let finish_deadline = finish_after.map(|duration| run_start + duration);
+    // Match app-utils loadgen semantics: total runtime = warmup + duration,
+    // samples collected only from the post-warmup window. Plotters therefore
+    // see each RPS-period CSV spanning exactly `duration` seconds of data
+    // and don't need to filter warmup afterward.
+    let trace_at = run_start + warmup;
+    let finish_deadline = finish_after.map(|duration| run_start + warmup + duration);
     let mut next_req_id: u64 = 0;
     let mut next_request_time = run_start;
 
@@ -300,6 +306,7 @@ async fn run_root_load(
                 next_req_id += 1;
 
                 let stats = Arc::clone(&stats);
+                let record_sample = Instant::now() >= trace_at;
                 inflight_tasks.spawn(async move {
                     let _permit = permit;
                     let start_at = time_now();
@@ -347,39 +354,43 @@ async fn run_root_load(
                             stats.ok.fetch_add(1, Ordering::Relaxed);
                             let (q_init, q_resume) =
                                 extract_queue_latencies(resp.metadata()).unwrap_or((0, 0));
-                            let sample = RootLatencySample {
-                                graph: entry.graph,
-                                missed_slo: elapsed > entry.slo_ms * 1000,
-                                error: String::new(),
-                                req_id,
-                                slo_us: entry.slo_ms * 1000,
-                                start_at,
-                                queue_latency_init_us: q_init,
-                                queue_latency_resume_us: q_resume,
-                                e2e_latency_us: elapsed,
-                            };
-                            {
-                                let mut guard = root_samples.lock().await;
-                                guard.push(sample);
+                            if record_sample {
+                                let sample = RootLatencySample {
+                                    graph: entry.graph,
+                                    missed_slo: elapsed > entry.slo_ms * 1000,
+                                    error: String::new(),
+                                    req_id,
+                                    slo_us: entry.slo_ms * 1000,
+                                    start_at,
+                                    queue_latency_init_us: q_init,
+                                    queue_latency_resume_us: q_resume,
+                                    e2e_latency_us: elapsed,
+                                };
+                                {
+                                    let mut guard = root_samples.lock().await;
+                                    guard.push(sample);
+                                }
+                                let _ = latency_sample_tx.send(elapsed);
                             }
-                            let _ = latency_sample_tx.send(elapsed);
                         }
                         Err(status) => {
                             stats.err.fetch_add(1, Ordering::Relaxed);
-                            let sample = RootLatencySample {
-                                graph: entry.graph,
-                                missed_slo: false,
-                                error: status.message().to_string(),
-                                req_id,
-                                slo_us: entry.slo_ms * 1000,
-                                start_at,
-                                queue_latency_init_us: 0,
-                                queue_latency_resume_us: 0,
-                                e2e_latency_us: elapsed,
-                            };
-                            {
-                                let mut guard = root_samples.lock().await;
-                                guard.push(sample);
+                            if record_sample {
+                                let sample = RootLatencySample {
+                                    graph: entry.graph,
+                                    missed_slo: false,
+                                    error: status.message().to_string(),
+                                    req_id,
+                                    slo_us: entry.slo_ms * 1000,
+                                    start_at,
+                                    queue_latency_init_us: 0,
+                                    queue_latency_resume_us: 0,
+                                    e2e_latency_us: elapsed,
+                                };
+                                {
+                                    let mut guard = root_samples.lock().await;
+                                    guard.push(sample);
+                                }
                             }
                         }
                     };
@@ -593,17 +604,26 @@ async fn main() -> anyhow::Result<()> {
         .parse()?;
     let duration = Duration::from_secs(duration as u64);
 
+    // Warmup period: if set, the loadgen runs for `warmup + duration` seconds
+    // per RPS level and only records samples from the post-warmup window.
+    // Matches app-utils loadgen (apps/app-utils/src/load_gen.rs:609,706).
+    let warmup_secs: u64 = env::var("WARMUP_SEC")
+        .unwrap_or_else(|_| "0".to_string())
+        .parse()?;
+    let warmup = Duration::from_secs(warmup_secs);
+
     let replay_env = env::var("REPLAY_TRACE_PATH")
         .ok()
         .map(|s| s.trim().to_owned())
         .filter(|s| !s.is_empty());
 
     tracing::info!(
-        "RPS values: {:?}, MAX_IN_FLIGHT: {}, STATS_INTERVAL_SEC: {}, DURATION: {:?}",
+        "RPS values: {:?}, MAX_IN_FLIGHT: {}, STATS_INTERVAL_SEC: {}, DURATION: {:?}, WARMUP: {:?}",
         rps_values,
         max_in_flight,
         stats_interval_sec,
-        duration
+        duration,
+        warmup,
     );
 
     // If replay_env is set, we are in replay mode
@@ -802,6 +822,7 @@ async fn main() -> anyhow::Result<()> {
             max_in_flight,
             root_samples.clone(),
             Some(duration),
+            warmup,
             latency_sample_tx.clone(),
         )
         .await?;
