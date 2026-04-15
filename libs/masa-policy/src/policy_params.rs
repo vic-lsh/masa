@@ -147,10 +147,6 @@ pub struct PredParams {
     /// (e.g. 0.40 if saturation produces ~41% ER fraction).
     /// Default 0.10.
     pub aimd_er_threshold: f64,
-    /// Number of observation windows (~50 ms each) to suppress alpha increases
-    /// after a beta decrease.  Prevents premature recovery before the effect
-    /// of the decrease is observed in ER feedback.  Default 2 (~100 ms).
-    pub aimd_cooldown_windows: u32,
 }
 
 impl Default for PredParams {
@@ -161,7 +157,6 @@ impl Default for PredParams {
             aimd_alpha: 0.05,
             aimd_beta: 0.875,
             aimd_er_threshold: 0.10,
-            aimd_cooldown_windows: 2,
         }
     }
 }
