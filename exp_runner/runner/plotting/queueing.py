@@ -1,3 +1,4 @@
+import csv
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -23,6 +24,9 @@ import matplotlib.pyplot as plt
 plt.rcParams["figure.max_open_warning"] = 0
 
 MS_TO_US = 10**3
+
+_PERCENTILES = [0.50, 0.95, 0.99]
+_PERCENTILE_LABELS = ["p50", "p95", "p99"]
 
 
 def _get_queueing_columns(df):
@@ -245,6 +249,115 @@ def _plot_total_queueing_latency(
     plt.close(fig)
 
 
+def _compute_queueing_percentiles(
+    policies: list,
+    rps_values: list,
+    data: dict,  # policy -> rps -> df
+    queueing_cols: list,
+) -> dict:
+    """Return {policy -> {rps -> {pN -> value_ms}}} for total queueing latency."""
+    result: dict = {}
+    for policy in policies:
+        result[policy] = {}
+        for rps in rps_values:
+            df = data[policy][rps]
+            df_filtered = filter_excluded_errors(df)
+            row: dict = {}
+            if df_filtered.empty or not queueing_cols:
+                for label in _PERCENTILE_LABELS:
+                    row[label] = 0.0
+            else:
+                total_q = df_filtered[queueing_cols].sum(axis=1) / MS_TO_US
+                for p, label in zip(_PERCENTILES, _PERCENTILE_LABELS):
+                    row[label] = float(total_q.quantile(p))
+            result[policy][rps] = row
+    return result
+
+
+def _plot_queueing_percentiles(
+    output_path: str,
+    csv_path: str,
+    api: str,
+    policies: list,
+    rps_values: list,
+    data: dict,  # policy -> rps -> df
+    title: str,
+) -> None:
+    """Plot p50 / p95 / p99 of total queueing latency vs load.
+
+    Produces:
+    - A 3-panel figure (one subplot per percentile), each showing all policies
+      as lines against RPS.  Uses the standard policy line style so colors and
+      markers are consistent with goodput plots.
+    - A CSV summary alongside the figure for downstream analysis.
+    """
+    queueing_cols = []
+    for policy in policies:
+        for rps in rps_values:
+            df = data[policy][rps]
+            if not df.empty:
+                queueing_cols = _get_queueing_columns(df)
+                if queueing_cols:
+                    break
+        if queueing_cols:
+            break
+
+    if not queueing_cols:
+        return
+
+    pct_data = _compute_queueing_percentiles(policies, rps_values, data, queueing_cols)
+
+    # ── CSV export ────────────────────────────────────────────────────────────
+    with open(csv_path, "w", newline="") as f:
+        fieldnames = ["policy", "rps"] + _PERCENTILE_LABELS
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        for policy in policies:
+            for rps in rps_values:
+                row = {"policy": policy, "rps": rps}
+                row.update(pct_data[policy][rps])
+                writer.writerow(row)
+
+    # ── Figure ────────────────────────────────────────────────────────────────
+    fig, axes = plt.subplots(
+        1, len(_PERCENTILE_LABELS), figsize=(5 * len(_PERCENTILE_LABELS), 5), sharey=True
+    )
+
+    for ax, label in zip(axes, _PERCENTILE_LABELS):
+        for policy in policies:
+            values = [pct_data[policy][rps][label] for rps in rps_values]
+            ax.plot(
+                rps_values,
+                values,
+                label=get_policy_display_name(policy),
+                linewidth=2,
+                markersize=6,
+                **get_policy_line_style(policy),
+            )
+        ax.set_title(label, fontsize=12)
+        ax.set_xlabel("Load (RPS)")
+        ax.grid(True, alpha=0.3)
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+
+    axes[0].set_ylabel("Total Queueing Latency (ms)")
+
+    # Single shared legend to the right of the last panel
+    handles, labels = axes[-1].get_legend_handles_labels()
+    fig.legend(
+        handles,
+        labels,
+        loc="upper center",
+        bbox_to_anchor=(0.5, -0.05),
+        ncols=min(4, len(policies)),
+        frameon=False,
+    )
+    fig.suptitle(title, fontsize=13)
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+
+
 def generate_plots(args, plot_data: PlotData | None = None) -> None:
     prepare_output_dir(args)
 
@@ -301,6 +414,25 @@ def generate_plots(args, plot_data: PlotData | None = None) -> None:
                             rps_values,
                             results[i][api],
                             f"Total Queueing Latency for {api}",
+                        ),
+                    )
+                )
+
+                futures.append(
+                    (
+                        _plot_queueing_percentiles,
+                        (
+                            os.path.join(
+                                queueing_dir, f"queueing_percentile_{api}.png"
+                            ),
+                            os.path.join(
+                                queueing_dir, f"queueing_percentile_{api}.csv"
+                            ),
+                            api,
+                            policies,
+                            rps_values,
+                            results[i][api],
+                            f"Queueing Latency Percentiles — {api}",
                         ),
                     )
                 )
