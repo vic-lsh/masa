@@ -9,9 +9,16 @@ import numpy as np
 import pandas as pd
 
 from ..container_utils import extract_service_name
-from .util import get_policy_display_name, get_policy_line_style, get_policy_linestyle
+from .util import (
+    configure_plot_font_sizes,
+    get_policy_display_name,
+    get_policy_line_style,
+    get_policy_linestyle,
+    scale_fontsize,
+)
 
 logger = logging.getLogger(__name__)
+configure_plot_font_sizes()
 
 
 def plot_cpu_utilization(
@@ -193,10 +200,14 @@ def _plot_service_cpu(
             **styles[policy],
         )
 
-    ax.set_xlabel("Time (seconds)", fontsize=12)
-    ax.set_ylabel("CPU Utilization (%)", fontsize=12)
-    ax.set_title(f"CPU Utilization - {service}", fontsize=14, fontweight="bold")
-    ax.legend(loc="best", fontsize=10)
+    ax.set_xlabel("Time (seconds)", fontsize=scale_fontsize(12))
+    ax.set_ylabel("CPU Utilization (%)", fontsize=scale_fontsize(12))
+    ax.set_title(
+        f"CPU Utilization - {service}",
+        fontsize=scale_fontsize(14),
+        fontweight="bold",
+    )
+    ax.legend(loc="best", fontsize=scale_fontsize(10))
     ax.grid(True, alpha=0.3)
     ax.set_ylim(0, 100)  # CPU utilization ranges from 0 to 100%
 
@@ -418,9 +429,9 @@ def _plot_policy_services(
             linestyle=get_policy_linestyle(policy),
         )
 
-        ax.set_xlabel("Time (s)", fontsize=10)
-        ax.set_ylabel("CPU %", fontsize=10)
-        ax.set_title(service, fontsize=11, fontweight="bold")
+        ax.set_xlabel("Time (s)", fontsize=scale_fontsize(10))
+        ax.set_ylabel("CPU %", fontsize=scale_fontsize(10))
+        ax.set_title(service, fontsize=scale_fontsize(11), fontweight="bold")
         ax.grid(True, alpha=0.3)
         ax.set_ylim(bottom=0)
 
@@ -430,7 +441,7 @@ def _plot_policy_services(
 
     fig.suptitle(
         f"CPU Utilization - {get_policy_display_name(policy)}",
-        fontsize=14,
+        fontsize=scale_fontsize(14),
         fontweight="bold",
     )
     fig.tight_layout()

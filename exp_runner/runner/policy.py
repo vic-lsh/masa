@@ -46,6 +46,19 @@ _AC_MAP: dict[str, str] = {
 # Flags that are always ignored (implied by other flags).
 _IGNORED_FLAGS = {"sched_slo", "estimator"}
 
+_PRIO_DISPLAY: dict[str, str] = {
+    "fifo": "FIFO",
+    "e2e_slo": "SLO priority",
+    "oldest": "TailClipper",
+    "slack": "Masa priority",
+}
+
+_DROP_DISPLAY: dict[str | None, str] = {
+    None: "no drop",
+    "e2e_slo": "drop@SLO",
+    "slack": "drop@slack",
+}
+
 
 def _parse_flags(policy: str) -> frozenset[str]:
     """Split a comma-separated policy string into a set of flags."""
@@ -118,24 +131,52 @@ class Policy:
 
     # ── display ────────────────────────────────────────────────────────
 
+    @staticmethod
+    def _format_display_name(base: str, details: list[str]) -> str:
+        if not details:
+            return base
+        return f"{base} ({', '.join(details)})"
+
     @property
     def display_name(self) -> str:
-        """Human-readable key=value display name.
+        """Human-readable policy label for plots.
 
-        Token order: prio → drop → ac [→ est (only for slack policies)].
-        Unrecognised policies fall back to the raw string.
+        The canonical Masa policy is ``sched_pred,ac_pred,abort_slack`` and is
+        rendered as ``Masa``. Variants render as ``Masa (...)`` with only the
+        deviations from that baseline. Rajomon policies use the same short-form
+        naming, while estimator flags are intentionally omitted from the label.
         """
         if self.prio is None:
             return self.raw
 
-        parts = [
-            f"prio={self.prio}",
-            f"drop={self.drop or 'none'}",
-            f"ac={self.ac or 'none'}",
-        ]
-        if self.est is not None:
-            parts.append(f"est={self.est}")
-        return ", ".join(parts)
+        if self.ac == "slack":
+            deviations: list[str] = []
+            if self.prio != "slack":
+                deviations.append(_PRIO_DISPLAY[self.prio])
+            if self.drop != "slack":
+                deviations.append(_DROP_DISPLAY[self.drop])
+            return self._format_display_name("Masa", deviations)
+
+        if self.ac == "rajomon":
+            if self.prio == "oldest":
+                base = "Rajomon"
+                details = ["w/ TailClipper"]
+            else:
+                base = "Rajomon"
+                details = [
+                    "FIFO default"
+                    if self.prio == "fifo"
+                    else _PRIO_DISPLAY[self.prio]
+                ]
+            if self.drop is not None:
+                details.append(_DROP_DISPLAY[self.drop])
+            return self._format_display_name(base, details)
+
+        base = _PRIO_DISPLAY[self.prio]
+        details = []
+        if self.drop is not None:
+            details.append(_DROP_DISPLAY[self.drop])
+        return self._format_display_name(base, details)
 
     @property
     def color(self) -> str | None:
