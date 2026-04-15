@@ -7,6 +7,7 @@ import pandas as pd
 import seaborn as sns
 
 from .util import (
+    apply_plot_defaults,
     filter_excluded_errors,
     get_plot_worker_count,
     get_policy_display_name,
@@ -23,6 +24,7 @@ import matplotlib.pyplot as plt
 # Suppress warning about too many open figures when running in parallel
 # We properly close all figures, but many may be open simultaneously during parallel execution
 plt.rcParams["figure.max_open_warning"] = 0
+apply_plot_defaults()
 
 
 MS_TO_US = 10**3

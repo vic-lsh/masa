@@ -9,6 +9,7 @@ import pandas as pd
 from exp_runner.runner.policy import Policy
 
 from .util import (
+    apply_plot_defaults,
     filter_excluded_errors,
     get_plot_worker_count,
     get_policy_bar_style,
@@ -28,6 +29,7 @@ import matplotlib.pyplot as plt
 # Suppress warning about too many open figures when running in parallel
 # We properly close all figures, but many may be open simultaneously during parallel execution
 plt.rcParams["figure.max_open_warning"] = 0
+apply_plot_defaults()
 
 
 def get_request_type_hatch(request_type: str):
@@ -558,7 +560,6 @@ def _plot_early_return_breakdown(
             loc="upper center",
             bbox_to_anchor=(0.3, 1.02),
             ncols=min(4, len(svc_handles)),
-            fontsize=12,
         )
         fig.add_artist(l2)
 
@@ -571,7 +572,6 @@ def _plot_early_return_breakdown(
             loc="upper center",
             bbox_to_anchor=(0.7, 1.02),
             ncols=min(4, len(method_handles)),
-            fontsize=12,
         )
 
     fig.suptitle(title, fontsize=18, y=1.13)  # Moved up to make room for legends
@@ -847,12 +847,12 @@ def _plot_slo_miss_breakdown(
         title="API",
         frameon=False,
         loc="upper center",
-        bbox_to_anchor=(0.5, 1.02),
+        bbox_to_anchor=(0.5, 0.0),
         ncols=len(request_types),
     )
 
-    fig.suptitle(title, fontsize=14, y=0.98)
-    fig.tight_layout(rect=[0, 0, 1, 0.90])
+    fig.suptitle(title, fontsize=14)
+    fig.tight_layout(rect=[0, 0.08, 1, 1.0])
     fig.savefig(breakdown_path, dpi=300, bbox_inches="tight")
     plt.close(fig)
 
@@ -925,7 +925,7 @@ def _plot_all_api_goodput_clean(
         if "aggregated" in title.lower() or "total" in title.lower()
         else f"{title} - Aggregated"
     )
-    ax1.legend(ncols=3, frameon=False, loc="upper left")
+    ax1.legend(ncols=3, frameon=False, loc="lower center", bbox_to_anchor=(0.5, 1.02))
 
     fig1.tight_layout()
     fig1.savefig(aggregated_path, dpi=300, bbox_inches="tight")
@@ -960,7 +960,7 @@ def _plot_all_api_goodput_clean(
         if "aggregated" in title.lower() or "total" in title.lower()
         else f"{title} - Goodput Fraction"
     )
-    ax3.legend(ncols=3, frameon=False, loc="upper left")
+    ax3.legend(ncols=3, frameon=False, loc="lower center", bbox_to_anchor=(0.5, 1.02))
     ax3.set_ylim(0, 1.1)  # Goodput fraction should be between 0 and 1
 
     fig3.tight_layout()

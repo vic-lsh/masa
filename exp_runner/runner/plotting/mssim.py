@@ -24,6 +24,7 @@ from .goodput import (
 )
 from .util import (
     _read_request_csv,
+    apply_plot_defaults,
     filter_excluded_errors,
     get_policy_display_name,
     get_policy_line_style,
@@ -31,6 +32,7 @@ from .util import (
 )
 
 plt.rcParams["figure.max_open_warning"] = 0
+apply_plot_defaults()
 
 
 _RPS_DIR_RE = re.compile(r"^rps_(?P<rps>[0-9_]+(?:\.[0-9_]+)?)$")

@@ -6,6 +6,7 @@ import matplotlib
 import numpy as np
 
 from .util import (
+    apply_plot_defaults,
     filter_excluded_errors,
     get_plot_worker_count,
     get_policy_display_name,
@@ -22,6 +23,7 @@ import matplotlib.pyplot as plt
 # Suppress warning about too many open figures when running in parallel
 # We properly close all figures, but many may be open simultaneously during parallel execution
 plt.rcParams["figure.max_open_warning"] = 0
+apply_plot_defaults()
 
 MS_TO_US = 10**3
 
@@ -170,7 +172,7 @@ def _plot_queueing_breakdown(
     for idx in range(n, len(axes)):
         axes[idx].set_visible(False)
 
-    # Shared Legend
+    # Shared Legend — placed below the subplots so it never overlaps the title
     handles = [
         matplotlib.patches.Patch(color=comp_colors[comp], label=comp)
         for comp in component_names
@@ -181,12 +183,14 @@ def _plot_queueing_breakdown(
         title="Component",
         frameon=False,
         loc="upper center",
-        bbox_to_anchor=(0.5, 1.02),
+        bbox_to_anchor=(0.5, 0.0),
         ncols=min(5, len(component_names)),
+        fontsize=13,
+        title_fontsize=13,
     )
 
-    fig.suptitle(title, fontsize=14, y=0.98)
-    fig.tight_layout(rect=[0, 0, 1, 0.90])
+    fig.suptitle(title, fontsize=14)
+    fig.tight_layout(rect=[0, 0.08, 1, 1.0])
     fig.savefig(output_path, dpi=300, bbox_inches="tight")
     plt.close(fig)
 
