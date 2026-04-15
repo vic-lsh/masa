@@ -4,10 +4,11 @@ Plotting utilities for MSSIM experiment results.
 
 from __future__ import annotations
 
+import csv
 import json
 import re
 from pathlib import Path
-from typing import Dict, List, Sequence
+from typing import Dict, List, Sequence, Tuple
 
 import matplotlib
 
@@ -421,6 +422,7 @@ def _plot_goodput_timeline(
     """
     fig, ax = plt.subplots(figsize=(14, 6))
     cmap = plt.get_cmap("tab10")
+    csv_rows: List[Tuple[str, float, float]] = []
 
     for idx, (policy, rps_data) in enumerate(policy_data_by_rps.items()):
         all_times: List[float] = []
@@ -470,8 +472,10 @@ def _plot_goodput_timeline(
             for tc in t_centers:
                 lo, hi = tc - window_sec / 2, tc + window_sec / 2
                 mask = (t_arr >= lo) & (t_arr < hi)
+                rate = float(g_arr[mask].sum()) / window_sec
                 all_times.append(tc)
-                all_goodput.append(float(g_arr[mask].sum()) / window_sec)
+                all_goodput.append(rate)
+                csv_rows.append((policy, tc, rate))
 
         if not all_times:
             continue
@@ -486,6 +490,7 @@ def _plot_goodput_timeline(
             all_goodput,
             label=get_policy_display_name(policy),
             linewidth=1.5,
+            zorder=3,
             **style,
         )
 
@@ -501,7 +506,13 @@ def _plot_goodput_timeline(
         step_t.append(t_start + duration_sec)
         step_rps.append(rps)
     ax.fill_between(
-        step_t, step_rps, step=None, color="grey", alpha=0.12, label="Offered RPS"
+        step_t,
+        step_rps,
+        step=None,
+        color="grey",
+        alpha=0.12,
+        label="Offered RPS",
+        zorder=1,
     )
     ax.step(
         step_t,
@@ -511,6 +522,7 @@ def _plot_goodput_timeline(
         linewidth=1.5,
         linestyle="-",
         alpha=0.5,
+        zorder=1,
     )
 
     ax.set_xlabel("Time (s)")
@@ -524,6 +536,13 @@ def _plot_goodput_timeline(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, dpi=300)
     plt.close(fig)
+
+    # Emit matching CSV (same per-window data points used to draw the plot).
+    csv_path = output_path.with_suffix(".csv")
+    with csv_path.open("w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["policy", "time_sec", "goodput_rps"])
+        w.writerows(csv_rows)
 
 
 def _plot_early_return_timeline(
@@ -725,7 +744,12 @@ def generate_plots(args) -> None:
         policy_data: Dict[str, Dict[float, pd.DataFrame]] = {}
         for policy in policies:
             policy_dir = iteration_dir / policy
-            policy_data[policy] = _load_policy_data(policy_dir, warmup_sec)
+            # Pass warmup_sec=0: the loadgen now drops warmup samples at the
+            # source (matching hotel/socialnet), so per-RPS CSVs already
+            # contain only post-warmup data. Filtering again here would
+            # double-count the warmup offset and push data into the wrong
+            # half of each period's timeline slot.
+            policy_data[policy] = _load_policy_data(policy_dir, 0.0)
 
         goodput_by_policy: Dict[str, List[float]] = {}
         percentiles_by_policy: Dict[str, Dict[float, List[float]]] = {}
