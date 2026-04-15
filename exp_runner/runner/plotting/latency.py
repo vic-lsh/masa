@@ -47,13 +47,13 @@ def _plot_latency_cdf(
         latencies = np.sort(df_filtered["latency"].to_numpy() / MS_TO_US)
         percentiles = np.linspace(0, 100, len(latencies))
 
-        # CDF: dense lines, drop the marker dimension to avoid clutter.
         style = get_policy_line_style(policy)
-        style.pop("marker", None)
+        style["markevery"] = max(len(latencies) // 12, 1)
         ax.plot(
             latencies,
             percentiles,
             label=get_policy_display_name(policy),
+            markersize=5,
             **style,
         )
 

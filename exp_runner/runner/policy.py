@@ -8,6 +8,7 @@ into a structured ``Policy`` object with typed fields for each category.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
 
 # Default estimator type when a slack-related flag is present but no explicit
 # est_* flag is given.  Must stay in sync with the Rust compile-time default
@@ -58,6 +59,41 @@ _DROP_DISPLAY: dict[str | None, str] = {
     "e2e_slo": "drop@SLO",
     "slack": "drop@slack",
 }
+
+_FALLBACK_COLORS = [
+    "#4E79A7",
+    "#F28E2B",
+    "#E15759",
+    "#76B7B2",
+    "#59A14F",
+    "#EDC948",
+    "#B07AA1",
+    "#FF9DA7",
+    "#9C755F",
+    "#BAB0AC",
+]
+
+_FALLBACK_MARKERS = ["o", "s", "D", "^", "v", "P", "X", "<", ">", "h", "*"]
+
+_MARKER_MAP: dict[tuple[str | None, str | None], str] = {
+    ("fifo", None): "o",
+    ("e2e_slo", None): "s",
+    ("oldest", None): "X",
+    ("slack", None): "P",
+    ("fifo", "slack"): "D",
+    ("e2e_slo", "slack"): "d",
+    ("oldest", "slack"): "p",
+    ("slack", "slack"): "H",
+    ("fifo", "rajomon"): "^",
+    ("e2e_slo", "rajomon"): "v",
+    ("oldest", "rajomon"): "<",
+    ("slack", "rajomon"): ">",
+}
+
+
+def _stable_index(raw: str, size: int) -> int:
+    digest = hashlib.blake2b(raw.encode("utf-8"), digest_size=8).digest()
+    return int.from_bytes(digest, "big") % size
 
 
 def _parse_flags(policy: str) -> frozenset[str]:
@@ -180,11 +216,12 @@ class Policy:
 
     @property
     def color(self) -> str | None:
-        """Matplotlib color for this policy, or None for the default cycle.
+        """Matplotlib color for this policy.
 
         Encodes (prio, drop) so that any two policies differing in scheduling
         priority or abort mechanism get distinct colors.  The AC dimension is
-        encoded by `marker` instead.
+        encoded by `marker` instead. Unrecognized policies fall back to a
+        stable palette indexed by the raw policy string.
 
         Palette (Okabe-Ito color-blind-safe + grey):
 
@@ -222,23 +259,23 @@ class Policy:
             ("slack", "e2e_slo"): "#E69F00",
             ("slack", "slack"): "#009E73",
         }
-        return _color_map.get((self.prio, self.drop))
+        color = _color_map.get((self.prio, self.drop))
+        if color is not None:
+            return color
+        return _FALLBACK_COLORS[_stable_index(self.raw, len(_FALLBACK_COLORS))]
 
     @property
     def marker(self) -> str:
         """Matplotlib marker shape for this policy.
 
-        Encodes the admission control mechanism so that policies with the same
-        (prio, drop) but different AC are visually distinct:
-          no AC       → circle   "o"
-          ac_pred     → diamond  "D"
-          ac_rajomon  → triangle "^"
+        Encodes the scheduler + admission-control family so policies that share
+        the same color still get a distinct point symbol. Unrecognized policies
+        fall back to a stable marker indexed by the raw policy string.
         """
-        if self.ac == "slack":
-            return "D"
-        if self.ac == "rajomon":
-            return "^"
-        return "o"
+        marker = _MARKER_MAP.get((self.prio, self.ac))
+        if marker is not None:
+            return marker
+        return _FALLBACK_MARKERS[_stable_index(self.raw, len(_FALLBACK_MARKERS))]
 
     @property
     def linestyle(self) -> str:

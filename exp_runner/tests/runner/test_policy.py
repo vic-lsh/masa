@@ -241,40 +241,42 @@ class TestColor:
         assert c1 != c2, f"abort_slo and abort_slack must not share a color: {c1}"
 
     def test_unknown(self):
-        assert Policy.parse("custom").color is None
+        assert Policy.parse("custom").color == "#BAB0AC"
 
 
 # ── marker / linestyle / hatch ────────────────────────────────────────────
 
 
 class TestMarker:
-    """Marker encodes the admission control mechanism.
+    """Marker encodes the scheduler + admission-control family.
 
-    no AC     → circle  "o"
-    ac_pred   → diamond "D"
-    ac_rajomon → triangle "^"
+    This keeps policy markers deterministic across plots while ensuring
+    Rajomon and Masa variants with different schedulers do not collapse onto
+    the same point symbol.
     """
 
     def test_no_ac(self):
         assert Policy.parse("sched_fifo").marker == "o"
-        assert Policy.parse("sched_slo").marker == "o"
-        assert Policy.parse("sched_tailclipper").marker == "o"
-        assert Policy.parse("sched_pred,est_mean_var").marker == "o"
+        assert Policy.parse("sched_slo").marker == "s"
+        assert Policy.parse("sched_tailclipper").marker == "X"
+        assert Policy.parse("sched_pred,est_mean_var").marker == "P"
 
     def test_ac_pred(self):
         assert Policy.parse("sched_fifo,abort_slo,ac_pred").marker == "D"
-        assert Policy.parse("sched_pred,abort_slack,ac_pred,est_mean_var").marker == "D"
+        assert Policy.parse("sched_slo,ac_pred,est_mean_var").marker == "d"
+        assert Policy.parse("sched_pred,abort_slack,ac_pred,est_mean_var").marker == "H"
 
     def test_ac_rajomon(self):
         assert Policy.parse("sched_fifo,ac_rajomon").marker == "^"
-        assert (
-            Policy.parse("sched_pred,ac_rajomon,abort_slo,est_mean_var").marker == "^"
-        )
+        assert Policy.parse("sched_slo,ac_rajomon").marker == "v"
+        assert Policy.parse("sched_tailclipper,ac_rajomon").marker == "<"
+        assert Policy.parse("sched_pred,ac_rajomon,abort_slo,est_mean_var").marker == ">"
 
     def test_drop_does_not_change_marker(self):
         # Drop is encoded by color + linestyle, not marker.
         assert Policy.parse("sched_fifo,abort_slo").marker == "o"
         assert Policy.parse("sched_fifo,abort_slack").marker == "o"
+        assert Policy.parse("sched_tailclipper,abort_slo,ac_rajomon").marker == "<"
 
     def test_unknown_fallback(self):
         assert Policy.parse("custom").marker == "o"
