@@ -27,6 +27,18 @@ Ask the user for:
   experiment dirs and tuned-params dir. Default: `<base>_acCmp`. Keep short
   — it becomes a directory name.
 
+## Config rules that apply to every phase
+
+- **Disable `MaxInFlight`** in every generated `gen_config.json`. A client
+  in-flight cap hides the exact behavior we're measuring (admission control
+  and scheduling under overload). If the base config has
+  `"MaxInFlight": <N>`, set it to a very large value (e.g. `100000`) or
+  remove the cap if the app supports omission. This applies to Phase 1
+  (saturation), Phase 2 (optimizer's copy of the base), and Phase 3 (the
+  comparison itself).
+- **Always use `sched_fifo` / `sched_pred` / etc.**, not the legacy
+  `fifo` / `prio_local` / `prio_oldest` names.
+
 If the user gestures vaguely ("run it on the two-trace workload"), ask once
 for the exact base config path — don't guess.
 
@@ -140,10 +152,13 @@ config and editing:
 
 - Keep the app-specific topology file unchanged (`hotel.json`,
   `socialnet.json`, `mssim.json`, etc.) — same workload as the base.
-- `gen_config.json`: Adjust `Rps` to span roughly `0.3x` to `3x` saturation
-  with ~10 points (denser around and above saturation, which is where the
-  comparison matters). Other fields inherit from the base unless the user
-  asks.
+- `gen_config.json`: Adjust `Rps` so the sweep **hits at least ~3x
+  saturation at the top end** (e.g. sat=600 → max RPS ≥ 1800). Span from
+  ~0.3x to ~3x saturation with ~10 points, denser around and above
+  saturation. The overload regime is where the comparison matters most —
+  if the top end doesn't reach 3x, the plot will truncate before our policy
+  opens its biggest lead. Other fields inherit from the base unless the
+  user asks. Confirm `MaxInFlight` is disabled (see config rules above).
 - `policies`: exactly three lines (use any `abort_*` / `est_*` modifiers the
   app conventionally pairs with these — hotel and socialnet typically add
   `abort_slo`; mssim usually runs without it; inspect the base's existing
