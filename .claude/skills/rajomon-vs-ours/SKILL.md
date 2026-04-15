@@ -29,11 +29,11 @@ Ask the user for:
 
 ## Config rules that apply to every phase
 
-- **Disable `MaxInFlight`** in every generated `gen_config.json`. A client
-  in-flight cap hides the exact behavior we're measuring (admission control
-  and scheduling under overload). If the base config has
-  `"MaxInFlight": <N>`, set it to a very large value (e.g. `100000`) or
-  remove the cap if the app supports omission. This applies to Phase 1
+- **Disable `MaxInFlight`** in every generated `gen_config.json` by setting
+  it to `0` (the sentinel that disables the cap). A client in-flight cap
+  hides the exact behavior we're measuring (admission control and
+  scheduling under overload). If the base config has `"MaxInFlight": <N>`
+  with `N > 0`, overwrite it to `"MaxInFlight": 0`. This applies to Phase 1
   (saturation), Phase 2 (optimizer's copy of the base), and Phase 3 (the
   comparison itself).
 - **Always use `sched_fifo` / `sched_pred` / etc.**, not the legacy
