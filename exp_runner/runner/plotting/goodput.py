@@ -1699,9 +1699,7 @@ def _parse_loadgen_client_shed(
     """
     import re
 
-    pattern = re.compile(
-        r"secs[=:\s]\s*(\d+).*?client_shed[=:\s]\s*(\d+(?:\.\d+)?)"
-    )
+    pattern = re.compile(r"secs[=:\s]\s*(\d+).*?client_shed[=:\s]\s*(\d+(?:\.\d+)?)")
     times: list[float] = []
     rates: list[float] = []
     if not os.path.exists(loadgen_log_path):

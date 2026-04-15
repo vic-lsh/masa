@@ -139,9 +139,11 @@ class TestGetPolicyStyles:
         styles = _get_policy_styles(policies)
 
         # Color encodes (prio, drop=e2e_slo) — different from no-drop
-        assert styles["sched_fifo,abort_slo"]["color"] == "#56B4E9"    # sky blue
-        assert styles["sched_slo,abort_slo"]["color"] == "#000000"     # black
-        assert styles["sched_pred,abort_slo,est_mean_var"]["color"] == "#E69F00"  # orange
+        assert styles["sched_fifo,abort_slo"]["color"] == "#56B4E9"  # sky blue
+        assert styles["sched_slo,abort_slo"]["color"] == "#000000"  # black
+        assert (
+            styles["sched_pred,abort_slo,est_mean_var"]["color"] == "#E69F00"
+        )  # orange
 
         # All abort_slo variants are dashed "--"
         for policy in policies:

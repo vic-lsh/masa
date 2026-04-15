@@ -440,5 +440,4 @@ mod tests {
             "idle decay should open admission after 3×tau_er, got {admitted_after}/1000"
         );
     }
-
 }
