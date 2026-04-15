@@ -45,6 +45,14 @@ const OUTPUT_DIR: &str = "loadgen_output";
 #[cfg(feature = "ac_rajomon")]
 const RAJOMON_API: &str = "root";
 
+fn inflight_guard_for_limit(max_in_flight: usize) -> Option<Arc<Semaphore>> {
+    if max_in_flight > 0 {
+        Some(Arc::new(Semaphore::new(max_in_flight)))
+    } else {
+        None
+    }
+}
+
 #[derive(Default)]
 struct Stats {
     sent: AtomicUsize,
@@ -221,8 +229,7 @@ async fn run_root_load(
     client_pool: ClientPool,
     rps: f64,
     stats: Arc<Stats>,
-    inflight_guard: Arc<Semaphore>,
-    max_in_flight: usize,
+    inflight_guard: Option<Arc<Semaphore>>,
     root_samples: Arc<Mutex<Vec<RootLatencySample>>>,
     finish_after: Option<Duration>,
     warmup: Duration,
@@ -272,13 +279,17 @@ async fn run_root_load(
                 next_request_time = next_request_time + inter_arrival;
 
                 // request max-in-flight control
-                let permit = match inflight_guard.clone().try_acquire_owned() {
-                    Ok(p) => p,
-                    Err(_) => {
-                        // If we can't acquire permit, count as throttled and still schedule next request
-                        stats.throttled.fetch_add(1, Ordering::Relaxed);
-                        continue;
-                    },
+                let permit = if let Some(ref guard) = inflight_guard {
+                    match guard.clone().try_acquire_owned() {
+                        Ok(p) => Some(p),
+                        Err(_) => {
+                            // If we can't acquire permit, count as throttled and still schedule next request
+                            stats.throttled.fetch_add(1, Ordering::Relaxed);
+                            continue;
+                        },
+                    }
+                } else {
+                    None
                 };
 
                 // Client-side Rajomon gate: consult the shared token bucket
@@ -405,9 +416,6 @@ async fn run_root_load(
         }
     }
 
-    // Ensure no in-flight permits remain before exit.
-    let _ = inflight_guard.acquire_many(max_in_flight as u32).await;
-
     let s = stats.sent.load(Ordering::Relaxed);
     let o = stats.ok.load(Ordering::Relaxed);
     let e = stats.err.load(Ordering::Relaxed);
@@ -423,6 +431,19 @@ async fn run_root_load(
     );
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn zero_max_in_flight_disables_guard() {
+        assert!(inflight_guard_for_limit(0).is_none());
+
+        let guard = inflight_guard_for_limit(3).expect("positive limit should create semaphore");
+        assert_eq!(guard.available_permits(), 3);
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -736,7 +757,7 @@ async fn main() -> anyhow::Result<()> {
     // For replay mode, just run once
     if matches!(load_mode, LoadMode::Replay { .. }) {
         let stats = Arc::new(Stats::default());
-        let inflight_guard = Arc::new(Semaphore::new(max_in_flight));
+        let inflight_guard = inflight_guard_for_limit(max_in_flight);
         let (latency_sample_tx, latency_sample_rx) = mpsc::unbounded_channel::<u64>();
         let mut bg_tasks = JoinSet::new();
 
@@ -791,7 +812,7 @@ async fn main() -> anyhow::Result<()> {
         tracing::info!("{}\n", "=".repeat(60));
 
         let stats = Arc::new(Stats::default());
-        let inflight_guard = Arc::new(Semaphore::new(max_in_flight));
+        let inflight_guard = inflight_guard_for_limit(max_in_flight);
         let (latency_sample_tx, latency_sample_rx) = mpsc::unbounded_channel::<u64>();
 
         let root_samples = Arc::new(Mutex::new(Vec::<RootLatencySample>::new()));
@@ -819,7 +840,6 @@ async fn main() -> anyhow::Result<()> {
             *rps,
             stats.clone(),
             inflight_guard.clone(),
-            max_in_flight,
             root_samples.clone(),
             Some(duration),
             warmup,
