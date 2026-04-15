@@ -21,9 +21,14 @@ message SearchRequest {
   optional string locale = 5;
 }
 
-message SearchResponse { 
+message SearchResponse {
   repeated Hotel hotels = 1;
   repeated string childTraces = 2;
+  // Per-service queueing latency (initial + resume, microseconds).
+  // Populated only when the binary is built with trace_queue_latency.
+  uint64 searchQueueingLatency = 3;
+  uint64 reservationQueueingLatency = 4;
+  uint64 profileQueueingLatency = 5;
 }
 
 message Hotel {
@@ -57,7 +62,13 @@ message ReservationRequest {
   uint32 numRooms = 15;
 }
 
-message ReservationResponse { repeated string hotels = 1; }
+message ReservationResponse {
+  repeated string hotels = 1;
+  // Per-service queueing latency (initial + resume, microseconds).
+  // Populated only when the binary is built with trace_queue_latency.
+  uint64 userQueueingLatency = 2;
+  uint64 reservationQueueingLatency = 3;
+}
 
 message ReviewRequest {
   string hotelId = 1;

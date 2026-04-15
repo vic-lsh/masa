@@ -25,7 +25,7 @@ use app_utils::{
     timing::time_now,
 };
 use frontend::frontend_client::FrontendClient;
-use hotel::profile_layer::extract_latency_traces;
+
 use masa::Context;
 use tonic::masa_ext::MasaRequestExt;
 use tonic::Response;
@@ -145,11 +145,17 @@ impl RequestType<HotelClient> for ReservationRequest {
     }
 
     fn response_output_headers(&self) -> Vec<String> {
-        Vec::new()
+        vec![
+            "user_queueing_latency".to_string(),
+            "reservation_queueing_latency".to_string(),
+        ]
     }
 
-    fn response_to_row(_metadata: &MetadataMap, _r: &Self::ResponseType) -> Vec<String> {
-        Vec::new()
+    fn response_to_row(_metadata: &MetadataMap, r: &Self::ResponseType) -> Vec<String> {
+        vec![
+            r.user_queueing_latency.to_string(),
+            r.reservation_queueing_latency.to_string(),
+        ]
     }
 }
 
@@ -190,18 +196,19 @@ impl RequestType<HotelClient> for SearchRequest {
     }
 
     fn response_output_headers(&self) -> Vec<String> {
-        Vec::new()
+        vec![
+            "search_queueing_latency".to_string(),
+            "reservation_queueing_latency".to_string(),
+            "profile_queueing_latency".to_string(),
+        ]
     }
 
-    fn response_to_row(metadata: &MetadataMap, _r: &Self::ResponseType) -> Vec<String> {
-        match metadata.get("X-Latency-Traces") {
-            None => Vec::new(),
-            Some(_) => {
-                let mut traces = extract_latency_traces(metadata).unwrap_or_default();
-                traces.extend(_r.child_traces.iter().cloned());
-                traces
-            }
-        }
+    fn response_to_row(_metadata: &MetadataMap, r: &Self::ResponseType) -> Vec<String> {
+        vec![
+            r.search_queueing_latency.to_string(),
+            r.reservation_queueing_latency.to_string(),
+            r.profile_queueing_latency.to_string(),
+        ]
     }
 }
 
