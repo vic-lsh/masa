@@ -15,20 +15,26 @@ class TestGenerateRpsSweep:
     """Tests for RPS sweep generation."""
 
     def test_standard_sweep(self):
-        """[0.8x, 1.0x, 1.2x, 1.5x, 2.0x] rounded to nearest 100."""
+        """[0.8x, 1.0x, 1.2x, 1.5x, 2.0x] rounded to nearest 50."""
         result = generate_rps_sweep(1800)
-        assert result == [1400, 1800, 2200, 2700, 3600]
+        assert result == [1450, 1800, 2150, 2700, 3600]
 
     def test_sweep_1000(self):
         result = generate_rps_sweep(1000)
         assert result == [800, 1000, 1200, 1500, 2000]
 
     def test_sweep_rounding(self):
-        """Each value should be rounded to nearest 100."""
+        """Each value should be rounded to nearest 50."""
         result = generate_rps_sweep(550)
-        # 0.8*550=440 -> 400, 1.0*550=550 -> 600, 1.2*550=660 -> 700,
-        # 1.5*550=825 -> 800, 2.0*550=1100 -> 1100
-        assert result == [400, 600, 700, 800, 1100]
+        # 0.8*550=440 -> 450, 1.0*550=550 -> 550, 1.2*550=660 -> 650,
+        # 1.5*550=825 -> 800 (banker's rounding), 2.0*550=1100 -> 1100
+        assert result == [450, 550, 650, 800, 1100]
+
+    def test_sweep_low_saturation(self):
+        """At low saturation, nearest-50 avoids collapsing 0.8x/1.0x/1.2x."""
+        # Regression: used to collapse to [200, 200, 200, 300, 400] at nearest-100.
+        result = generate_rps_sweep(200)
+        assert result == [150, 200, 250, 300, 400]
 
 
 class TestSampleParams:
