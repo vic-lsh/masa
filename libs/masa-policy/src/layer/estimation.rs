@@ -230,8 +230,8 @@ impl EstimationLayer {
         }
         #[cfg(not(feature = "sched_pred"))]
         {
-            let _ = est_remaining;
-            (ctx.deadline(), ctx.prio_hint())
+            let d = ctx.deadline().saturating_sub(est_remaining);
+            (d, ctx.prio_hint())
         }
     }
 }
