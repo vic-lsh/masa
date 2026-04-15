@@ -40,6 +40,44 @@ configure_plot_font_sizes()
 _RPS_DIR_RE = re.compile(r"^rps_(?P<rps>[0-9_]+(?:\.[0-9_]+)?)$")
 
 
+def _place_line_chart_legend(
+    fig,
+    ax,
+    *,
+    max_cols: int = 4,
+    top_margin: float = 0.91,
+) -> None:
+    handles, labels = ax.get_legend_handles_labels()
+    if handles:
+        fig.legend(
+            handles,
+            labels,
+            loc="upper center",
+            bbox_to_anchor=(0.5, 0.975),
+            ncols=min(max_cols, len(handles)),
+            frameon=False,
+        )
+        fig.tight_layout(rect=[0, 0, 1, top_margin])
+        return
+
+    fig.tight_layout()
+
+
+def _set_line_chart_ylim(
+    ax,
+    policy_series: Dict[str, Sequence[float]],
+    *,
+    top_factor: float = 1.2,
+    minimum_top: float = 1.0,
+) -> None:
+    ymax = 0.0
+    for values in policy_series.values():
+        if values:
+            ymax = max(ymax, max(float(v or 0.0) for v in values))
+    ymax = max(minimum_top, ymax)
+    ax.set_ylim(0, ymax * top_factor)
+
+
 def _parse_rps_dir(path: Path) -> float:
     match = _RPS_DIR_RE.match(path.name)
     if not match:
@@ -284,10 +322,13 @@ def _plot_goodput_lines(
     ax.set_xlabel("Offered load (RPS)")
     ax.set_ylabel(ylabel)
     ax.set_title(title)
-    ax.set_ylim(bottom=0)
+    _set_line_chart_ylim(
+        ax,
+        policy_series,
+        minimum_top=0.1 if "fraction" in ylabel.lower() else 1.0,
+    )
     ax.grid(True, which="both", linestyle="--", alpha=0.4)
-    ax.legend()
-    fig.tight_layout()
+    _place_line_chart_legend(fig, ax, top_margin=0.91)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, dpi=300)
     plt.close(fig)
@@ -533,8 +574,7 @@ def _plot_goodput_timeline(
     ax.set_xlim(left=0, right=len(rps_sequence) * duration_sec)
     ax.set_ylim(bottom=0)
     ax.grid(True, which="both", linestyle="--", alpha=0.4)
-    ax.legend()
-    fig.tight_layout()
+    _place_line_chart_legend(fig, ax, top_margin=0.90)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, dpi=300)
     plt.close(fig)
