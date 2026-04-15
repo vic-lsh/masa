@@ -1,0 +1,10 @@
+{
+  "latency_threshold_us": 2145,
+  "price_update_rate_ms": 10,
+  "price_step_up": 14,
+  "init_price": 863,
+  "price_freq": 3,
+  "tokens_left_init": 489941,
+  "token_update_rate_ms": 2,
+  "token_update_step": 1700
+}
