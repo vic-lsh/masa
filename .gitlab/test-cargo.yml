@@ -1,5 +1,12 @@
 cargo_test:
     stage: test
+    rules:
+        - changes:
+              - "**/*.rs"
+              - "**/Cargo.toml"
+              - Cargo.lock
+              - scripts/test.sh
+              - .gitlab/test-cargo.yml
     parallel:
         matrix:
             - POLICY_FEATURE: ["", "sched_fifo", "sched_slo", "sched_tailclipper,abort_slo", "sched_slo,ac_rajomon", "sched_pred,abort_slo,ac_pred,est_mean_var"]
