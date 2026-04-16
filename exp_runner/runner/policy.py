@@ -127,10 +127,24 @@ class Policy:
         if self.prio is None:
             return self.raw
 
-        # Any policy using Masa's predictive features (sched_pred, ac_pred,
-        # abort_slack) maps to a single "Masa" label.
-        if self.prio == "slack" or self.ac == "slack" or self.drop == "slack":
+        # Full Masa: all three slack components present.
+        is_slack_sched = self.prio == "slack"
+        is_slack_abort = self.drop == "slack"
+        is_slack_ac = self.ac == "slack"
+
+        if is_slack_sched and is_slack_abort and is_slack_ac:
             return "Masa"
+
+        # Partial Masa variants (ablation): label by what's missing.
+        if is_slack_sched or is_slack_abort or is_slack_ac:
+            missing = []
+            if not is_slack_sched:
+                missing.append("slack-sched")
+            if not is_slack_abort:
+                missing.append("slack-abort")
+            if not is_slack_ac:
+                missing.append("slack-AC")
+            return "Masa w/o " + ", ".join(missing)
 
         # TailClipper variants.
         if self.prio == "oldest":

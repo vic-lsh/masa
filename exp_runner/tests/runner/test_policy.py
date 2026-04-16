@@ -133,21 +133,48 @@ class TestDisplayName:
             == "tailclipper+rajomon"
         )
 
-    def test_slack_default_est(self):
-        assert Policy.parse("sched_pred").display_name == "Masa"
-
-    def test_slack_explicit_est(self):
-        assert Policy.parse("sched_pred,est_mean_var").display_name == "Masa"
-
-    def test_slack_full(self):
+    def test_full_masa(self):
         assert (
-            Policy.parse("sched_pred,abort_slo,ac_pred,est_mean_var").display_name
+            Policy.parse("sched_pred,abort_slack,ac_pred,est_mean_var").display_name
             == "Masa"
         )
 
+    def test_slack_sched_only(self):
+        assert (
+            Policy.parse("sched_pred").display_name
+            == "Masa w/o slack-abort, slack-AC"
+        )
+
+    def test_slack_sched_explicit_est(self):
+        assert (
+            Policy.parse("sched_pred,est_mean_var").display_name
+            == "Masa w/o slack-abort, slack-AC"
+        )
+
+    def test_slack_sched_with_slo_abort_and_ac(self):
+        assert (
+            Policy.parse("sched_pred,abort_slo,ac_pred,est_mean_var").display_name
+            == "Masa w/o slack-abort"
+        )
+
+    def test_fifo_with_ac_pred_abort_slack(self):
+        assert (
+            Policy.parse("sched_fifo,ac_pred,abort_slack").display_name
+            == "Masa w/o slack-sched"
+        )
+
+    def test_fifo_with_ac_pred_abort_slo(self):
+        assert (
+            Policy.parse("sched_fifo,ac_pred,abort_slo").display_name
+            == "Masa w/o slack-sched, slack-abort"
+        )
+
     def test_e2e_slo_with_ac_slack(self):
-        """ac_pred (ac=slack) triggers the Masa label."""
-        assert Policy.parse("sched_slo,ac_pred,est_mean_var").display_name == "Masa"
+        """ac_pred (ac=slack) without slack-sched or slack-abort."""
+        assert (
+            Policy.parse("sched_slo,ac_pred,est_mean_var").display_name
+            == "Masa w/o slack-sched, slack-abort"
+        )
 
     def test_unknown_fallback(self):
         assert Policy.parse("custom").display_name == "custom"
