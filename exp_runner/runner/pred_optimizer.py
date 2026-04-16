@@ -43,9 +43,12 @@ import logging
 import shutil
 import subprocess
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
+
+if TYPE_CHECKING:
+    import pandas
 
 import numpy as np
 import optuna
@@ -116,7 +119,7 @@ def sample_params_from_values(values: dict) -> dict:
 
 
 def compute_windowed_goodput(
-    df: "pd.DataFrame", window_secs: float = 5.0
+    df: "pandas.DataFrame", window_secs: float = 5.0
 ) -> list[float]:
     """Split a request CSV into time windows and return per-window goodput (req/s).
 
@@ -125,7 +128,6 @@ def compute_windowed_goodput(
 
     Returns an empty list if the run is shorter than one window.
     """
-    import pandas as pd
 
     df_filtered = filter_excluded_errors(df)
     if df_filtered.empty:
