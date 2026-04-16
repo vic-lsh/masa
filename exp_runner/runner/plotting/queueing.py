@@ -324,7 +324,10 @@ def _plot_queueing_percentiles(
 
     # ── Figure ────────────────────────────────────────────────────────────────
     fig, axes = plt.subplots(
-        1, len(_PERCENTILE_LABELS), figsize=(5 * len(_PERCENTILE_LABELS), 5), sharey=True
+        1,
+        len(_PERCENTILE_LABELS),
+        figsize=(5 * len(_PERCENTILE_LABELS), 5),
+        sharey=True,
     )
 
     for ax, label in zip(axes, _PERCENTILE_LABELS):
