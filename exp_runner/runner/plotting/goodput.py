@@ -1375,7 +1375,7 @@ def plot_goodput_timeline(
     policy_data_by_rps: dict[str, dict[int, pd.DataFrame]],
     *,
     duration_sec: float,
-    window_sec: float = 2.0,
+    window_sec: float = 5.0,
 ) -> None:
     """Plot per-second goodput over time for real apps (hotel, socialnet, synthetic).
 
@@ -1506,7 +1506,7 @@ def plot_early_return_timeline(
     policy_data_by_rps: dict[str, dict[int, pd.DataFrame]],
     *,
     duration_sec: float,
-    window_sec: float = 2.0,
+    window_sec: float = 5.0,
 ) -> None:
     """Plot per-second early-return rate over time for real apps.
 
@@ -1709,7 +1709,7 @@ def plot_abort_reason_timeline(
     policy_data_by_rps: dict[str, dict[int, pd.DataFrame]],
     *,
     duration_sec: float,
-    window_sec: float = 2.0,
+    window_sec: float = 5.0,
     data_dir: str | None = None,
     iteration: int = 0,
     warmup_sec: float = 0.0,
