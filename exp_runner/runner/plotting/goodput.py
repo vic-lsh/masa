@@ -1838,7 +1838,12 @@ def plot_abort_reason_timeline(
                 )
                 for t, rate in zip(shed_times, shed_rates):
                     csv_rows.append(
-                        {"Time": t, "Policy": policy, "Reason": "ClientShed", "Rate": rate}
+                        {
+                            "Time": t,
+                            "Policy": policy,
+                            "Reason": "ClientShed",
+                            "Rate": rate,
+                        }
                     )
 
         # Offered RPS step area.

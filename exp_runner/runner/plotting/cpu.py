@@ -9,7 +9,12 @@ import numpy as np
 import pandas as pd
 
 from ..container_utils import extract_service_name
-from .util import apply_plot_defaults, get_policy_display_name, get_policy_line_style, get_policy_linestyle
+from .util import (
+    apply_plot_defaults,
+    get_policy_display_name,
+    get_policy_line_style,
+    get_policy_linestyle,
+)
 
 apply_plot_defaults()
 
