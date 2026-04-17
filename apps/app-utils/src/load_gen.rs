@@ -403,19 +403,39 @@ where
             r
         };
 
-        let (response, error) = map_response(response, latency <= self.slo);
-
+        // Extract the rajomon price header from BOTH success and error responses
+        // before `map_response` consumes the result. The server's `finalize`
+        // hook writes the price into the response metadata on Ok and into the
+        // Status metadata on Err
+        // (libs/masa-policy/src/layer/admission/rajomon.rs:397-405), and the
+        // Go reference reads it regardless of err
+        // (3rd_party/rajomon/rajomon.go:181-189). Reading only from successful
+        // responses creates a starvation feedback loop: a method whose
+        // responses are all rejected never bootstraps its client
+        // `cached_prices` entry, so the loadgen never throttles it, so its
+        // server gate keeps firing on every random `tok` draw. See
+        // 3rd_party/rajomon/RUST_PORT_ALIGNMENT.md and
+        // exp/docs/tundra.md for the empirical symptom.
         #[cfg(feature = "ac_rajomon")]
-        if let Some((ref metadata, _)) = response {
-            if let Some(price_header) = metadata.get("x-masa-rajomon-price") {
-                if let Ok(price_str) = price_header.to_str() {
-                    if let Ok(price) = price_str.parse::<u64>() {
-                        let method = tonic::CowGrpcMethod::new("", self.api.clone());
-                        masa::update_rajomon_price(&method, price);
+        {
+            let metadata: Option<&MetadataMap> = match &response {
+                Ok(Ok(resp)) => Some(resp.metadata()),
+                Ok(Err(status)) => Some(status.metadata()),
+                Err(_) => None,
+            };
+            if let Some(md) = metadata {
+                if let Some(price_header) = md.get("x-masa-rajomon-price") {
+                    if let Ok(price_str) = price_header.to_str() {
+                        if let Ok(price) = price_str.parse::<u64>() {
+                            let method = tonic::CowGrpcMethod::new("", self.api.clone());
+                            masa::update_rajomon_price(&method, price);
+                        }
                     }
                 }
             }
         }
+
+        let (response, error) = map_response(response, latency <= self.slo);
 
         let stats = RequestStats::new(ctx, latency, error.clone(), response);
 
