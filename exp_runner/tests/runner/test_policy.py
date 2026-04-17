@@ -97,7 +97,10 @@ class TestDisplayName:
         assert Policy.parse("sched_fifo,abort_slo").display_name == "FIFO (drop@SLO)"
 
     def test_fifo_rajomon(self):
-        assert Policy.parse("sched_fifo,ac_rajomon").display_name == "Rajomon (FIFO default)"
+        assert (
+            Policy.parse("sched_fifo,ac_rajomon").display_name
+            == "Rajomon (FIFO default)"
+        )
 
     def test_fifo_rajomon_with_drop(self):
         assert (
@@ -146,8 +149,7 @@ class TestDisplayName:
 
     def test_masa_fifo_variant(self):
         assert (
-            Policy.parse("sched_fifo,abort_slack,ac_pred").display_name
-            == "Masa (FIFO)"
+            Policy.parse("sched_fifo,abort_slack,ac_pred").display_name == "Masa (FIFO)"
         )
 
     def test_masa_fifo_drop_at_slo_variant(self):
@@ -270,7 +272,9 @@ class TestMarker:
         assert Policy.parse("sched_fifo,ac_rajomon").marker == "^"
         assert Policy.parse("sched_slo,ac_rajomon").marker == "v"
         assert Policy.parse("sched_tailclipper,ac_rajomon").marker == "<"
-        assert Policy.parse("sched_pred,ac_rajomon,abort_slo,est_mean_var").marker == ">"
+        assert (
+            Policy.parse("sched_pred,ac_rajomon,abort_slo,est_mean_var").marker == ">"
+        )
 
     def test_drop_does_not_change_marker(self):
         # Drop is encoded by color + linestyle, not marker.

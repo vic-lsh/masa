@@ -200,9 +200,7 @@ class Policy:
             else:
                 base = "Rajomon"
                 details = [
-                    "FIFO default"
-                    if self.prio == "fifo"
-                    else _PRIO_DISPLAY[self.prio]
+                    "FIFO default" if self.prio == "fifo" else _PRIO_DISPLAY[self.prio]
                 ]
             if self.drop is not None:
                 details.append(_DROP_DISPLAY[self.drop])
