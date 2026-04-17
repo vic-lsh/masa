@@ -23,7 +23,7 @@ matplotlib.use("Agg")  # Use non-interactive backend for testing
 from exp_runner.runner.plotting.cpu import (
     plot_cpu_utilization,
     _plot_service_cpu,
-    _get_policy_colors,
+    _get_policy_styles,
     _sanitize_filename,
     _apply_ewma,
 )
@@ -102,55 +102,79 @@ class TestSanitizeFilename:
         assert _sanitize_filename("complex/file:name*test") == "complex_file_name_test"
 
 
-class TestGetPolicyColors:
-    """Tests for _get_policy_colors function."""
+class TestGetPolicyStyles:
+    """Tests for _get_policy_styles function (color + marker + linestyle bundle)."""
 
     def test_standard_policies(self):
-        """Test color assignment for standard policies (new names)."""
-        policies = ["sched_fifo", "sched_slo", "sched_pred,est_mean_var"]
-        colors = _get_policy_colors(policies)
+        """Standard policies map to the Okabe-Ito palette.
 
-        assert colors["sched_fifo"] == "grey"
-        assert colors["sched_slo"] == "steelblue"
-        assert colors["sched_pred,est_mean_var"] == "coral"
+        Color encodes (prio, drop); marker encodes AC.
+        No-drop + no-AC policies: all markers are circle "o".
+        """
+        policies = ["sched_fifo", "sched_slo", "sched_pred,est_mean_var"]
+        styles = _get_policy_styles(policies)
+
+        # fifo + no drop + no AC: grey, circle, solid
+        assert styles["sched_fifo"]["color"] == "#999999"
+        assert styles["sched_fifo"]["marker"] == "o"
+        assert styles["sched_fifo"]["linestyle"] == "-"
+
+        # e2e_slo + no drop + no AC: yellow, circle, solid
+        assert styles["sched_slo"]["color"] == "#F0E442"
+        assert styles["sched_slo"]["marker"] == "o"
+        assert styles["sched_slo"]["linestyle"] == "-"
+
+        # slack + no drop + no AC: vermillion, circle, solid
+        assert styles["sched_pred,est_mean_var"]["color"] == "#D55E00"
+        assert styles["sched_pred,est_mean_var"]["marker"] == "o"
+        assert styles["sched_pred,est_mean_var"]["linestyle"] == "-"
 
     def test_abort_policies(self):
-        """Test color assignment for abort policies (new names)."""
+        """Abort_slo policies get distinct colors from their no-drop counterparts."""
         policies = [
             "sched_fifo,abort_slo",
             "sched_slo,abort_slo",
             "sched_pred,abort_slo,est_mean_var",
         ]
-        colors = _get_policy_colors(policies)
+        styles = _get_policy_styles(policies)
 
-        assert colors["sched_fifo,abort_slo"] == "darkgrey"
-        assert colors["sched_slo,abort_slo"] == "cornflowerblue"
-        assert colors["sched_pred,abort_slo,est_mean_var"] == "coral"
+        # Color encodes (prio, drop=e2e_slo) — different from no-drop
+        assert styles["sched_fifo,abort_slo"]["color"] == "#56B4E9"  # sky blue
+        assert styles["sched_slo,abort_slo"]["color"] == "#000000"  # black
+        assert (
+            styles["sched_pred,abort_slo,est_mean_var"]["color"] == "#E69F00"
+        )  # orange
+
+        # All abort_slo variants are dashed "--"
+        for policy in policies:
+            assert styles[policy]["linestyle"] == "--"
 
     def test_mixed_policies(self):
-        """Test color assignment for mixed standard and abort policies."""
+        """Mixed known + unknown policies all get a populated style entry."""
         policies = ["sched_fifo", "sched_fifo,abort_slo", "sched_slo", "custom_policy"]
-        colors = _get_policy_colors(policies)
+        styles = _get_policy_styles(policies)
 
-        assert "sched_fifo" in colors
-        assert "sched_fifo,abort_slo" in colors
-        assert "sched_slo" in colors
-        assert "custom_policy" in colors
+        for policy in policies:
+            assert policy in styles
+            assert styles[policy]["color"] is not None
 
-        # Standard policies should have defined colors
-        assert colors["sched_fifo"] == "grey"
-        assert colors["sched_slo"] == "steelblue"
+        # fifo and fifo+abort_slo now differ in color (the key fix)
+        assert styles["sched_fifo"]["color"] != styles["sched_fifo,abort_slo"]["color"]
+        assert styles["sched_fifo"]["linestyle"] == "-"
+        assert styles["sched_fifo,abort_slo"]["linestyle"] == "--"
 
     def test_unknown_policies(self):
-        """Test that unknown policies get default colors."""
+        """Unknown policies fall back to matplotlib's prop cycle for color."""
         policies = ["unknown1", "unknown2", "unknown3"]
-        colors = _get_policy_colors(policies)
+        styles = _get_policy_styles(policies)
 
-        # All policies should get a color
-        assert len(colors) == 3
+        assert len(styles) == 3
         for policy in policies:
-            assert policy in colors
-            assert colors[policy] is not None
+            assert policy in styles
+            assert styles[policy]["color"] is not None
+            # Fallback marker/linestyle for unknown prio
+            assert styles[policy]["marker"] == "o"
+            assert styles[policy]["linestyle"] == "-"
 
 
 class TestPlotServiceCpu:

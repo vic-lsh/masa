@@ -17,33 +17,80 @@ use std::sync::OnceLock;
 
 /// Tunable parameters for the Rajomon token-based admission control policy.
 ///
-/// All defaults reproduce the behaviour of the original Go implementation.
+/// Implements the algorithm described in the NSDI '25 paper *"Rajomon:
+/// Decentralized and Coordinated Overload Control for Latency-Sensitive
+/// Microservices"* (Xing et al.). For an exhaustive comparison against the
+/// paper and the upstream Go reference (`3rd_party/rajomon/`), see
+/// `3rd_party/rajomon/RUST_PORT_ALIGNMENT.md`.
+///
+/// **Algorithm summary** (paper §3.4 "Proportional Price Updates"):
+/// At each tick (`price_update_rate_ms`), the server reads the maximum
+/// queueing delay observed in the previous window. If it exceeds the
+/// threshold, the price is *increased proportionally* to the excess
+/// (`(excess_us * price_step_up) / 1000`, paper says ~3-13 tokens per 1ms
+/// excess is typical). If queueing falls below half the threshold, the
+/// price is *decreased by 1* (hardcoded in the paper). Otherwise, the
+/// price is held (hysteresis dead band `[threshold/2, threshold]`).
+///
+/// **Total price** (paper §3.4 "Maximum Total Price"):
+/// `total_price(service) = own_price + max(downstream_total_prices)`.
+/// A request with `tokens` is admitted iff `tokens >= total_price`.
+///
+/// **Lazy price propagation** (paper §3.4):
+/// Each response attaches the local price with probability `1/price_freq`
+/// (probabilistic per-call Bernoulli draw, not a deterministic modulo).
+///
+/// **Client-side token bucket** (paper §3.3):
+/// Tokens replenish via a Poisson process at rate
+/// `token_update_step / token_update_rate_ms` tokens/ms.
+/// Each outgoing request spends a *uniform random* amount
+/// from `[0, current_balance]` (paper §3.3 "Randomized Token Spending");
+/// deterministic "all-in" spending is explicitly called out by the paper
+/// as making AQM ineffective.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct RajomonParams {
-    /// Server-side price tick interval in milliseconds.
+    /// Server-side price-update tick interval in milliseconds.
+    /// Paper §3.4 suggests this typically ranges from 1ms to 20ms.
     pub price_update_rate_ms: u64,
-    /// Queue-latency threshold (µs) above which the server raises its price.
+
+    /// Queueing-delay threshold in microseconds.
+    /// The price climbs when observed queue latency exceeds this value
+    /// and decays when it drops below half this value (`threshold / 2`).
+    /// Paper §3.4 suggests this typically ranges from 1ms to 20ms.
     pub latency_threshold_us: u64,
-    /// Additive price increment per tick when congested.
+
+    /// Proportional price-increase coefficient: tokens added per 1ms of
+    /// queueing-delay excess over `latency_threshold_us`.
+    /// The full increment per tick is
+    /// `((excess_us * price_step_up) / 1000).max(1)`.
+    /// Paper §3.4: typical range is 3-13. Bumping this above the paper
+    /// range makes the controller more aggressive on the climb side.
     pub price_step_up: u64,
-    /// Additive price decrement per tick when not congested.
-    pub price_step_down: u64,
-    /// Maximum server price. Should be ≤ max_token to allow some admission.
-    pub price_cap: u64,
-    /// Initial server price on startup.
+
+    /// Initial server price on worker startup.
+    /// Default 0 matches the Go reference. The paper doesn't specify.
     pub init_price: u64,
-    /// Deterministic price-propagation frequency: send price every 1/N requests.
+
+    /// Inverse propagation probability: each response attaches the price
+    /// with probability `1 / price_freq` via a per-call Bernoulli draw.
+    /// Paper §3.4 example: 20% propagation rate, i.e. `price_freq = 5`.
+    /// `price_freq = 1` means always propagate. `price_freq = 0` disables
+    /// propagation entirely.
     pub price_freq: u64,
-    /// Initial client token-bucket balance.
+
+    /// Initial value of the client-side `CLIENT_TOKEN_BUCKET` on process
+    /// startup.
     pub tokens_left_init: u64,
-    /// Client token-bucket replenishment interval in milliseconds.
+
+    /// Mean inter-replenishment interval (in milliseconds) for the
+    /// client-side token bucket. Paper §3.3 specifies a Poisson process,
+    /// which our implementation realizes via an exponential distribution
+    /// with rate `1 / token_update_rate_ms`.
     pub token_update_rate_ms: u64,
-    /// Tokens added per replenishment tick.
+
+    /// Tokens added on each client-bucket replenishment event.
     pub token_update_step: u64,
-    /// Maximum token value. Loadgen draws uniform random bids in [0, max_token].
-    /// price_cap should be ≤ max_token.
-    pub max_token: u64,
 }
 
 impl Default for RajomonParams {
@@ -52,65 +99,64 @@ impl Default for RajomonParams {
             price_update_rate_ms: 10,
             latency_threshold_us: 5_000,
             price_step_up: 8,
-            price_step_down: 2,
-            price_cap: 60,
             init_price: 0,
             price_freq: 5,
             tokens_left_init: 10,
             token_update_rate_ms: 10,
             token_update_step: 5,
-            max_token: 100,
         }
     }
 }
 
 /// Tunable parameters for the predictive admission control policy.
 ///
-/// Uses a goodput-tracking rate controller: the token-bucket refill rate
-/// tracks observed successful completion throughput (in µs/s) plus a
-/// probe margin, replacing the previous utilization-based feedback loop.
+/// `reject_prob = (1 - admit_p) * exp(-idle_elapsed / tau_er)`
 ///
-/// The probe margin switches between two modes based on the rejection rate:
-/// - **Explore** (`probe_max`): used when rejection rate is below
-///   `rejection_threshold`, allowing aggressive capacity discovery.
-/// - **Exploit** (`probe_min`): used when rejection rate exceeds the
-///   threshold, locking to tight goodput tracking during overload.
+/// `admit_p` is updated per 50 ms window: multiplicative decrease (`admit_p *= beta`)
+/// when the window's ER fraction exceeds `aimd_er_threshold`; additive increase
+/// (`admit_p += alpha`) otherwise. The exponential term provides natural phase reset
+/// when traffic is sparse — idle_elapsed grows, reject_prob decays to 0.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct PredParams {
-    /// Maximum burst window in seconds (token-bucket capacity = budget_rate × max_burst_secs).
-    pub max_burst_secs: f64,
-    /// Initial token-bucket refill rate in µs of compute budget per second.
-    /// Used as bootstrap value before real completions arrive.
-    pub initial_budget_rate: f64,
-    /// Minimum probe factor — tight tracking during overload (exploit mode).
-    /// E.g., 0.05 means budget_rate = goodput_rate * 1.05.
-    pub probe_min: f64,
-    /// Maximum probe factor — aggressive exploration at sub-saturation (explore mode).
-    /// E.g., 1.0 means budget_rate = goodput_rate * 2.0.
-    pub probe_max: f64,
-    /// Per-decision EMA coefficient for the rejection rate tracker.
-    pub rejection_alpha: f64,
-    /// Rejection rate threshold for switching from explore to exploit mode.
-    pub rejection_threshold: f64,
-    /// EMA time constant in seconds for the goodput rate estimator.
-    pub tau: f64,
-    /// Variance multiplier for the LatencyMeanVar estimator.
-    /// estimate = mean + k * stddev. 0.0 = pure mean estimator (default).
+    /// Time constant (seconds) for idle decay in `should_admit`.
+    ///
+    /// As time passes since the last window close, reject_prob decays:
+    /// `reject_prob = (1 - admit_p) * exp(-idle_elapsed / tau_er)`.
+    /// Larger values keep admission restricted longer after an overload episode.
+    /// Default 2.0 s.
+    pub tau_er: f64,
+    /// Variance multiplier for the LatencyMeanVar estimator used by abort_slack.
+    /// `estimate = mean + k * stddev`. 0.0 = pure mean estimator (default).
     pub estimator_k: f64,
+    /// AIMD proportional additive increase per healthy 50 ms window.
+    ///
+    /// Actual increment is `alpha * (1 - admit_p)`, so recovery slows as
+    /// admit_p approaches 1.0.  At admit_p = 0 the step equals alpha.
+    /// Default 0.05.
+    pub aimd_alpha: f64,
+    /// AIMD base multiplicative decrease factor (severity-scaled).
+    ///
+    /// Effective factor is `beta.powf(er_sample / aimd_er_threshold)`:
+    /// at the threshold boundary the cut equals `beta`; at 4× threshold
+    /// the cut is `beta^4`.  Must be in (0.0, 1.0).  Default 0.875.
+    pub aimd_beta: f64,
+    /// ER-fraction threshold above which a 50 ms window is considered overloaded.
+    ///
+    /// Should be set just below the natural ER fraction at saturation
+    /// (e.g. 0.40 if saturation produces ~41% ER fraction).
+    /// Default 0.10.
+    pub aimd_er_threshold: f64,
 }
 
 impl Default for PredParams {
     fn default() -> Self {
         Self {
-            max_burst_secs: 0.005,
-            initial_budget_rate: 5_000_000.0,
-            probe_min: 0.15,
-            probe_max: 1.0,
-            rejection_alpha: 0.05,
-            rejection_threshold: 0.10,
-            tau: 2.0,
+            tau_er: 2.0,
             estimator_k: 0.0,
+            aimd_alpha: 0.05,
+            aimd_beta: 0.875,
+            aimd_er_threshold: 0.10,
         }
     }
 }
@@ -178,28 +224,27 @@ mod tests {
     #[test]
     fn test_defaults_are_sane() {
         let p = PolicyParams::default();
-        assert_eq!(p.rajomon.max_token, 100);
-        assert!(p.rajomon.price_cap <= p.rajomon.max_token);
-        assert_eq!(p.pred.probe_min, 0.15);
-        assert_eq!(p.pred.tau, 2.0);
+        assert_eq!(p.rajomon.token_update_step, 5);
+        assert!(p.pred.tau_er > 0.0);
+        assert!(p.pred.aimd_alpha > 0.0);
+        assert!(p.pred.aimd_beta > 0.0 && p.pred.aimd_beta < 1.0);
+        assert!(p.pred.aimd_er_threshold > 0.0 && p.pred.aimd_er_threshold < 1.0);
     }
 
     #[test]
     fn test_partial_json_uses_defaults() {
-        let json = r#"{"rajomon": {"max_token": 200}}"#;
+        let json = r#"{"rajomon": {"token_update_step": 200}}"#;
         let p: PolicyParams = serde_json::from_str(json).unwrap();
-        assert_eq!(p.rajomon.max_token, 200);
-        // Other rajomon fields should be defaults
+        assert_eq!(p.rajomon.token_update_step, 200);
         assert_eq!(p.rajomon.price_update_rate_ms, 10);
-        // pred fields should be defaults
-        assert_eq!(p.pred.probe_min, 0.15);
+        assert_eq!(p.pred.tau_er, 2.0);
     }
 
     #[test]
     fn test_empty_json_uses_all_defaults() {
         let p: PolicyParams = serde_json::from_str("{}").unwrap();
         let d = PolicyParams::default();
-        assert_eq!(p.rajomon.max_token, d.rajomon.max_token);
-        assert_eq!(p.pred.probe_min, d.pred.probe_min);
+        assert_eq!(p.rajomon.token_update_step, d.rajomon.token_update_step);
+        assert_eq!(p.pred.tau_er, d.pred.tau_er);
     }
 }

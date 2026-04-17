@@ -9,10 +9,14 @@ import pandas as pd
 from exp_runner.runner.policy import Policy
 
 from .util import (
+    apply_plot_defaults,
     filter_excluded_errors,
     get_plot_worker_count,
+    get_policy_bar_style,
     get_policy_color,
     get_policy_display_name,
+    get_policy_line_style,
+    get_policy_linestyle,
     load_plot_data,
     parse_args,
     PlotData,
@@ -25,6 +29,7 @@ import matplotlib.pyplot as plt
 # Suppress warning about too many open figures when running in parallel
 # We properly close all figures, but many may be open simultaneously during parallel execution
 plt.rcParams["figure.max_open_warning"] = 0
+apply_plot_defaults()
 
 
 def get_request_type_hatch(request_type: str):
@@ -555,7 +560,6 @@ def _plot_early_return_breakdown(
             loc="upper center",
             bbox_to_anchor=(0.3, 1.02),
             ncols=min(4, len(svc_handles)),
-            fontsize=12,
         )
         fig.add_artist(l2)
 
@@ -568,7 +572,6 @@ def _plot_early_return_breakdown(
             loc="upper center",
             bbox_to_anchor=(0.7, 1.02),
             ncols=min(4, len(method_handles)),
-            fontsize=12,
         )
 
     fig.suptitle(title, fontsize=18, y=1.13)  # Moved up to make room for legends
@@ -844,12 +847,12 @@ def _plot_slo_miss_breakdown(
         title="API",
         frameon=False,
         loc="upper center",
-        bbox_to_anchor=(0.5, 1.02),
+        bbox_to_anchor=(0.5, 0.0),
         ncols=len(request_types),
     )
 
-    fig.suptitle(title, fontsize=14, y=0.98)
-    fig.tight_layout(rect=[0, 0, 1, 0.90])
+    fig.suptitle(title, fontsize=14)
+    fig.tight_layout(rect=[0, 0.08, 1, 1.0])
     fig.savefig(breakdown_path, dpi=300, bbox_inches="tight")
     plt.close(fig)
 
@@ -907,15 +910,13 @@ def _plot_all_api_goodput_clean(
 
     for policy in sorted_policies:
         y = policy_total_goodputs.get(policy, [])
-        color = get_policy_color(policy)
         ax1.plot(
             rps_values,
             y,
-            marker="o",
             label=get_policy_display_name(policy),
-            color=color,
             linewidth=2,
             markersize=6,
+            **get_policy_line_style(policy),
         )
     ax1.set_ylabel("Goodput (req/s meeting SLO)")
     ax1.set_xlabel("Load (requests per second)")
@@ -924,7 +925,7 @@ def _plot_all_api_goodput_clean(
         if "aggregated" in title.lower() or "total" in title.lower()
         else f"{title} - Aggregated"
     )
-    ax1.legend(ncols=3, frameon=False, loc="upper left")
+    ax1.legend(ncols=3, frameon=False, loc="lower center", bbox_to_anchor=(0.5, 1.02))
 
     fig1.tight_layout()
     fig1.savefig(aggregated_path, dpi=300, bbox_inches="tight")
@@ -944,15 +945,13 @@ def _plot_all_api_goodput_clean(
                 fraction_values.append(goodput_values[i] / rps)
             else:
                 fraction_values.append(0.0)
-        color = get_policy_color(policy)
         ax3.plot(
             rps_values,
             fraction_values,
-            marker="o",
             label=get_policy_display_name(policy),
-            color=color,
             linewidth=2,
             markersize=6,
+            **get_policy_line_style(policy),
         )
     ax3.set_ylabel("Goodput / Offered Load")
     ax3.set_xlabel("Load (requests per second)")
@@ -961,7 +960,7 @@ def _plot_all_api_goodput_clean(
         if "aggregated" in title.lower() or "total" in title.lower()
         else f"{title} - Goodput Fraction"
     )
-    ax3.legend(ncols=3, frameon=False, loc="upper left")
+    ax3.legend(ncols=3, frameon=False, loc="lower center", bbox_to_anchor=(0.5, 1.02))
     ax3.set_ylim(0, 1.1)  # Goodput fraction should be between 0 and 1
 
     fig3.tight_layout()
@@ -1221,13 +1220,12 @@ def _plot_policy_goodput_comparison(
 
     for j, policy in enumerate(sorted_policies):
         offset = (j - len(sorted_policies) / 2 + 0.5) * bar_width
-        color = get_policy_color(policy)
         ax.bar(
             index + offset,
             policy_goodputs[policy],
             bar_width,
             label=get_policy_display_name(policy),
-            color=color,
+            **get_policy_bar_style(policy),
         )
 
     ax.set_xlabel("Requests Per Second (RPS)")
@@ -1344,13 +1342,12 @@ def _plot_averaged_goodput(
             / repeats
         )
         offset = (j - len(sorted_policies) / 2 + 0.5) * bar_width
-        color = get_policy_color(policy)
         ax.bar(
             index + offset,
             average_goodput,
             bar_width,
             label=get_policy_display_name(policy),
-            color=color,
+            **get_policy_bar_style(policy),
         )
 
     ax.set_xlabel("Requests Per Second (RPS)")
@@ -1378,17 +1375,22 @@ def plot_goodput_timeline(
     policy_data_by_rps: dict[str, dict[int, pd.DataFrame]],
     *,
     duration_sec: float,
-    warmup_sec: float = 0,
-    window_sec: float = 2.0,
+    window_sec: float = 5.0,
 ) -> None:
     """Plot per-second goodput over time for real apps (hotel, socialnet, synthetic).
 
     Stitches RPS periods in their original run order, using a sliding window.
     SLO is per-row (``df["slo"]`` in microseconds), matching real-app mixed-SLO data.
+
+    Note: ``DurationSecs`` is the *measurement* window only — the loadgen
+    (apps/app-utils/src/load_gen.rs:422) drops warmup requests before they
+    reach the trace channel, so the per-RPS CSVs already exclude warmup.
+    The plot lays out each period as ``duration_sec`` seconds wide.
     """
     fig, ax = plt.subplots(figsize=(14, 6))
     cmap = plt.get_cmap("tab10")
     csv_rows: list[dict[str, object]] = []
+    effective_duration = duration_sec
 
     for idx, policy in enumerate(policies):
         rps_data = policy_data_by_rps.get(policy, {})
@@ -1413,13 +1415,6 @@ def plot_goodput_timeline(
             # Time relative to this period, in seconds
             rel_sec = (start_at - t_min) / 1_000_000.0
 
-            # Skip warmup
-            if warmup_sec > 0:
-                keep = rel_sec >= warmup_sec
-                rel_sec = rel_sec[keep] - warmup_sec
-                df = df.loc[keep]
-
-            effective_duration = duration_sec - warmup_sec
             abs_sec = rel_sec + period_idx * effective_duration
 
             # Goodput mask: latency (microseconds) <= slo (microseconds)
@@ -1459,6 +1454,7 @@ def plot_goodput_timeline(
             all_goodput,
             label=get_policy_display_name(policy),
             color=color,
+            linestyle=get_policy_linestyle(policy),
             linewidth=1.5,
         )
 
@@ -1468,7 +1464,6 @@ def plot_goodput_timeline(
         pd.DataFrame(csv_rows).to_csv(csv_path, index=False)
 
     # Offered RPS as a filled step area
-    effective_duration = duration_sec - warmup_sec
     step_t = [0.0]
     step_rps: list[float] = [float(rps_sequence[0])]
     for i, rps in enumerate(rps_sequence):
@@ -1511,17 +1506,21 @@ def plot_early_return_timeline(
     policy_data_by_rps: dict[str, dict[int, pd.DataFrame]],
     *,
     duration_sec: float,
-    warmup_sec: float = 0,
-    window_sec: float = 2.0,
+    window_sec: float = 5.0,
 ) -> None:
     """Plot per-second early-return rate over time for real apps.
 
     Mirrors ``plot_goodput_timeline`` but counts early-return requests
     instead of SLO-meeting requests.
+
+    Note: see ``plot_goodput_timeline`` — the per-RPS CSVs are already
+    post-warmup (the loadgen drops warmup requests), so each period is
+    laid out as ``duration_sec`` seconds wide.
     """
     fig, ax = plt.subplots(figsize=(14, 6))
     cmap = plt.get_cmap("tab10")
     csv_rows: list[dict[str, object]] = []
+    effective_duration = duration_sec
 
     for idx, policy in enumerate(policies):
         rps_data = policy_data_by_rps.get(policy, {})
@@ -1540,12 +1539,6 @@ def plot_early_return_timeline(
             t_min = start_at.min()
             rel_sec = (start_at - t_min) / 1_000_000.0
 
-            if warmup_sec > 0:
-                keep = rel_sec >= warmup_sec
-                rel_sec = rel_sec[keep] - warmup_sec
-                df = df.loc[keep]
-
-            effective_duration = duration_sec - warmup_sec
             abs_sec = rel_sec + period_idx * effective_duration
 
             # Early-return mask
@@ -1586,6 +1579,7 @@ def plot_early_return_timeline(
             all_er_rate,
             label=get_policy_display_name(policy),
             color=color,
+            linestyle=get_policy_linestyle(policy),
             linewidth=1.5,
         )
 
@@ -1594,7 +1588,6 @@ def plot_early_return_timeline(
         pd.DataFrame(csv_rows).to_csv(csv_path, index=False)
 
     # Offered RPS as a filled step area
-    effective_duration = duration_sec - warmup_sec
     step_t = [0.0]
     step_rps: list[float] = [float(rps_sequence[0])]
     for i, rps in enumerate(rps_sequence):
@@ -1631,12 +1624,23 @@ def plot_early_return_timeline(
 
 
 # Stable color for each abort reason (matches latency.py stacked bar chart).
+#
+# Palette: Okabe-Ito (color-vision-deficient safe). Hue families group
+# related reasons:
+#   - grey  = baseline / E2E expiry
+#   - warm  = deadline / feasibility checks (deadline-based shedding)
+#   - cool  = admission control rejections (PredAdmission, Rajomon)
 _REASON_COLORS = {
-    "E2EDeadline": "#95a5a6",
-    "LocalDeadlineExceeded": "#e74c3c",
-    "BeforePollFeasibility": "#e67e22",
-    "BeforeChildFeasibility": "#f39c12",
-    "TokenBucketRej": "#3498db",
+    "E2EDeadline": "#999999",  # grey
+    "LocalDeadlineExceeded": "#D55E00",  # vermillion
+    "BeforePollFeasibility": "#E69F00",  # orange
+    "BeforeChildFeasibility": "#F0E442",  # yellow
+    "PredAdmissionRej": "#56B4E9",  # sky blue
+    "RajomonAdmissionRej": "#0072B2",  # blue
+    "RajomonChildBudgetRej": "#009E73",  # bluish green
+    "TokenBucketRej": "#CC79A7",  # reddish purple (legacy)
+    "ClientShed": "#CC79A7",  # reddish purple
+    "ClientTimeout": "#F0E442",  # yellow
 }
 # Stable order: known reasons first, then any unexpected ones alphabetically.
 _KNOWN_REASON_ORDER = [
@@ -1644,8 +1648,58 @@ _KNOWN_REASON_ORDER = [
     "LocalDeadlineExceeded",
     "BeforePollFeasibility",
     "BeforeChildFeasibility",
+    "PredAdmissionRej",
+    "RajomonAdmissionRej",
+    "RajomonChildBudgetRej",
     "TokenBucketRej",
 ]
+
+
+def _parse_loadgen_client_shed(
+    loadgen_log_path: str,
+    rps_sequence: list[int],
+    warmup_sec: float,
+    duration_sec: float,
+) -> tuple[list[float], list[float]]:
+    """Parse per-second client_shed from loadgen.log and map to absolute timeline.
+
+    Returns (times, rates) aligned to the post-warmup timeline used by the
+    abort-reason plot.
+    """
+    import re
+
+    pattern = re.compile(r"secs:\s*(\d+),.*?client_shed:\s*(\d+)")
+    times: list[float] = []
+    rates: list[float] = []
+    if not os.path.exists(loadgen_log_path):
+        return times, rates
+
+    # Parse all per-second lines. The secs counter resets for each RPS period.
+    # We detect period boundaries by secs going back to 1.
+    per_period_rows: list[list[tuple[int, int]]] = [[]]
+    with open(loadgen_log_path) as f:
+        for line in f:
+            m = pattern.search(line)
+            if not m:
+                continue
+            sec = int(m.group(1))
+            shed = int(m.group(2))
+            if sec == 1 and per_period_rows[-1]:
+                per_period_rows.append([])
+            per_period_rows[-1].append((sec, shed))
+
+    for period_idx, rows in enumerate(per_period_rows):
+        if period_idx >= len(rps_sequence):
+            break
+        for sec, shed in rows:
+            # Skip warmup seconds
+            if sec <= warmup_sec:
+                continue
+            rel_sec = sec - warmup_sec
+            abs_sec = period_idx * duration_sec + rel_sec
+            times.append(abs_sec)
+            rates.append(float(shed))
+    return times, rates
 
 
 def plot_abort_reason_timeline(
@@ -1655,13 +1709,18 @@ def plot_abort_reason_timeline(
     policy_data_by_rps: dict[str, dict[int, pd.DataFrame]],
     *,
     duration_sec: float,
-    warmup_sec: float = 0,
-    window_sec: float = 2.0,
+    window_sec: float = 5.0,
+    data_dir: str | None = None,
+    iteration: int = 0,
+    warmup_sec: float = 0.0,
 ) -> None:
     """Plot per-second early-return rate by abort reason over time.
 
     One subplot per policy; within each subplot one line per abort reason.
     Mirrors ``plot_early_return_timeline`` but splits by ``er_reason``.
+
+    Note: see ``plot_goodput_timeline`` — the per-RPS CSVs are already
+    post-warmup, so each period is laid out as ``duration_sec`` seconds wide.
     """
     # First pass: discover all reasons across all policies.
     all_reasons: set[str] = set()
@@ -1669,11 +1728,15 @@ def plot_abort_reason_timeline(
         rps_data = policy_data_by_rps.get(policy, {})
         for rps in rps_sequence:
             df = rps_data.get(rps, pd.DataFrame())
-            if df.empty or "er_reason" not in df.columns:
+            if df.empty:
                 continue
-            er_mask = df.get("error_type", pd.Series(dtype=str)) == "EarlyReturn"
-            reasons = df.loc[er_mask, "er_reason"].fillna("E2EDeadline").unique()
-            all_reasons.update(reasons)
+            if "er_reason" in df.columns:
+                er_mask = df.get("error_type", pd.Series(dtype=str)) == "EarlyReturn"
+                reasons = df.loc[er_mask, "er_reason"].fillna("E2EDeadline").unique()
+                all_reasons.update(reasons)
+            if "error" in df.columns:
+                if (df["error"].astype(str) == "/ClientTimeout").any():
+                    all_reasons.add("ClientTimeout")
 
     if not all_reasons:
         return
@@ -1685,7 +1748,7 @@ def plot_abort_reason_timeline(
     fig, axes = plt.subplots(
         n_policies, 1, figsize=(14, 5 * n_policies), squeeze=False, sharex=True
     )
-    effective_duration = duration_sec - warmup_sec
+    effective_duration = duration_sec
     csv_rows: list[dict[str, object]] = []
 
     for p_idx, policy in enumerate(policies):
@@ -1708,20 +1771,19 @@ def plot_abort_reason_timeline(
             t_min = start_at.min()
             rel_sec = (start_at - t_min) / 1_000_000.0
 
-            if warmup_sec > 0:
-                keep = rel_sec >= warmup_sec
-                rel_sec = rel_sec[keep] - warmup_sec
-                df = df.loc[keep]
-
             abs_sec = rel_sec + period_idx * effective_duration
 
-            # Classify each request's reason (non-ER → None).
+            # Classify each request's reason (non-ER/non-timeout → NaN).
             if "error_type" in df.columns and "er_reason" in df.columns:
                 er_mask = df["error_type"] == "EarlyReturn"
                 req_reason = df["er_reason"].where(er_mask).fillna("E2EDeadline")
                 req_reason = req_reason.where(er_mask)  # non-ER stays NaN
             else:
                 req_reason = pd.Series(np.nan, index=df.index)
+            # Tag ClientTimeout requests.
+            if "error" in df.columns:
+                timeout_mask = df["error"].astype(str) == "/ClientTimeout"
+                req_reason = req_reason.where(~timeout_mask, "ClientTimeout")
 
             order = np.argsort(abs_sec.values)
             t_arr = abs_sec.values[order]
@@ -1757,6 +1819,32 @@ def plot_abort_reason_timeline(
                 csv_rows.append(
                     {"Time": t, "Policy": policy, "Reason": reason, "Rate": rate}
                 )
+
+        # Client-shed overlay from loadgen.log.
+        if data_dir is not None:
+            log_path = os.path.join(data_dir, str(iteration), policy, "loadgen.log")
+            shed_times, shed_rates = _parse_loadgen_client_shed(
+                log_path, rps_sequence, warmup_sec, effective_duration
+            )
+            if shed_times:
+                color = _REASON_COLORS.get("ClientShed", "#CC79A7")
+                ax.plot(
+                    shed_times,
+                    shed_rates,
+                    label="ClientShed",
+                    color=color,
+                    linewidth=1.5,
+                    linestyle="--",
+                )
+                for t, rate in zip(shed_times, shed_rates):
+                    csv_rows.append(
+                        {
+                            "Time": t,
+                            "Policy": policy,
+                            "Reason": "ClientShed",
+                            "Rate": rate,
+                        }
+                    )
 
         # Offered RPS step area.
         step_t = [0.0]
@@ -1814,7 +1902,6 @@ def generate_plots(args, plot_data: PlotData | None = None) -> None:
     rps_values = plot_data.rps_values
     rps_sequence = plot_data.rps_sequence
     duration_sec = plot_data.duration_sec
-    warmup_sec = plot_data.warmup_sec
     results = plot_data.results
 
     # First, compute all policy goodputs (needed for plots)
@@ -1977,7 +2064,6 @@ def generate_plots(args, plot_data: PlotData | None = None) -> None:
                 ),
                 {
                     "duration_sec": duration_sec,
-                    "warmup_sec": warmup_sec,
                 },
             )
         )
@@ -1998,7 +2084,6 @@ def generate_plots(args, plot_data: PlotData | None = None) -> None:
                 ),
                 {
                     "duration_sec": duration_sec,
-                    "warmup_sec": warmup_sec,
                 },
             )
         )
@@ -2019,7 +2104,9 @@ def generate_plots(args, plot_data: PlotData | None = None) -> None:
                 ),
                 {
                     "duration_sec": duration_sec,
-                    "warmup_sec": warmup_sec,
+                    "data_dir": args.data_dir,
+                    "iteration": i,
+                    "warmup_sec": plot_data.warmup_sec,
                 },
             )
         )

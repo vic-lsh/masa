@@ -14,7 +14,9 @@ matplotlib.use("Agg")  # Non-interactive backend for file output
 import matplotlib.pyplot as plt
 import numpy as np
 
-from .util import get_policy_display_name
+from .util import apply_plot_defaults, get_policy_display_name, get_policy_line_style
+
+apply_plot_defaults()
 
 _EXPERIMENT_DIR_RE = re.compile(r"^(?P<policy>.+)_(?P<rps>\d+)$")
 _DEFAULT_SERVICE_ORDER = [
@@ -127,7 +129,7 @@ def _plot_replica_distribution(
 
     axes[-1].set_xlabel("Requests Per Second (RPS)")
     if axes[0].get_legend_handles_labels()[0]:
-        axes[0].legend(title="Service", ncol=3, fontsize="small")
+        axes[0].legend(title="Service", ncol=3)
 
     output_path = output_dir / "replica_distribution.png"
     fig.tight_layout()
@@ -145,7 +147,12 @@ def _plot_policy_replica_lines(
         totals = [
             sum(int(v or 0) for v in data[policy][rps].values()) for rps in rps_values
         ]
-        ax.plot(rps_values, totals, marker="o", label=get_policy_display_name(policy))
+        ax.plot(
+            rps_values,
+            totals,
+            label=get_policy_display_name(policy),
+            **get_policy_line_style(policy),
+        )
 
     ax.set_xlabel("Requests Per Second (RPS)")
     ax.set_ylabel("Total replicas")

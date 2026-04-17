@@ -7,10 +7,11 @@ import pandas as pd
 import seaborn as sns
 
 from .util import (
+    apply_plot_defaults,
     filter_excluded_errors,
     get_plot_worker_count,
-    get_policy_color,
     get_policy_display_name,
+    get_policy_line_style,
     parse_args,
     PlotData,
     prepare_output_dir,
@@ -23,6 +24,7 @@ import matplotlib.pyplot as plt
 # Suppress warning about too many open figures when running in parallel
 # We properly close all figures, but many may be open simultaneously during parallel execution
 plt.rcParams["figure.max_open_warning"] = 0
+apply_plot_defaults()
 
 
 MS_TO_US = 10**3
@@ -45,9 +47,14 @@ def _plot_latency_cdf(
         latencies = np.sort(df_filtered["latency"].to_numpy() / MS_TO_US)
         percentiles = np.linspace(0, 100, len(latencies))
 
-        color = get_policy_color(policy)
+        # CDF: dense lines, drop the marker dimension to avoid clutter.
+        style = get_policy_line_style(policy)
+        style.pop("marker", None)
         ax.plot(
-            latencies, percentiles, label=get_policy_display_name(policy), color=color
+            latencies,
+            percentiles,
+            label=get_policy_display_name(policy),
+            **style,
         )
 
     # Add labels and title
@@ -103,12 +110,18 @@ def _plot_abort_reason_stacked(
     output_dir: str, api: str, policy: str, rps_values: list, data: dict
 ) -> None:
     """Generate stacked bar chart of abort reasons across RPS levels."""
+    # Okabe-Ito palette (color-vision-deficient safe). Must stay in sync with
+    # _REASON_COLORS in goodput.py — same hue families: grey baseline, warm for
+    # deadline/feasibility shedding, cool for admission-control rejections.
     reason_colors = {
-        "LocalDeadlineExceeded": "#e74c3c",
-        "BeforePollFeasibility": "#e67e22",
-        "BeforeChildFeasibility": "#f39c12",
-        "TokenBucketRej": "#3498db",
-        "E2EDeadline": "#95a5a6",
+        "E2EDeadline": "#999999",  # grey
+        "LocalDeadlineExceeded": "#D55E00",  # vermillion
+        "BeforePollFeasibility": "#E69F00",  # orange
+        "BeforeChildFeasibility": "#F0E442",  # yellow
+        "PredAdmissionRej": "#56B4E9",  # sky blue
+        "RajomonAdmissionRej": "#0072B2",  # blue
+        "RajomonChildBudgetRej": "#009E73",  # bluish green
+        "TokenBucketRej": "#CC79A7",  # reddish purple (legacy)
     }
 
     # Collect reason counts per RPS
@@ -135,6 +148,9 @@ def _plot_abort_reason_stacked(
         "LocalDeadlineExceeded",
         "BeforePollFeasibility",
         "BeforeChildFeasibility",
+        "PredAdmissionRej",
+        "RajomonAdmissionRej",
+        "RajomonChildBudgetRej",
         "TokenBucketRej",
     ]
     reasons = [r for r in known_order if r in all_reasons]
@@ -193,13 +209,11 @@ def _plot_p99_latency(
             else:
                 p99_latency = df_filtered["latency"].quantile(0.99) / MS_TO_US
             p99_values.append(p99_latency)
-        color = get_policy_color(policy)
         ax.plot(
             rps_values,
             p99_values,
-            "o-",
             label=get_policy_display_name(policy),
-            color=color,
+            **get_policy_line_style(policy),
         )
 
     ax.set_xlabel("Requests Per Second (RPS)")
@@ -244,13 +258,11 @@ def _plot_averaged_percentile_latency(
                     )
                 percentile_values.append(percentile_latency)
             averaged_percentile += np.array(percentile_values)
-        color = get_policy_color(policy)
         ax.plot(
             rps_values,
             averaged_percentile / repeats,
-            "o-",
             label=get_policy_display_name(policy),
-            color=color,
+            **get_policy_line_style(policy),
         )
 
     p = int(percentile * 100)

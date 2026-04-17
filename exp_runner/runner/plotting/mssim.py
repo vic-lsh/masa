@@ -24,13 +24,15 @@ from .goodput import (
 )
 from .util import (
     _read_request_csv,
+    apply_plot_defaults,
     filter_excluded_errors,
-    get_policy_color,
     get_policy_display_name,
+    get_policy_line_style,
     read_policies,
 )
 
 plt.rcParams["figure.max_open_warning"] = 0
+apply_plot_defaults()
 
 
 _RPS_DIR_RE = re.compile(r"^rps_(?P<rps>[0-9_]+(?:\.[0-9_]+)?)$")
@@ -263,19 +265,16 @@ def _plot_goodput_lines(
 ) -> None:
     fig, ax = plt.subplots(figsize=(10, 6))
     cmap = plt.get_cmap("tab10")
-    marker_cycle = ("o", "s", "^", "D", "P", "X", "*", "v", "<", ">")
 
     for idx, (policy, values) in enumerate(policy_series.items()):
-        marker = marker_cycle[idx % len(marker_cycle)]
-        color = get_policy_color(policy)
-        if color is None:
-            color = cmap(idx % cmap.N)
+        style = get_policy_line_style(policy)
+        if style["color"] is None:
+            style["color"] = cmap(idx % cmap.N)
         ax.plot(
             rps_values,
             values,
-            marker=marker,
             label=get_policy_display_name(policy),
-            color=color,
+            **style,
         )
 
     ax.set_xlabel("Offered load (RPS)")
@@ -307,7 +306,6 @@ def _plot_latency_percentiles(
         axes_iter = axes.flatten()
 
     cmap = plt.get_cmap("tab10")
-    marker_cycle = ("o", "s", "^", "D", "P", "X", "*", "v", "<", ">")
 
     for idx, percentile in enumerate(percentiles):
         if idx >= len(axes_iter):
@@ -316,17 +314,15 @@ def _plot_latency_percentiles(
         for policy_idx, (policy, percentile_map) in enumerate(
             policy_percentiles.items()
         ):
-            marker = marker_cycle[policy_idx % len(marker_cycle)]
-            color = get_policy_color(policy)
-            if color is None:
-                color = cmap(policy_idx % cmap.N)
+            style = get_policy_line_style(policy)
+            if style["color"] is None:
+                style["color"] = cmap(policy_idx % cmap.N)
             values = percentile_map.get(percentile, [])
             ax.plot(
                 rps_values,
                 values,
-                marker=marker,
                 label=get_policy_display_name(policy),
-                color=color,
+                **style,
             )
 
         ax.set_title(f"P{percentile:g} latency")
@@ -373,15 +369,17 @@ def _plot_latency_cdf(
 
         values = np.sort(latencies.to_numpy())
         cdf = (np.arange(1, len(values) + 1) / len(values)).astype(float)
-        color = get_policy_color(policy)
-        if color is None:
-            color = cmap(idx % cmap.N)
+        # CDF: dense lines, drop the marker dimension to avoid clutter.
+        style = get_policy_line_style(policy)
+        style.pop("marker", None)
+        if style["color"] is None:
+            style["color"] = cmap(idx % cmap.N)
         ax.plot(
             values,
             cdf,
             label=get_policy_display_name(policy),
-            color=color,
             linewidth=2,
+            **style,
         )
         any_data = True
 
@@ -477,15 +475,17 @@ def _plot_goodput_timeline(
         if not all_times:
             continue
 
-        color = get_policy_color(policy)
-        if color is None:
-            color = cmap(idx % cmap.N)
+        # Timeline: dense lines, drop the marker dimension to avoid clutter.
+        style = get_policy_line_style(policy)
+        style.pop("marker", None)
+        if style["color"] is None:
+            style["color"] = cmap(idx % cmap.N)
         ax.plot(
             all_times,
             all_goodput,
             label=get_policy_display_name(policy),
-            color=color,
             linewidth=1.5,
+            **style,
         )
 
     # Offered RPS as a filled step area on the same axis (same unit: RPS)
@@ -585,15 +585,17 @@ def _plot_early_return_timeline(
         for t, er in zip(all_times, all_er_rate):
             csv_rows.append({"Time": t, "Policy": policy, "EarlyReturnRate": er})
 
-        color = get_policy_color(policy)
-        if color is None:
-            color = cmap(idx % cmap.N)
+        # Timeline: dense lines, drop the marker dimension to avoid clutter.
+        style = get_policy_line_style(policy)
+        style.pop("marker", None)
+        if style["color"] is None:
+            style["color"] = cmap(idx % cmap.N)
         ax.plot(
             all_times,
             all_er_rate,
             label=get_policy_display_name(policy),
-            color=color,
             linewidth=1.5,
+            **style,
         )
 
     if csv_rows:
