@@ -18,7 +18,6 @@ from .base import AppBuilder, AppPlugin, DockerConfig
 from .utils import (
     get_docker_progress_flag,
     normalize_features_to_tag,
-    resolve_policy_params,
 )
 
 if TYPE_CHECKING:
@@ -423,13 +422,10 @@ class SocialnetApp(AppPlugin):
             if candidate.exists():
                 env_vars["APP_CONFIG_PATH"] = str(candidate.resolve())
 
-        # Write policy_param.json, resolving policy-specific overrides.
-        project_policy_params_path = output_dir / "policy_param.json"
-        project_policy_params_path.parent.mkdir(parents=True, exist_ok=True)
-        resolved_params = resolve_policy_params(config.policy_params or {}, policy)
-        with project_policy_params_path.open("w") as f:
-            json.dump(resolved_params, f, indent=2)
-        env_vars["POLICY_PARAMS_PATH"] = str(project_policy_params_path.resolve())
+        project_policy_params_path = self._write_policy_params(
+            output_dir, config.policy_params, policy
+        )
+        env_vars["POLICY_PARAMS_PATH"] = str(project_policy_params_path)
 
         return env_vars
 
@@ -468,12 +464,10 @@ class SocialnetApp(AppPlugin):
         task_env.update(env_vars)
 
         gen_config_path = output_dir / "gen_config.json"
-        policy_params_path = output_dir / "policy_param.json"
         volumes = {}
         if gen_config_path.exists():
             volumes[str(gen_config_path)] = "/usr/gen_config.json"
-        if policy_params_path.exists():
-            volumes[str(policy_params_path)] = "/usr/policy_params.json"
+        volumes.update(self._policy_params_loadgen_mount(output_dir))
 
         return TaskSpec(
             name=f"{project_name}-loadgen" if project_name else "socialnet-loadgen",

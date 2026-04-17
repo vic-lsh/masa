@@ -24,8 +24,37 @@ use tonic::masa_ext::MasaResponseExt;
 use tonic::transport::Server;
 use tonic::{Request, Response, Status};
 
-#[cfg(feature = "abort_slo")]
+#[cfg(any(feature = "abort_slo", feature = "ac_rajomon"))]
 use tonic::Code;
+
+/// Install test-local Rajomon params before the process-wide `PolicyParams`
+/// `OnceLock` is initialized. The production default (`init_price=0`,
+/// `price_freq=5`) was chosen to match the NSDI '25 paper's "no artificial
+/// floor" semantics, but that makes these admission/piggyback assertions
+/// non-deterministic in a one-shot test: with `init_price=0` and no queueing,
+/// `accumulated_price` stays at 0, so `tokens(0)` is admitted and the
+/// propagated price is `"0"`.
+///
+/// We force `init_price=1` (baseline positive price so `tokens(0)` fails the
+/// admission gate) and `price_freq=1` (always propagate, removing the 20%
+/// retry loop). All other params take their built-in defaults via
+/// `#[serde(default)]` on `PolicyParams` / `RajomonParams`.
+#[cfg(feature = "ac_rajomon")]
+fn ensure_test_rajomon_params() {
+    use std::sync::Once;
+    static ONCE: Once = Once::new();
+    ONCE.call_once(|| {
+        let path =
+            std::env::temp_dir().join(format!("masa_rajomon_test_{}.json", std::process::id()));
+        std::fs::write(&path, r#"{"rajomon":{"init_price":1,"price_freq":1}}"#)
+            .expect("write test policy params");
+        std::env::set_var("MASA_POLICY_PARAMS_PATH", &path);
+        // Force initialization of the OnceLock while we still hold exclusive
+        // access via `Once::call_once`, so a concurrent rajomon test can't
+        // read `PolicyParams::global()` before our env var is in place.
+        let _ = masa_policy::PolicyParams::global();
+    });
+}
 
 #[cfg(all(feature = "sched_slo", feature = "trace_queue_latency"))]
 #[tokio::test(flavor = "current_thread")]
@@ -152,6 +181,7 @@ async fn expired_context_triggers_early_return() {
 #[cfg(all(feature = "sched_slo", feature = "ac_rajomon"))]
 #[tokio::test(flavor = "current_thread")]
 async fn sufficient_tokens_executes_and_piggybacks_price() {
+    ensure_test_rajomon_params();
     #[derive(Clone)]
     struct FastSvc;
 
@@ -185,36 +215,31 @@ async fn sufficient_tokens_executes_and_piggybacks_price() {
         .await
         .unwrap();
 
-    // Price is propagated with ~20% probability, so retry until we see it.
-    let mut piggybacked_price: Option<String> = None;
-    for _ in 0..50 {
-        let now = time_now();
-        let rajomon_ctx = ContextBuilder::new("test.ChildService/Rpc1", 99)
-            .gateway_entry(now)
-            .slo(1_000_000)
-            .deadline(now + 1_000_000)
-            .tokens(1_000_000) // Plenty of tokens
-            .build();
+    // With `price_freq=1` the price is propagated on every response, so a
+    // single RPC suffices. The propagated value is `accumulated_price`
+    // (= `own_price + max_downstream`); with no queueing it equals the
+    // configured `init_price` (1).
+    let now = time_now();
+    let rajomon_ctx = ContextBuilder::new("test.ChildService/Rpc1", 99)
+        .gateway_entry(now)
+        .slo(1_000_000)
+        .deadline(now + 1_000_000)
+        .tokens(1_000_000) // Plenty of tokens
+        .build();
 
-        let mut request = Request::new(Input1 {});
-        request.set_masa_context(&rajomon_ctx);
+    let mut request = Request::new(Input1 {});
+    request.set_masa_context(&rajomon_ctx);
 
-        let response = client
-            .rpc1(request)
-            .await
-            .expect("request should have succeeded");
+    let response = client
+        .rpc1(request)
+        .await
+        .expect("request should have succeeded");
 
-        if let Some(header) = response.metadata().get("x-masa-rajomon-price") {
-            piggybacked_price = Some(header.to_str().unwrap().to_owned());
-            break;
-        }
-    }
-
-    // Check that piggybacked price is 0 (init_price default).
-    assert_eq!(
-        piggybacked_price.expect("price should have been piggybacked within 50 attempts"),
-        "0"
-    );
+    let header = response
+        .metadata()
+        .get("x-masa-rajomon-price")
+        .expect("price header should have been piggybacked");
+    assert_eq!(header.to_str().unwrap(), "1");
 
     server.abort();
 }
@@ -222,6 +247,7 @@ async fn sufficient_tokens_executes_and_piggybacks_price() {
 #[cfg(all(feature = "sched_slo", feature = "ac_rajomon"))]
 #[tokio::test(flavor = "current_thread")]
 async fn insufficient_tokens_triggers_early_return() {
+    ensure_test_rajomon_params();
     #[derive(Clone)]
     struct SlowSvc {
         executed: Arc<AtomicBool>,
@@ -262,29 +288,39 @@ async fn insufficient_tokens_triggers_early_return() {
         .await
         .unwrap();
 
-    // With init_price=0 (default) and no congestion, accumulated_price=0.
-    // tokens(0) >= 0 means the request is admitted. This is correct: Rajomon
-    // only rejects when the server has raised its price due to congestion.
     let now = time_now();
+    // Start with very few tokens
     let rajomon_ctx = ContextBuilder::new("test.ChildService/Rpc1", 99)
         .gateway_entry(now)
         .slo(1_000_000)
         .deadline(now + 1_000_000)
-        .tokens(0)
+        .tokens(0) // Not enough tokens to even afford baseline cost of 1
         .build();
 
     let mut request = Request::new(Input1 {});
     request.set_masa_context(&rajomon_ctx);
 
-    // With price=0, even tokens=0 is sufficient — request succeeds.
-    let _response = client
+    let error = client
         .rpc1(request)
         .await
-        .expect("request should succeed when accumulated price is 0");
+        .expect_err("request should have failed due to insufficient rajomon budget");
 
+    assert_eq!(error.code(), Code::ResourceExhausted);
+    // The /EarlyReturn message should carry a structured `reason=` so the
+    // experiment plotting code can attribute drops to admission control.
     assert!(
-        executed.load(Ordering::SeqCst),
-        "handler should have executed since admission passed"
+        error.message().starts_with("/EarlyReturn?src="),
+        "unexpected error format: {}",
+        error.message(),
+    );
+    assert!(
+        error.message().contains("&reason=RajomonAdmissionRej"),
+        "expected RajomonAdmissionRej reason, got: {}",
+        error.message(),
+    );
+    assert!(
+        !executed.load(Ordering::SeqCst),
+        "handler should not have executed when token budget is exhausted"
     );
 
     server.abort();

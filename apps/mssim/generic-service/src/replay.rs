@@ -241,7 +241,7 @@ pub async fn run_replay_load(
     client_pool: ClientPool,
     work_items: Arc<Vec<ReplayWorkItem>>,
     stats: Arc<Stats>,
-    inflight_guard: Arc<Semaphore>,
+    inflight_guard: Option<Arc<Semaphore>>,
     latency_sample_tx: mpsc::UnboundedSender<u64>,
 ) -> anyhow::Result<()> {
     let start_instant = Instant::now();
@@ -259,11 +259,14 @@ pub async fn run_replay_load(
 
         tasks.spawn(async move {
             tokio::time::sleep_until(schedule_time).await;
-            let permit = match permit_pool.acquire_owned().await {
-                Ok(p) => p,
-                Err(_) => return,
+            let _permit = if let Some(pool) = permit_pool {
+                match pool.acquire_owned().await {
+                    Ok(p) => Some(p),
+                    Err(_) => return,
+                }
+            } else {
+                None
             };
-            let _permit = permit;
 
             stats.sent.fetch_add(1, Ordering::Relaxed);
             let request = Request::new(payload);
