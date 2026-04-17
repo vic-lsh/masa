@@ -1,0 +1,14 @@
+{
+  "Repeats": 1,
+  "Rps": [
+    500,
+    600,
+    800,
+    1000,
+    1300,
+    1800
+  ],
+  "DurationSecs": 30,
+  "WarmupSecs": 15,
+  "MaxInFlight": 100000
+}
