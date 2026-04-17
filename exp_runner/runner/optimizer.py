@@ -58,9 +58,11 @@ def generate_rps_sweep(saturation_rps: int) -> list[int]:
     """Generate RPS values for the optimization sweep.
 
     Returns [0.8x, 1.0x, 1.2x, 1.5x, 2.0x] of saturation_rps,
-    each rounded to the nearest 100.
+    each rounded to the nearest 50. Fine-grained rounding matters at low
+    saturation — at saturation=200, rounding to 100 collapses 0.8x/1.0x/1.2x
+    all to 200 (three duplicate sweep points).
     """
-    return [int(round(saturation_rps * m / 100) * 100) for m in RPS_MULTIPLIERS]
+    return [int(round(saturation_rps * m / 50) * 50) for m in RPS_MULTIPLIERS]
 
 
 def sample_params(trial: optuna.Trial) -> dict:
@@ -94,7 +96,9 @@ def sample_params(trial: optuna.Trial) -> dict:
 def compute_objective(
     out_dir: Path,
     policy: str,
-    gen_config: dict,
+    apis: list,
+    slos: list,
+    rps_values: list,
     penalty_weight: float = 10.0,
 ) -> float:
     """Compute the optimization objective from experiment results.
@@ -104,16 +108,14 @@ def compute_objective(
     Args:
         out_dir: Experiment output directory (contains 0/<policy>/r<RPS>_<API>.csv)
         policy: Policy string (feature flags)
-        gen_config: gen_config dict with Apis, Slos, Rps keys
+        apis: API names to aggregate over (per-trace name for mssim)
+        slos: Parallel list of SLOs in microseconds, one per API
+        rps_values: RPS levels swept in the experiment
         penalty_weight: Multiplier for worst p99 SLO violation (in seconds)
 
     Returns:
         Objective value (higher is better). Large negative on failure.
     """
-    apis = gen_config["Apis"]
-    slos = gen_config["Slos"]
-    rps_values = gen_config["Rps"]
-
     api_to_slo = dict(zip(apis, slos))
 
     total_goodput = 0.0
@@ -327,12 +329,12 @@ class RajomonOptimizer:
             app_plugin=self.app_plugin,
         )
 
-        # Run the experiment (no plots, no cache rebuild, remove old data)
+        # Run the experiment (plots enabled so per-trial artifacts are inspectable)
         experiment = Experiment(
             app=self.app_plugin,
             config=config,
             repo_root=self.repo_root,
-            plot=False,
+            plot=True,
             no_cache=False,
             rm_data=True,
             dry_run=False,
@@ -346,18 +348,35 @@ class RajomonOptimizer:
             return -1e9
 
         # Compute objective
-        gen_config = self._build_gen_config()
+        apis, slos = self._resolve_apis_and_slos()
         objective = compute_objective(
             config.out_dir,
             self.config.policy,
-            gen_config,
+            apis,
+            slos,
+            self.rps_sweep,
             self.config.penalty_weight,
         )
 
-        # Clean up trial directories to save disk space
-        self._cleanup_trial_dirs(exp_name, config.out_dir)
-
         return objective
+
+    def _resolve_apis_and_slos(self) -> tuple[list, list]:
+        """Return (apis, slos_us) for the current app.
+
+        hotel/socialnet: read from gen_config Apis/Slos.
+        mssim: derive one api per callgraph_dir basename, with a single
+        global slo from app_config["slo_ms"] (converted to microseconds).
+        """
+        app_name = self.app_plugin.get_app_name()
+        if app_name == "mssim":
+            app_config = self.base_config.app_config
+            apis = [Path(d).name for d in app_config["callgraph_dirs"]]
+            slo_us = int(app_config["slo_ms"]) * 1000
+            slos = [slo_us] * len(apis)
+            return apis, slos
+
+        gen_config = self.base_config.gen_config
+        return list(gen_config["Apis"]), list(gen_config["Slos"])
 
     def _log_trial(
         self, trial_number: int, params: dict, objective: float, is_best: bool
@@ -388,33 +407,38 @@ class RajomonOptimizer:
             storage=storage,
             load_if_exists=True,
             direction="maximize",
-            sampler=optuna.samplers.TPESampler(seed=42),
+            # n_startup_trials=2 so TPE switches to history-aware sampling
+            # after the seeded default + warm-start. Default is 10, which meant
+            # the first 10 draws were deterministic from the seed — on resume,
+            # the sampler's RNG reset caused those early random draws to repeat
+            # exactly (trials 2/3 getting re-sampled as trials 7/8, etc.).
+            sampler=optuna.samplers.TPESampler(seed=42, n_startup_trials=2),
         )
 
-        # Enqueue default params as first trial (only optimized keys)
-        study.enqueue_trial(
-            {k: v for k, v in DEFAULT_RAJOMON_PARAMS.items() if k in OPTIMIZED_KEYS}
-        )
+        # Only seed the queue on a fresh study. On resume, re-enqueueing would
+        # waste trials re-running already-evaluated default/warm-start points
+        # (Optuna persists the queue in SQLite across invocations).
+        if len(study.trials) == 0:
+            study.enqueue_trial(
+                {k: v for k, v in DEFAULT_RAJOMON_PARAMS.items() if k in OPTIMIZED_KEYS}
+            )
 
-        # Enqueue warm-start params if provided
-        if self.config.warm_start_path:
-            try:
-                with open(self.config.warm_start_path) as f:
-                    warm_params = json.load(f)
-                # Extract rajomon section if present (nested format)
-                if "rajomon" in warm_params:
-                    warm_params = warm_params["rajomon"]
-                # Filter to only optimized params
-                enqueue_params = {
-                    k: v for k, v in warm_params.items() if k in OPTIMIZED_KEYS
-                }
-                if enqueue_params:
-                    study.enqueue_trial(enqueue_params)
-                    logger.info(
-                        f"Enqueued warm-start params from {self.config.warm_start_path}"
-                    )
-            except Exception as e:
-                logger.warning(f"Failed to load warm-start params: {e}")
+            if self.config.warm_start_path:
+                try:
+                    with open(self.config.warm_start_path) as f:
+                        warm_params = json.load(f)
+                    if "rajomon" in warm_params:
+                        warm_params = warm_params["rajomon"]
+                    enqueue_params = {
+                        k: v for k, v in warm_params.items() if k in OPTIMIZED_KEYS
+                    }
+                    if enqueue_params:
+                        study.enqueue_trial(enqueue_params)
+                        logger.info(
+                            f"Enqueued warm-start params from {self.config.warm_start_path}"
+                        )
+                except Exception as e:
+                    logger.warning(f"Failed to load warm-start params: {e}")
 
         # Print startup summary
         logger.info(f"{'=' * 60}")
@@ -447,8 +471,19 @@ class RajomonOptimizer:
         best_objective = -float("inf")
         best_params: dict = {}
 
-        # Already-completed trials count toward total
-        completed = len(study.trials)
+        # Only count finished trials toward the budget. study.trials includes
+        # WAITING (queued-but-not-popped) entries, so using len() would charge
+        # the iteration budget for trials that haven't run yet.
+        completed = len(
+            study.get_trials(
+                deepcopy=False,
+                states=(
+                    optuna.trial.TrialState.COMPLETE,
+                    optuna.trial.TrialState.FAIL,
+                    optuna.trial.TrialState.PRUNED,
+                ),
+            )
+        )
         remaining = max(0, self.config.n_iterations - completed)
 
         if completed > 0:

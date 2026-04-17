@@ -7,9 +7,8 @@ use std::{
     time::Duration,
 };
 
-use app_utils::load_gen::TraceRecord;
+use app_utils::load_gen::{ArrivalProcess, ArrivalTimer, TraceRecord};
 use masa::{time_now, ContextBuilder as MasaContextBuilder};
-use rand_distr::{Distribution, Exp};
 use serde::Deserialize;
 use serde_json;
 use sim_config::svc::GraphId;
@@ -38,12 +37,29 @@ type RpcClient = ServiceClient<LoadBalancedChannel>;
 const PERIODIC_FLUSH_INTERVAL_SECS: u64 = 10;
 const OUTPUT_DIR: &str = "loadgen_output";
 
+/// The `api` string used on both send-side (`try_acquire_tokens`) and
+/// receive-side (`update_rajomon_price_from_metadata`) so the client-side
+/// `cached_prices` map uses a single key for all root() traffic. The mssim
+/// server exposes one RPC (`Root`); different graphs are dispatched inside the
+/// handler, so per-graph rajomon pricing is not meaningful here.
+#[cfg(feature = "ac_rajomon")]
+const RAJOMON_API: &str = "root";
+
+fn inflight_guard_for_limit(max_in_flight: usize) -> Option<Arc<Semaphore>> {
+    if max_in_flight > 0 {
+        Some(Arc::new(Semaphore::new(max_in_flight)))
+    } else {
+        None
+    }
+}
+
 #[derive(Default)]
 struct Stats {
     sent: AtomicUsize,
     ok: AtomicUsize,
     err: AtomicUsize,
     throttled: AtomicUsize,
+    client_shed: AtomicUsize,
 }
 
 async fn flush_root_samples(
@@ -213,20 +229,23 @@ async fn run_root_load(
     client_pool: ClientPool,
     rps: f64,
     stats: Arc<Stats>,
-    inflight_guard: Arc<Semaphore>,
-    max_in_flight: usize,
+    inflight_guard: Option<Arc<Semaphore>>,
     root_samples: Arc<Mutex<Vec<RootLatencySample>>>,
     finish_after: Option<Duration>,
+    warmup: Duration,
     latency_sample_tx: mpsc::UnboundedSender<u64>,
 ) -> anyhow::Result<()> {
-    // Create exponential distribution for Poisson process
-    // For Poisson process with rate lambda (rps), inter-arrival times are exponential with rate lambda
-    let exp_dist = Exp::new(rps)
-        .map_err(|e| anyhow::anyhow!("Invalid RPS for exponential distribution: {}", e))?;
-    let mut rng = rand::rng();
+    // Poisson arrivals at rate `rps`. Shared with the other loadgens via
+    // `app_utils::load_gen::ArrivalTimer`.
+    let mut arrival_timer = ArrivalTimer::with_seed(ArrivalProcess::Exp, rps, rps.to_bits());
 
     let run_start = Instant::now();
-    let finish_deadline = finish_after.map(|duration| run_start + duration);
+    // Match app-utils loadgen semantics: total runtime = warmup + duration,
+    // samples collected only from the post-warmup window. Plotters therefore
+    // see each RPS-period CSV spanning exactly `duration` seconds of data
+    // and don't need to filter warmup afterward.
+    let trace_at = run_start + warmup;
+    let finish_deadline = finish_after.map(|duration| run_start + warmup + duration);
     let mut next_req_id: u64 = 0;
     let mut next_request_time = run_start;
 
@@ -256,18 +275,35 @@ async fn run_root_load(
 
             _ = time::sleep_until(next_request_time) => {
                 // Schedule the next arrival relative to the previous target time to avoid losing RPS to processing overheads.
-                let inter_arrival_secs = exp_dist.sample(&mut rng);
-                let inter_arrival = Duration::from_secs_f64(inter_arrival_secs);
+                let inter_arrival = Duration::from_secs_f64(arrival_timer.tick());
                 next_request_time = next_request_time + inter_arrival;
 
                 // request max-in-flight control
-                let permit = match inflight_guard.clone().try_acquire_owned() {
-                    Ok(p) => p,
-                    Err(_) => {
-                        // If we can't acquire permit, count as throttled and still schedule next request
-                        stats.throttled.fetch_add(1, Ordering::Relaxed);
+                let permit = if let Some(ref guard) = inflight_guard {
+                    match guard.clone().try_acquire_owned() {
+                        Ok(p) => Some(p),
+                        Err(_) => {
+                            // If we can't acquire permit, count as throttled and still schedule next request
+                            stats.throttled.fetch_add(1, Ordering::Relaxed);
+                            continue;
+                        },
+                    }
+                } else {
+                    None
+                };
+
+                // Client-side Rajomon gate: consult the shared token bucket
+                // before spending a request slot. Drops here are counted as
+                // `client_shed` so the downstream accounting matches app-utils
+                // (see `apps/app-utils/src/load_gen.rs:666-678`). `sent` is
+                // only bumped once we've committed to dispatching.
+                #[cfg(feature = "ac_rajomon")]
+                let tokens = match masa::try_acquire_tokens(RAJOMON_API) {
+                    Some(t) => t,
+                    None => {
+                        stats.client_shed.fetch_add(1, Ordering::Relaxed);
                         continue;
-                    },
+                    }
                 };
 
                 let entry = client_pool.acquire();
@@ -281,6 +317,7 @@ async fn run_root_load(
                 next_req_id += 1;
 
                 let stats = Arc::clone(&stats);
+                let record_sample = Instant::now() >= trace_at;
                 inflight_tasks.spawn(async move {
                     let _permit = permit;
                     let start_at = time_now();
@@ -301,12 +338,7 @@ async fn run_root_load(
                             .deadline(deadline);
                         #[cfg(feature = "ac_rajomon")]
                         {
-                            use rand::Rng;
-                            // Bid is a uniform random value in [0, tokens_left_init].
-                            // The server admits requests whose bid >= its current price.
-                            let init = masa::tokens_left_init();
-                            let tok = rand::rng().random_range(0..=init);
-                            builder = builder.tokens(tok);
+                            builder = builder.tokens(tokens);
                         }
                         builder.build()
                     };
@@ -315,44 +347,61 @@ async fn run_root_load(
                     let start_time = Instant::now();
                     let res = rpc_client.root(request).await;
                     let elapsed = start_time.elapsed().as_micros() as u64;
+                    #[cfg(feature = "ac_rajomon")]
+                    {
+                        let md = match &res {
+                            Ok(resp) => Some(resp.metadata()),
+                            Err(status) => Some(status.metadata()),
+                        };
+                        if let Some(md) = md {
+                            app_utils::load_gen::update_rajomon_price_from_metadata(
+                                md,
+                                RAJOMON_API,
+                            );
+                        }
+                    }
                     match res {
                         Ok(resp) => {
                             stats.ok.fetch_add(1, Ordering::Relaxed);
                             let (q_init, q_resume) =
                                 extract_queue_latencies(resp.metadata()).unwrap_or((0, 0));
-                            let sample = RootLatencySample {
-                                graph: entry.graph,
-                                missed_slo: elapsed > entry.slo_ms * 1000,
-                                error: String::new(),
-                                req_id,
-                                slo_us: entry.slo_ms * 1000,
-                                start_at,
-                                queue_latency_init_us: q_init,
-                                queue_latency_resume_us: q_resume,
-                                e2e_latency_us: elapsed,
-                            };
-                            {
-                                let mut guard = root_samples.lock().await;
-                                guard.push(sample);
+                            if record_sample {
+                                let sample = RootLatencySample {
+                                    graph: entry.graph,
+                                    missed_slo: elapsed > entry.slo_ms * 1000,
+                                    error: String::new(),
+                                    req_id,
+                                    slo_us: entry.slo_ms * 1000,
+                                    start_at,
+                                    queue_latency_init_us: q_init,
+                                    queue_latency_resume_us: q_resume,
+                                    e2e_latency_us: elapsed,
+                                };
+                                {
+                                    let mut guard = root_samples.lock().await;
+                                    guard.push(sample);
+                                }
+                                let _ = latency_sample_tx.send(elapsed);
                             }
-                            let _ = latency_sample_tx.send(elapsed);
                         }
                         Err(status) => {
                             stats.err.fetch_add(1, Ordering::Relaxed);
-                            let sample = RootLatencySample {
-                                graph: entry.graph,
-                                missed_slo: false,
-                                error: status.message().to_string(),
-                                req_id,
-                                slo_us: entry.slo_ms * 1000,
-                                start_at,
-                                queue_latency_init_us: 0,
-                                queue_latency_resume_us: 0,
-                                e2e_latency_us: elapsed,
-                            };
-                            {
-                                let mut guard = root_samples.lock().await;
-                                guard.push(sample);
+                            if record_sample {
+                                let sample = RootLatencySample {
+                                    graph: entry.graph,
+                                    missed_slo: false,
+                                    error: status.message().to_string(),
+                                    req_id,
+                                    slo_us: entry.slo_ms * 1000,
+                                    start_at,
+                                    queue_latency_init_us: 0,
+                                    queue_latency_resume_us: 0,
+                                    e2e_latency_us: elapsed,
+                                };
+                                {
+                                    let mut guard = root_samples.lock().await;
+                                    guard.push(sample);
+                                }
                             }
                         }
                     };
@@ -367,22 +416,34 @@ async fn run_root_load(
         }
     }
 
-    // Ensure no in-flight permits remain before exit.
-    let _ = inflight_guard.acquire_many(max_in_flight as u32).await;
-
     let s = stats.sent.load(Ordering::Relaxed);
     let o = stats.ok.load(Ordering::Relaxed);
     let e = stats.err.load(Ordering::Relaxed);
     let t = stats.throttled.load(Ordering::Relaxed);
+    let cs = stats.client_shed.load(Ordering::Relaxed);
     tracing::info!(
-        "Final stats: sent={}, ok={}, err={}, throttled={}",
+        "Final stats: sent={}, ok={}, err={}, throttled={}, client_shed={}",
         s,
         o,
         e,
-        t
+        t,
+        cs
     );
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn zero_max_in_flight_disables_guard() {
+        assert!(inflight_guard_for_limit(0).is_none());
+
+        let guard = inflight_guard_for_limit(3).expect("positive limit should create semaphore");
+        assert_eq!(guard.available_permits(), 3);
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -407,15 +468,32 @@ async fn print_stats_task(
     let mut last_ok = 0;
     let mut last_err = 0;
     let mut last_throttled = 0;
+    let mut last_client_shed = 0;
+    // `secs` is a 1-based tick counter within the current RPS period. The
+    // exp_runner plotter (`_parse_loadgen_client_shed` in
+    // exp_runner/runner/plotting/goodput.py) relies on `secs=1` to
+    // demarcate period boundaries and on the same line carrying
+    // `client_shed=<rate-per-second>`. See the wire-contract doc on that
+    // function for the full wire format.
+    let mut secs: u64 = 0;
+    let interval_secs = stats_interval.as_secs_f64();
     let mut ticker = tokio::time::interval(stats_interval);
     let mut latency_buffer = Vec::new();
     loop {
         tokio::select! {
             _ = ticker.tick() => {
+                secs += 1;
                 let sent = stats.sent.load(Ordering::Relaxed);
                 let ok = stats.ok.load(Ordering::Relaxed);
                 let err = stats.err.load(Ordering::Relaxed);
                 let throttled = stats.throttled.load(Ordering::Relaxed);
+                let client_shed_cum = stats.client_shed.load(Ordering::Relaxed);
+                // Emit client_shed as a per-second rate (delta / interval)
+                // to match hotel/socialnet's app-utils stats_logger, which
+                // logs delta("client_shed") against a 1s interval. The
+                // plotter treats the logged value as requests/sec.
+                let client_shed_rate =
+                    (client_shed_cum - last_client_shed) as f64 / interval_secs;
                 let percentiles = {
                     if latency_buffer.is_empty() {
                         None
@@ -431,7 +509,8 @@ async fn print_stats_task(
                     None => ("n/a".to_string(), "n/a".to_string(), "n/a".to_string(), "n/a".to_string()),
                 };
                 tracing::info!(
-                    "[stats] sent={} (+{}), ok={} (+{}), err={} (+{}), throttled={} (+{}), p50={}, p90={}, p95={}, p99={}",
+                    "[stats] secs={}, sent={} (+{}), ok={} (+{}), err={} (+{}), throttled={} (+{}), client_shed={:.1}, p50={}, p90={}, p95={}, p99={}",
+                    secs,
                     sent,
                     sent - last_sent,
                     ok,
@@ -440,6 +519,7 @@ async fn print_stats_task(
                     err - last_err,
                     throttled,
                     throttled - last_throttled,
+                    client_shed_rate,
                     p50_str,
                     p90_str,
                     p95_str,
@@ -448,6 +528,7 @@ async fn print_stats_task(
                 last_sent = sent;
                 last_ok = ok;
                 last_err = err;
+                last_client_shed = client_shed_cum;
                 last_throttled = throttled;
             }
             maybe_sample = latency_rx.recv() => {
@@ -544,17 +625,26 @@ async fn main() -> anyhow::Result<()> {
         .parse()?;
     let duration = Duration::from_secs(duration as u64);
 
+    // Warmup period: if set, the loadgen runs for `warmup + duration` seconds
+    // per RPS level and only records samples from the post-warmup window.
+    // Matches app-utils loadgen (apps/app-utils/src/load_gen.rs:609,706).
+    let warmup_secs: u64 = env::var("WARMUP_SEC")
+        .unwrap_or_else(|_| "0".to_string())
+        .parse()?;
+    let warmup = Duration::from_secs(warmup_secs);
+
     let replay_env = env::var("REPLAY_TRACE_PATH")
         .ok()
         .map(|s| s.trim().to_owned())
         .filter(|s| !s.is_empty());
 
     tracing::info!(
-        "RPS values: {:?}, MAX_IN_FLIGHT: {}, STATS_INTERVAL_SEC: {}, DURATION: {:?}",
+        "RPS values: {:?}, MAX_IN_FLIGHT: {}, STATS_INTERVAL_SEC: {}, DURATION: {:?}, WARMUP: {:?}",
         rps_values,
         max_in_flight,
         stats_interval_sec,
-        duration
+        duration,
+        warmup,
     );
 
     // If replay_env is set, we are in replay mode
@@ -667,7 +757,7 @@ async fn main() -> anyhow::Result<()> {
     // For replay mode, just run once
     if matches!(load_mode, LoadMode::Replay { .. }) {
         let stats = Arc::new(Stats::default());
-        let inflight_guard = Arc::new(Semaphore::new(max_in_flight));
+        let inflight_guard = inflight_guard_for_limit(max_in_flight);
         let (latency_sample_tx, latency_sample_rx) = mpsc::unbounded_channel::<u64>();
         let mut bg_tasks = JoinSet::new();
 
@@ -722,7 +812,7 @@ async fn main() -> anyhow::Result<()> {
         tracing::info!("{}\n", "=".repeat(60));
 
         let stats = Arc::new(Stats::default());
-        let inflight_guard = Arc::new(Semaphore::new(max_in_flight));
+        let inflight_guard = inflight_guard_for_limit(max_in_flight);
         let (latency_sample_tx, latency_sample_rx) = mpsc::unbounded_channel::<u64>();
 
         let root_samples = Arc::new(Mutex::new(Vec::<RootLatencySample>::new()));
@@ -750,9 +840,9 @@ async fn main() -> anyhow::Result<()> {
             *rps,
             stats.clone(),
             inflight_guard.clone(),
-            max_in_flight,
             root_samples.clone(),
             Some(duration),
+            warmup,
             latency_sample_tx.clone(),
         )
         .await?;

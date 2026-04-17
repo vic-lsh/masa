@@ -16,6 +16,10 @@ from .yaml_utils import dump_yaml
 LOADGEN_SERVICE_NAME = "load_generator"
 FRONTEND_SERVICE_NAME = normalize_service_name("USER")
 LOADGEN_OUTPUT_MOUNT = "/app/loadgen_output"
+# In-container mount path for policy_param.json. Kept in sync with
+# exp_runner/runner/apps/base.py's POLICY_PARAMS_CONTAINER_PATH and with
+# hotel/socialnet's docker-compose templates.
+POLICY_PARAMS_CONTAINER_PATH = "/usr/policy_params.json"
 CONTAINER_CPU_LIMIT = 1
 CONTAINER_MEM_LIMIT = "10GB"
 DEFAULT_SVC_PORT = 50051
@@ -395,6 +399,13 @@ def _make_environment_def(
     }
 
     environment.update(_collect_optional_env("FEATURE"))
+    # If the parent experiment runner wrote a policy_param.json and exported
+    # its host path as POLICY_PARAMS_PATH, set MASA_POLICY_PARAMS_PATH to the
+    # in-container mount path so libs/masa-policy can load it. mssim's
+    # generic-service image bypasses the shared entrypoint that does this
+    # for hotel/socialnet, so we set it explicitly here.
+    if os.environ.get("POLICY_PARAMS_PATH"):
+        environment["MASA_POLICY_PARAMS_PATH"] = POLICY_PARAMS_CONTAINER_PATH
     return environment
 
 
@@ -412,6 +423,14 @@ def _make_volumes_def(
     # Mount deployment config
     deployment_mapping = f"{deployment_output_path}:/app/config/deployment.json:ro"
     volumes.append(deployment_mapping)
+
+    # Mount policy_param.json (if present) at the known container path. See
+    # _make_environment_def above for how MASA_POLICY_PARAMS_PATH is set.
+    policy_params_path = os.environ.get("POLICY_PARAMS_PATH")
+    if policy_params_path:
+        volumes.append(
+            f"{policy_params_path}:{POLICY_PARAMS_CONTAINER_PATH}:ro"
+        )
 
     return volumes
 

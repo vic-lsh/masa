@@ -9,7 +9,7 @@ import pandas as pd
 from exp_runner.runner.policy import Policy
 
 from .util import (
-    apply_plot_defaults,
+    configure_plot_font_sizes,
     filter_excluded_errors,
     get_plot_worker_count,
     get_policy_bar_style,
@@ -21,6 +21,7 @@ from .util import (
     parse_args,
     PlotData,
     prepare_output_dir,
+    scale_fontsize,
 )
 
 matplotlib.use("Agg")  # Use non-interactive backend for thread safety
@@ -29,7 +30,7 @@ import matplotlib.pyplot as plt
 # Suppress warning about too many open figures when running in parallel
 # We properly close all figures, but many may be open simultaneously during parallel execution
 plt.rcParams["figure.max_open_warning"] = 0
-apply_plot_defaults()
+configure_plot_font_sizes()
 
 
 def get_request_type_hatch(request_type: str):
@@ -507,19 +508,19 @@ def _plot_early_return_breakdown(
                         rotation=45,
                         ha="right",
                         va="top",
-                        fontsize=12,
+                        fontsize=scale_fontsize(12),
                         rotation_mode="anchor",
                     )
 
-        ax.set_title(get_policy_display_name(policy), fontsize=14)
+        ax.set_title(get_policy_display_name(policy), fontsize=scale_fontsize(14))
         ax.set_ylim(0, ymax)
         ax.set_xticks(x)
         # Move RPS labels down to make room for subbar labels
-        ax.tick_params(axis="x", which="major", pad=40, labelsize=12)
-        ax.tick_params(axis="y", labelsize=12)
+        ax.tick_params(axis="x", which="major", pad=40, labelsize=scale_fontsize(12))
+        ax.tick_params(axis="y", labelsize=scale_fontsize(12))
         ax.set_xticklabels([str(v) for v in rps_values], rotation=0)
-        ax.set_xlabel("RPS", fontsize=12)
-        ax.set_ylabel("Early-return rate (req/s)", fontsize=12)
+        ax.set_xlabel("RPS", fontsize=scale_fontsize(12))
+        ax.set_ylabel("Early-return rate (req/s)", fontsize=scale_fontsize(12))
 
     # Hide unused subplots
     for idx in range(n, len(axes)):
@@ -560,6 +561,7 @@ def _plot_early_return_breakdown(
             loc="upper center",
             bbox_to_anchor=(0.3, 1.02),
             ncols=min(4, len(svc_handles)),
+            fontsize=scale_fontsize(12),
         )
         fig.add_artist(l2)
 
@@ -572,9 +574,10 @@ def _plot_early_return_breakdown(
             loc="upper center",
             bbox_to_anchor=(0.7, 1.02),
             ncols=min(4, len(method_handles)),
+            fontsize=scale_fontsize(12),
         )
 
-    fig.suptitle(title, fontsize=18, y=1.13)  # Moved up to make room for legends
+    fig.suptitle(title, fontsize=scale_fontsize(18), y=1.13)
     fig.tight_layout(rect=[0, 0, 1, 0.88])
     fig.savefig(breakdown_path, dpi=300, bbox_inches="tight")
     plt.close(fig)
@@ -645,6 +648,52 @@ def _style_axes(ax):
     ax.grid(axis="y", linestyle="--", alpha=0.4)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
+
+
+def _place_line_chart_legend(
+    fig,
+    ax,
+    *,
+    max_cols: int = 4,
+    top_margin: float = 0.91,
+) -> None:
+    handles, labels = ax.get_legend_handles_labels()
+    if handles:
+        fig.legend(
+            handles,
+            labels,
+            loc="upper center",
+            bbox_to_anchor=(0.5, 0.975),
+            ncols=min(max_cols, len(handles)),
+            frameon=False,
+        )
+        fig.tight_layout(rect=[0, 0, 1, top_margin])
+        return
+
+    fig.tight_layout()
+
+
+def _set_line_chart_ylim(
+    ax,
+    series_by_policy: dict[str, list[float]],
+    *,
+    top_factor: float = 1.2,
+    minimum_top: float = 1.0,
+) -> None:
+    ymax = 0.0
+    for values in series_by_policy.values():
+        if values:
+            ymax = max(ymax, max(float(v or 0.0) for v in values))
+    ymax = max(minimum_top, ymax)
+    ax.set_ylim(0, ymax * top_factor)
+
+
+def _simplify_all_api_line_title(title: str, *, fraction: bool = False) -> str:
+    simplified = title.replace(" and breakdown by request type", "").strip()
+    if fraction:
+        simplified = simplified.replace("goodput vs load", "goodput fraction vs load")
+        simplified = simplified.replace("Goodput vs load", "Goodput fraction vs load")
+    return simplified
 
 
 def _request_type_order_and_collapse(
@@ -822,7 +871,7 @@ def _plot_slo_miss_breakdown(
             )
             bottom += np.array(values)
 
-        ax.set_title(get_policy_display_name(policy), fontsize=11)
+        ax.set_title(get_policy_display_name(policy), fontsize=scale_fontsize(11))
         ax.set_ylim(0, ymax)
         ax.set_xticks(x)
         ax.set_xticklabels([str(v) for v in rps_values], rotation=0)
@@ -847,12 +896,12 @@ def _plot_slo_miss_breakdown(
         title="API",
         frameon=False,
         loc="upper center",
-        bbox_to_anchor=(0.5, 0.0),
+        bbox_to_anchor=(0.5, 1.02),
         ncols=len(request_types),
     )
 
-    fig.suptitle(title, fontsize=14)
-    fig.tight_layout(rect=[0, 0.08, 1, 1.0])
+    fig.suptitle(title, fontsize=scale_fontsize(14), y=0.98)
+    fig.tight_layout(rect=[0, 0, 1, 0.90])
     fig.savefig(breakdown_path, dpi=300, bbox_inches="tight")
     plt.close(fig)
 
@@ -920,14 +969,10 @@ def _plot_all_api_goodput_clean(
         )
     ax1.set_ylabel("Goodput (req/s meeting SLO)")
     ax1.set_xlabel("Load (requests per second)")
-    ax1.set_title(
-        title
-        if "aggregated" in title.lower() or "total" in title.lower()
-        else f"{title} - Aggregated"
-    )
-    ax1.legend(ncols=3, frameon=False, loc="lower center", bbox_to_anchor=(0.5, 1.02))
+    ax1.set_title(_simplify_all_api_line_title(title))
+    _set_line_chart_ylim(ax1, policy_total_goodputs)
 
-    fig1.tight_layout()
+    _place_line_chart_legend(fig1, ax1, max_cols=3, top_margin=0.91)
     fig1.savefig(aggregated_path, dpi=300, bbox_inches="tight")
     plt.close(fig1)
 
@@ -953,17 +998,19 @@ def _plot_all_api_goodput_clean(
             markersize=6,
             **get_policy_line_style(policy),
         )
+    fraction_series = {
+        policy: [
+            (float(val) / rps) if rps else 0.0
+            for val, rps in zip(policy_total_goodputs.get(policy, []), rps_values)
+        ]
+        for policy in sorted_policies
+    }
     ax3.set_ylabel("Goodput / Offered Load")
     ax3.set_xlabel("Load (requests per second)")
-    ax3.set_title(
-        title
-        if "aggregated" in title.lower() or "total" in title.lower()
-        else f"{title} - Goodput Fraction"
-    )
-    ax3.legend(ncols=3, frameon=False, loc="lower center", bbox_to_anchor=(0.5, 1.02))
-    ax3.set_ylim(0, 1.1)  # Goodput fraction should be between 0 and 1
+    ax3.set_title(_simplify_all_api_line_title(title, fraction=True))
+    _set_line_chart_ylim(ax3, fraction_series, minimum_top=0.1)
 
-    fig3.tight_layout()
+    _place_line_chart_legend(fig3, ax3, max_cols=3, top_margin=0.91)
     fig3.savefig(fraction_path, dpi=300, bbox_inches="tight")
     plt.close(fig3)
 
@@ -1018,7 +1065,7 @@ def _plot_all_api_goodput_clean(
             )
             bottom += np.array(values)
 
-        ax.set_title(get_policy_display_name(policy), fontsize=11)
+        ax.set_title(get_policy_display_name(policy), fontsize=scale_fontsize(11))
         ax.set_ylim(0, ymax)
         ax.set_xticks(x)
         ax.set_xticklabels([str(v) for v in rps_values], rotation=0)
@@ -1375,7 +1422,7 @@ def plot_goodput_timeline(
     policy_data_by_rps: dict[str, dict[int, pd.DataFrame]],
     *,
     duration_sec: float,
-    window_sec: float = 5.0,
+    window_sec: float = 2.0,
 ) -> None:
     """Plot per-second goodput over time for real apps (hotel, socialnet, synthetic).
 
@@ -1493,8 +1540,7 @@ def plot_goodput_timeline(
     ax.set_xlim(left=0, right=len(rps_sequence) * effective_duration)
     ax.set_ylim(bottom=0)
     ax.grid(True, which="both", linestyle="--", alpha=0.4)
-    ax.legend()
-    fig.tight_layout()
+    _place_line_chart_legend(fig, ax, top_margin=0.90)
     fig.savefig(output_path, dpi=300)
     plt.close(fig)
 
@@ -1506,7 +1552,7 @@ def plot_early_return_timeline(
     policy_data_by_rps: dict[str, dict[int, pd.DataFrame]],
     *,
     duration_sec: float,
-    window_sec: float = 5.0,
+    window_sec: float = 2.0,
 ) -> None:
     """Plot per-second early-return rate over time for real apps.
 
@@ -1617,8 +1663,7 @@ def plot_early_return_timeline(
     ax.set_xlim(left=0, right=len(rps_sequence) * effective_duration)
     ax.set_ylim(bottom=0)
     ax.grid(True, which="both", linestyle="--", alpha=0.4)
-    ax.legend()
-    fig.tight_layout()
+    _place_line_chart_legend(fig, ax, top_margin=0.90)
     fig.savefig(output_path, dpi=300)
     plt.close(fig)
 
@@ -1665,10 +1710,40 @@ def _parse_loadgen_client_shed(
 
     Returns (times, rates) aligned to the post-warmup timeline used by the
     abort-reason plot.
+
+    Wire contract (the canonical definition; loadgens in apps/ must honor
+    this or their client-side shedding will not render on the abort-reason
+    plot):
+
+      Every periodic stats line emitted by a load generator MUST contain,
+      somewhere on the same line, two substrings matching:
+
+          secs[=: ]<N>
+          client_shed[=: ]<N>
+
+      `secs` is a 1-based tick counter within the current RPS period; it
+      MUST reset to 1 at the start of each new RPS period (that is how
+      this parser demarcates periods). Ticks MUST be spaced at 1-second
+      intervals — this parser maps `secs` directly onto the plot's
+      wallclock x-axis, so any other interval would offset ClientShed
+      points relative to the server-side abort rates (which are
+      resampled in wallclock time). Configure mssim's
+      `stats_interval_sec` to 1; hotel/socialnet are hard-coded to 1s.
+
+      `client_shed` is the **client-side admission shed rate for the tick,
+      in requests per second**. Hotel/socialnet log the raw delta; with
+      a 1s tick that equals rate. mssim explicitly emits delta/interval
+      so the value is always rate regardless of interval drift.
+
+      Values may be integers or decimals. Separator between key and
+      value may be ":", "=", or whitespace; other fields on the line are
+      ignored. See:
+        - apps/app-utils/src/load_gen.rs (hotel/socialnet stats_logger)
+        - apps/mssim/generic-service/src/loadgen.rs (mssim print_stats_task)
     """
     import re
 
-    pattern = re.compile(r"secs:\s*(\d+),.*?client_shed:\s*(\d+)")
+    pattern = re.compile(r"secs[=:\s]\s*(\d+).*?client_shed[=:\s]\s*(\d+(?:\.\d+)?)")
     times: list[float] = []
     rates: list[float] = []
     if not os.path.exists(loadgen_log_path):
@@ -1676,14 +1751,14 @@ def _parse_loadgen_client_shed(
 
     # Parse all per-second lines. The secs counter resets for each RPS period.
     # We detect period boundaries by secs going back to 1.
-    per_period_rows: list[list[tuple[int, int]]] = [[]]
+    per_period_rows: list[list[tuple[int, float]]] = [[]]
     with open(loadgen_log_path) as f:
         for line in f:
             m = pattern.search(line)
             if not m:
                 continue
             sec = int(m.group(1))
-            shed = int(m.group(2))
+            shed = float(m.group(2))
             if sec == 1 and per_period_rows[-1]:
                 per_period_rows.append([])
             per_period_rows[-1].append((sec, shed))
@@ -1709,7 +1784,7 @@ def plot_abort_reason_timeline(
     policy_data_by_rps: dict[str, dict[int, pd.DataFrame]],
     *,
     duration_sec: float,
-    window_sec: float = 5.0,
+    window_sec: float = 2.0,
     data_dir: str | None = None,
     iteration: int = 0,
     warmup_sec: float = 0.0,
@@ -1880,7 +1955,11 @@ def plot_abort_reason_timeline(
 
     axes[-1, 0].set_xlabel("Time (s)")
     axes[-1, 0].set_xlim(left=0, right=len(rps_sequence) * effective_duration)
-    fig.suptitle(f"Abort-reason timeline ({window_sec:g}s window)", fontsize=14, y=1.0)
+    fig.suptitle(
+        f"Abort-reason timeline ({window_sec:g}s window)",
+        fontsize=scale_fontsize(14),
+        y=1.0,
+    )
     fig.tight_layout()
     fig.savefig(output_path, dpi=300)
     plt.close(fig)

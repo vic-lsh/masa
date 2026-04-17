@@ -37,7 +37,7 @@ class TestParse:
     def test_ac_pred(self):
         p = Policy.parse("sched_slo,ac_pred,est_mean_var")
         assert p.ac == "slack"
-        assert p.est == "mean_var"  # est shown because ac=slack
+        assert p.est == "mean_var"
 
     def test_ac_rajomon(self):
         p = Policy.parse("sched_slo,ac_rajomon")
@@ -59,7 +59,7 @@ class TestParse:
         assert p.raw == "custom_thing"
 
     def test_est_default_for_ac_slack(self):
-        """ac=slack without explicit est → default rms."""
+        """ac=slack without explicit est defaults to mean_var."""
         p = Policy.parse("sched_slo,ac_pred")
         assert p.ac == "slack"
         assert p.est == "mean_var"
@@ -91,88 +91,83 @@ class TestOrderAgnostic:
 
 class TestDisplayName:
     def test_fifo_bare(self):
-        assert (
-            Policy.parse("sched_fifo").display_name == "prio=fifo, drop=none, ac=none"
-        )
+        assert Policy.parse("sched_fifo").display_name == "FIFO"
 
     def test_fifo_with_drop(self):
+        assert Policy.parse("sched_fifo,abort_slo").display_name == "FIFO (drop@SLO)"
+
+    def test_fifo_rajomon(self):
         assert (
-            Policy.parse("sched_fifo,abort_slo").display_name
-            == "prio=fifo, drop=e2e_slo, ac=none"
+            Policy.parse("sched_fifo,ac_rajomon").display_name
+            == "Rajomon (FIFO default)"
         )
 
-    def test_fifo_with_ac(self):
-        assert Policy.parse("sched_fifo,ac_rajomon").display_name == "fifo+rajomon"
-
-    def test_fifo_with_drop_and_ac(self):
+    def test_fifo_rajomon_with_drop(self):
         assert (
             Policy.parse("sched_fifo,abort_slo,ac_rajomon").display_name
-            == "fifo+rajomon"
+            == "Rajomon (FIFO default, drop@SLO)"
         )
 
     def test_e2e_slo_bare(self):
-        assert (
-            Policy.parse("sched_slo").display_name == "prio=e2e_slo, drop=none, ac=none"
-        )
+        assert Policy.parse("sched_slo").display_name == "SLO priority"
 
     def test_e2e_slo_with_drop(self):
         assert (
             Policy.parse("sched_slo,abort_slo").display_name
-            == "prio=e2e_slo, drop=e2e_slo, ac=none"
+            == "SLO priority (drop@SLO)"
         )
 
     def test_oldest_bare(self):
-        assert Policy.parse("sched_tailclipper").display_name == "tailclipper"
+        assert Policy.parse("sched_tailclipper").display_name == "TailClipper"
 
     def test_oldest_with_drop(self):
-        assert Policy.parse("sched_tailclipper,abort_slo").display_name == "tailclipper"
+        assert (
+            Policy.parse("sched_tailclipper,abort_slo").display_name
+            == "TailClipper (drop@SLO)"
+        )
 
-    def test_oldest_with_ac_rajomon(self):
+    def test_tailclipper_rajomon(self):
         assert (
             Policy.parse("sched_tailclipper,ac_rajomon").display_name
-            == "tailclipper+rajomon"
+            == "Rajomon (w/ TailClipper)"
         )
 
-    def test_full_masa(self):
+    def test_tailclipper_rajomon_with_drop(self):
         assert (
-            Policy.parse("sched_pred,abort_slack,ac_pred,est_mean_var").display_name
-            == "Masa"
+            Policy.parse("sched_tailclipper,abort_slo,ac_rajomon").display_name
+            == "Rajomon (w/ TailClipper, drop@SLO)"
         )
 
-    def test_slack_sched_only(self):
+    def test_masa_priority_bare(self):
+        assert Policy.parse("sched_pred").display_name == "Masa priority"
+
+    def test_masa_priority_explicit_est(self):
+        assert Policy.parse("sched_pred,est_mean_var").display_name == "Masa priority"
+
+    def test_masa_canonical(self):
+        assert Policy.parse("sched_pred,abort_slack,ac_pred").display_name == "Masa"
+
+    def test_masa_fifo_variant(self):
         assert (
-            Policy.parse("sched_pred").display_name == "Masa w/o slack-abort, slack-AC"
+            Policy.parse("sched_fifo,abort_slack,ac_pred").display_name == "Masa (FIFO)"
         )
 
-    def test_slack_sched_explicit_est(self):
+    def test_masa_fifo_drop_at_slo_variant(self):
         assert (
-            Policy.parse("sched_pred,est_mean_var").display_name
-            == "Masa w/o slack-abort, slack-AC"
+            Policy.parse("ac_pred,abort_slo,sched_fifo").display_name
+            == "Masa (FIFO, drop@SLO)"
         )
 
-    def test_slack_sched_with_slo_abort_and_ac(self):
+    def test_masa_drop_at_slo_variant(self):
         assert (
             Policy.parse("sched_pred,abort_slo,ac_pred,est_mean_var").display_name
-            == "Masa w/o slack-abort"
+            == "Masa (drop@SLO)"
         )
 
-    def test_fifo_with_ac_pred_abort_slack(self):
-        assert (
-            Policy.parse("sched_fifo,ac_pred,abort_slack").display_name
-            == "Masa w/o slack-sched"
-        )
-
-    def test_fifo_with_ac_pred_abort_slo(self):
-        assert (
-            Policy.parse("sched_fifo,ac_pred,abort_slo").display_name
-            == "Masa w/o slack-sched, slack-abort"
-        )
-
-    def test_e2e_slo_with_ac_slack(self):
-        """ac_pred (ac=slack) without slack-sched or slack-abort."""
+    def test_masa_slo_priority_no_drop_variant(self):
         assert (
             Policy.parse("sched_slo,ac_pred,est_mean_var").display_name
-            == "Masa w/o slack-sched, slack-abort"
+            == "Masa (SLO priority, no drop)"
         )
 
     def test_unknown_fallback(self):
@@ -248,40 +243,44 @@ class TestColor:
         assert c1 != c2, f"abort_slo and abort_slack must not share a color: {c1}"
 
     def test_unknown(self):
-        assert Policy.parse("custom").color is None
+        assert Policy.parse("custom").color == "#BAB0AC"
 
 
 # ── marker / linestyle / hatch ────────────────────────────────────────────
 
 
 class TestMarker:
-    """Marker encodes the admission control mechanism.
+    """Marker encodes the scheduler + admission-control family.
 
-    no AC     → circle  "o"
-    ac_pred   → diamond "D"
-    ac_rajomon → triangle "^"
+    This keeps policy markers deterministic across plots while ensuring
+    Rajomon and Masa variants with different schedulers do not collapse onto
+    the same point symbol.
     """
 
     def test_no_ac(self):
         assert Policy.parse("sched_fifo").marker == "o"
-        assert Policy.parse("sched_slo").marker == "o"
-        assert Policy.parse("sched_tailclipper").marker == "o"
-        assert Policy.parse("sched_pred,est_mean_var").marker == "o"
+        assert Policy.parse("sched_slo").marker == "s"
+        assert Policy.parse("sched_tailclipper").marker == "X"
+        assert Policy.parse("sched_pred,est_mean_var").marker == "P"
 
     def test_ac_pred(self):
         assert Policy.parse("sched_fifo,abort_slo,ac_pred").marker == "D"
-        assert Policy.parse("sched_pred,abort_slack,ac_pred,est_mean_var").marker == "D"
+        assert Policy.parse("sched_slo,ac_pred,est_mean_var").marker == "d"
+        assert Policy.parse("sched_pred,abort_slack,ac_pred,est_mean_var").marker == "H"
 
     def test_ac_rajomon(self):
         assert Policy.parse("sched_fifo,ac_rajomon").marker == "^"
+        assert Policy.parse("sched_slo,ac_rajomon").marker == "v"
+        assert Policy.parse("sched_tailclipper,ac_rajomon").marker == "<"
         assert (
-            Policy.parse("sched_pred,ac_rajomon,abort_slo,est_mean_var").marker == "^"
+            Policy.parse("sched_pred,ac_rajomon,abort_slo,est_mean_var").marker == ">"
         )
 
     def test_drop_does_not_change_marker(self):
         # Drop is encoded by color + linestyle, not marker.
         assert Policy.parse("sched_fifo,abort_slo").marker == "o"
         assert Policy.parse("sched_fifo,abort_slack").marker == "o"
+        assert Policy.parse("sched_tailclipper,abort_slo,ac_rajomon").marker == "<"
 
     def test_unknown_fallback(self):
         assert Policy.parse("custom").marker == "o"

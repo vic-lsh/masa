@@ -108,25 +108,21 @@ class TestGetPolicyStyles:
     def test_standard_policies(self):
         """Standard policies map to the Okabe-Ito palette.
 
-        Color encodes (prio, drop); marker encodes AC.
-        No-drop + no-AC policies: all markers are circle "o".
+        Color encodes (prio, drop); marker encodes (prio, ac).
         """
         policies = ["sched_fifo", "sched_slo", "sched_pred,est_mean_var"]
         styles = _get_policy_styles(policies)
 
-        # fifo + no drop + no AC: grey, circle, solid
         assert styles["sched_fifo"]["color"] == "#999999"
         assert styles["sched_fifo"]["marker"] == "o"
         assert styles["sched_fifo"]["linestyle"] == "-"
 
-        # e2e_slo + no drop + no AC: yellow, circle, solid
         assert styles["sched_slo"]["color"] == "#F0E442"
-        assert styles["sched_slo"]["marker"] == "o"
+        assert styles["sched_slo"]["marker"] == "s"
         assert styles["sched_slo"]["linestyle"] == "-"
 
-        # slack + no drop + no AC: vermillion, circle, solid
         assert styles["sched_pred,est_mean_var"]["color"] == "#D55E00"
-        assert styles["sched_pred,est_mean_var"]["marker"] == "o"
+        assert styles["sched_pred,est_mean_var"]["marker"] == "P"
         assert styles["sched_pred,est_mean_var"]["linestyle"] == "-"
 
     def test_abort_policies(self):
@@ -164,7 +160,8 @@ class TestGetPolicyStyles:
         assert styles["sched_fifo,abort_slo"]["linestyle"] == "--"
 
     def test_unknown_policies(self):
-        """Unknown policies fall back to matplotlib's prop cycle for color."""
+        """Unknown policies get deterministic fallback color/marker from a
+        stable hash of the raw policy string."""
         policies = ["unknown1", "unknown2", "unknown3"]
         styles = _get_policy_styles(policies)
 
@@ -172,8 +169,7 @@ class TestGetPolicyStyles:
         for policy in policies:
             assert policy in styles
             assert styles[policy]["color"] is not None
-            # Fallback marker/linestyle for unknown prio
-            assert styles[policy]["marker"] == "o"
+            assert styles[policy]["marker"]
             assert styles[policy]["linestyle"] == "-"
 
 
