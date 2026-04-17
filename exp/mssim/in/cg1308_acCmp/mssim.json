@@ -1,0 +1,10 @@
+{
+  "callgraph_dirs": [
+    "trace-analysis/graphs/S_130831269"
+  ],
+  "slo_ms": 11,
+  "orchestrator": "localhost:50051",
+  "replay_path": null,
+  "stats_interval_sec": 1,
+  "extra_env": {}
+}

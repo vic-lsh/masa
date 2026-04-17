@@ -1,0 +1,8 @@
+{
+    "callgraph_dirs": ["trace-analysis/golden/S_14677443"],
+    "slo_ms": 100,
+    "orchestrator": "localhost:50051",
+    "replay_path": null,
+    "stats_interval_sec": 1,
+    "extra_env": {}
+}
