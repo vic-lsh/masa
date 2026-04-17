@@ -25,7 +25,12 @@ def test_get_policy_display_name_delegates_to_policy():
     assert get_policy_display_name("sched_slo") == "prio=e2e_slo, drop=none, ac=none"
     assert (
         get_policy_display_name("sched_pred,abort_slo,est_mean_var")
-        == "prio=slack, drop=e2e_slo, ac=none, est=mean_var"
+        == "Masa w/o slack-abort, slack-AC"
+    )
+    assert get_policy_display_name("sched_fifo,ac_rajomon") == "fifo+rajomon"
+    assert get_policy_display_name("sched_tailclipper") == "tailclipper"
+    assert (
+        get_policy_display_name("sched_tailclipper,ac_rajomon") == "tailclipper+rajomon"
     )
     assert get_policy_display_name("custom") == "custom"
 

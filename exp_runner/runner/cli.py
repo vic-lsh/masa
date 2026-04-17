@@ -18,6 +18,7 @@ from .apps.base import AppBuilder
 from .config import ExperimentConfig
 from .experiment import Experiment
 from .optimizer import OptimizerConfig, RajomonOptimizer
+from .pred_optimizer import PredOptimizerConfig, PredOptimizer
 from .plotting import generate_all_plots
 from .plotting.replicas import generate_replicas_plots
 
@@ -428,6 +429,44 @@ def cmd_optimize(args: argparse.Namespace) -> None:
         sys.exit(1)
 
 
+def cmd_optimize_pred(args: argparse.Namespace) -> None:
+    """
+    Run Bayesian optimization for predictive admission control parameters.
+    """
+    repo_root = find_repo_root()
+
+    output_path = Path(args.output) if args.output else None
+
+    config = PredOptimizerConfig(
+        app=args.app,
+        experiment_base=args.experiment_base,
+        policy=args.policy,
+        saturation_rps=args.saturation_rps,
+        n_iterations=args.iterations,
+        objective_mode=args.objective_mode,
+        stability_weight=args.stability_weight,
+        window_secs=args.window_secs,
+        floor_percentile=args.floor_percentile,
+        warm_start_path=Path(args.warm_start) if args.warm_start else None,
+        warmup_secs=args.warmup_secs,
+        duration_secs=args.duration_secs,
+        output_path=output_path,
+    )
+
+    optimizer = PredOptimizer(config, repo_root)
+
+    try:
+        best_params = optimizer.run()
+        if best_params:
+            logger.info("Optimization completed successfully!")
+        else:
+            logger.error("Optimization completed with no successful trials")
+            sys.exit(1)
+    except Exception as e:
+        logger.error(f"Optimization failed: {e}", exc_info=True)
+        sys.exit(1)
+
+
 def create_parser() -> argparse.ArgumentParser:
     """Main entry point for the CLI."""
     parser = argparse.ArgumentParser(
@@ -690,6 +729,102 @@ Examples:
         help="Path to write best params (default: exp/<app>/out/_opt_rajomon/best_params.json)",
     )
     optimize_parser.set_defaults(func=cmd_optimize)
+
+    # optimize-pred command
+    optimize_pred_parser = subparsers.add_parser(
+        "optimize-pred",
+        help="Optimize predictive admission control (ac_pred/abort_slack) parameters",
+        description=(
+            "Run Optuna-based Bayesian optimization for PredParams "
+            "(tau_er, estimator_k, aimd_alpha, aimd_beta, aimd_er_threshold). "
+            "Objective maximizes goodput while penalizing intra-run oscillation."
+        ),
+    )
+    optimize_pred_parser.add_argument(
+        "app",
+        choices=["hotel", "mssim", "socialnet", "synthetic"],
+        help="Application to optimize",
+    )
+    optimize_pred_parser.add_argument(
+        "experiment_base",
+        help="Existing experiment to copy app topology from (e.g., ember_10)",
+    )
+    optimize_pred_parser.add_argument(
+        "--policy",
+        default="sched_pred,ac_pred,abort_slack,est_mean_var",
+        help=(
+            "Feature flags to optimize "
+            "(default: sched_pred,ac_pred,abort_slack,est_mean_var)"
+        ),
+    )
+    optimize_pred_parser.add_argument(
+        "--saturation-rps",
+        type=int,
+        required=True,
+        help="Max sustainable RPS (used to generate sweep: 0.8x–2.0x)",
+    )
+    optimize_pred_parser.add_argument(
+        "--iterations",
+        type=int,
+        default=30,
+        help="Number of optimization iterations (default: 30)",
+    )
+    optimize_pred_parser.add_argument(
+        "--objective-mode",
+        choices=["sharpe", "floor", "penalized"],
+        default="sharpe",
+        help=(
+            "Objective function mode (default: sharpe). "
+            "sharpe: mean_gp/(1+w*CV); "
+            "floor: percentile(windows, q); "
+            "penalized: mean_gp - w*std_gp"
+        ),
+    )
+    optimize_pred_parser.add_argument(
+        "--stability-weight",
+        type=float,
+        default=0.3,
+        help=(
+            "Stability penalty weight for sharpe/penalized modes (default: 0.3). "
+            "0 = pure goodput maximization."
+        ),
+    )
+    optimize_pred_parser.add_argument(
+        "--window-secs",
+        type=float,
+        default=5.0,
+        help="Width of each goodput measurement window in seconds (default: 5.0)",
+    )
+    optimize_pred_parser.add_argument(
+        "--floor-percentile",
+        type=float,
+        default=10.0,
+        help="Percentile for floor objective mode (default: 10th)",
+    )
+    optimize_pred_parser.add_argument(
+        "--warmup-secs",
+        type=int,
+        default=15,
+        help="Warmup duration per trial in seconds (default: 15)",
+    )
+    optimize_pred_parser.add_argument(
+        "--duration-secs",
+        type=int,
+        default=45,
+        help="Measurement duration per trial in seconds (default: 45)",
+    )
+    optimize_pred_parser.add_argument(
+        "--warm-start",
+        help="Path to previous best_params.json for warm-starting",
+    )
+    optimize_pred_parser.add_argument(
+        "--output",
+        help=(
+            "Path to write best params JSON "
+            "(default: exp/<app>/out/_opt_pred/best_params.json)"
+        ),
+    )
+    optimize_pred_parser.set_defaults(func=cmd_optimize_pred)
 
     return parser
 

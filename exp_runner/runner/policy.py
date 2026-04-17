@@ -120,14 +120,43 @@ class Policy:
 
     @property
     def display_name(self) -> str:
-        """Human-readable key=value display name.
+        """Human-readable display name for legends.
 
-        Token order: prio → drop → ac [→ est (only for slack policies)].
         Unrecognised policies fall back to the raw string.
         """
         if self.prio is None:
             return self.raw
 
+        # Full Masa: all three slack components present.
+        is_slack_sched = self.prio == "slack"
+        is_slack_abort = self.drop == "slack"
+        is_slack_ac = self.ac == "slack"
+
+        if is_slack_sched and is_slack_abort and is_slack_ac:
+            return "Masa"
+
+        # Partial Masa variants (ablation): label by what's missing.
+        if is_slack_sched or is_slack_abort or is_slack_ac:
+            missing = []
+            if not is_slack_sched:
+                missing.append("slack-sched")
+            if not is_slack_abort:
+                missing.append("slack-abort")
+            if not is_slack_ac:
+                missing.append("slack-AC")
+            return "Masa w/o " + ", ".join(missing)
+
+        # TailClipper variants.
+        if self.prio == "oldest":
+            if self.ac == "rajomon":
+                return "tailclipper+rajomon"
+            return "tailclipper"
+
+        # FIFO + Rajomon.
+        if self.prio == "fifo" and self.ac == "rajomon":
+            return "fifo+rajomon"
+
+        # Fallback: key=value format for remaining combinations.
         parts = [
             f"prio={self.prio}",
             f"drop={self.drop or 'none'}",
@@ -141,25 +170,87 @@ class Policy:
     def color(self) -> str | None:
         """Matplotlib color for this policy, or None for the default cycle.
 
-        Colour scheme:
-        - fifo:    grey / darkgrey (with drop)
-        - e2e_slo: steelblue / cornflowerblue (with drop)
-        - oldest:  purple / mediumpurple (with drop)
-        - slack:   hotpink / lightpink (with drop),
-                   coral (with est, no AC), forestgreen (with AC)
-        """
-        has_drop = self.drop is not None
+        Encodes (prio, drop) so that any two policies differing in scheduling
+        priority or abort mechanism get distinct colors.  The AC dimension is
+        encoded by `marker` instead.
 
+        Palette (Okabe-Ito color-blind-safe + grey):
+
+          prio=fifo:
+            no drop     → grey          #999999
+            abort_slo   → sky blue      #56B4E9
+            abort_slack → blue          #0072B2
+
+          prio=e2e_slo:
+            no drop     → yellow        #F0E442
+            abort_slo   → black         #000000
+            abort_slack → light blue    #88CCEE  (rare)
+
+          prio=oldest (tailclipper):
+            no drop     → dark pink     #AA3377  (rare)
+            abort_slo   → reddish purple #CC79A7
+            abort_slack → dark wine     #882255  (rare)
+
+          prio=slack (pred):
+            no drop     → vermillion    #D55E00
+            abort_slo   → orange        #E69F00
+            abort_slack → bluish green  #009E73
+        """
+        _color_map: dict[tuple[str | None, str | None], str] = {
+            ("fifo", None): "#999999",
+            ("fifo", "e2e_slo"): "#56B4E9",
+            ("fifo", "slack"): "#0072B2",
+            ("e2e_slo", None): "#F0E442",
+            ("e2e_slo", "e2e_slo"): "#000000",
+            ("e2e_slo", "slack"): "#88CCEE",
+            ("oldest", None): "#AA3377",
+            ("oldest", "e2e_slo"): "#CC79A7",
+            ("oldest", "slack"): "#882255",
+            ("slack", None): "#D55E00",
+            ("slack", "e2e_slo"): "#E69F00",
+            ("slack", "slack"): "#009E73",
+        }
+        return _color_map.get((self.prio, self.drop))
+
+    @property
+    def marker(self) -> str:
+        """Matplotlib marker shape for this policy.
+
+        Encodes the admission control mechanism so that policies with the same
+        (prio, drop) but different AC are visually distinct:
+          no AC       → circle   "o"
+          ac_pred     → diamond  "D"
+          ac_rajomon  → triangle "^"
+        """
+        if self.ac == "slack":
+            return "D"
+        if self.ac == "rajomon":
+            return "^"
+        return "o"
+
+    @property
+    def linestyle(self) -> str:
+        """Matplotlib linestyle. Encodes the drop mechanism as a 3-way split so
+        abort_slo and abort_slack are visually distinct even when color is similar:
+          no drop     → solid     "-"
+          abort_slo   → dashed    "--"
+          abort_slack → dash-dot  "-."
+        """
+        if self.drop == "e2e_slo":
+            return "--"
+        if self.drop == "slack":
+            return "-."
+        return "-"
+
+    @property
+    def hatch(self) -> str:
+        """Matplotlib hatch pattern for bar plots. Redundant encoding of `prio`."""
         if self.prio == "fifo":
-            return "darkgrey" if has_drop else "grey"
+            return ""
         if self.prio == "e2e_slo":
-            return "cornflowerblue" if has_drop else "steelblue"
+            return "//"
         if self.prio == "oldest":
-            return "mediumpurple" if has_drop else "purple"
+            return "xx"
         if self.prio == "slack":
-            if self.ac is not None:
-                return "forestgreen"
-            if self.est is not None:
-                return "coral"
-            return "lightpink" if has_drop else "hotpink"
-        return None
+            return ".."
+        return ""
