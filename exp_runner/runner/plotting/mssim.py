@@ -399,7 +399,6 @@ def _plot_latency_cdf(
 ) -> None:
     """Plot CDF of e2e latency for all policies at a specific RPS."""
     fig, ax = plt.subplots(figsize=(10, 6))
-    cmap = plt.get_cmap("tab10")
 
     any_data = False
     for idx, (policy, df) in enumerate(policy_data.items()):
