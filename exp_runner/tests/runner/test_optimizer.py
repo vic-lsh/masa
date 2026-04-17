@@ -15,20 +15,26 @@ class TestGenerateRpsSweep:
     """Tests for RPS sweep generation."""
 
     def test_standard_sweep(self):
-        """[0.8x, 1.0x, 1.2x, 1.5x, 2.0x] rounded to nearest 100."""
+        """[0.8x, 1.0x, 1.2x, 1.5x, 2.0x] rounded to nearest 50."""
         result = generate_rps_sweep(1800)
-        assert result == [1400, 1800, 2200, 2700, 3600]
+        assert result == [1450, 1800, 2150, 2700, 3600]
 
     def test_sweep_1000(self):
         result = generate_rps_sweep(1000)
         assert result == [800, 1000, 1200, 1500, 2000]
 
     def test_sweep_rounding(self):
-        """Each value should be rounded to nearest 100."""
+        """Each value should be rounded to nearest 50."""
         result = generate_rps_sweep(550)
-        # 0.8*550=440 -> 400, 1.0*550=550 -> 600, 1.2*550=660 -> 700,
-        # 1.5*550=825 -> 800, 2.0*550=1100 -> 1100
-        assert result == [400, 600, 700, 800, 1100]
+        # 0.8*550=440 -> 450, 1.0*550=550 -> 550, 1.2*550=660 -> 650,
+        # 1.5*550=825 -> 800 (banker's rounding), 2.0*550=1100 -> 1100
+        assert result == [450, 550, 650, 800, 1100]
+
+    def test_sweep_low_saturation(self):
+        """At low saturation, nearest-50 avoids collapsing 0.8x/1.0x/1.2x."""
+        # Regression: used to collapse to [200, 200, 200, 300, 400] at nearest-100.
+        result = generate_rps_sweep(200)
+        assert result == [150, 200, 250, 300, 400]
 
 
 class TestSampleParams:
@@ -67,12 +73,6 @@ class TestComputeObjective:
         slos = [200000, 100000]  # 200ms, 100ms in microseconds
         rps_values = [1000]
 
-        gen_config = {
-            "Apis": apis,
-            "Slos": slos,
-            "Rps": rps_values,
-        }
-
         # Create directory structure
         policy_dir = tmp_path / "0" / policy
         policy_dir.mkdir(parents=True)
@@ -106,7 +106,9 @@ class TestComputeObjective:
         res_df = pd.DataFrame(res_data)
         res_df.to_csv(policy_dir / "r1000_Reservation.csv", index=False)
 
-        objective = compute_objective(tmp_path, policy, gen_config, penalty_weight=10.0)
+        objective = compute_objective(
+            tmp_path, policy, apis, slos, rps_values, penalty_weight=10.0
+        )
 
         # Should have positive goodput and a penalty for Reservation p99 violation
         # Reservation p99 ~ 150000, SLO = 100000, violation = 50000us = 0.05s
@@ -120,38 +122,23 @@ class TestComputeObjective:
     def test_empty_data(self, tmp_path):
         """Returns large negative value on missing data."""
         policy = "sched_slo,ac_rajomon,abort_slo"
-        gen_config = {
-            "Apis": ["Search"],
-            "Slos": [200000],
-            "Rps": [1000],
-        }
 
         # Don't create any CSVs
         (tmp_path / "0" / policy).mkdir(parents=True)
 
-        objective = compute_objective(tmp_path, policy, gen_config)
+        objective = compute_objective(tmp_path, policy, ["Search"], [200000], [1000])
         assert objective == -1e9
 
     def test_missing_directory(self, tmp_path):
         """Returns large negative value when policy dir doesn't exist."""
         policy = "sched_slo,ac_rajomon,abort_slo"
-        gen_config = {
-            "Apis": ["Search"],
-            "Slos": [200000],
-            "Rps": [1000],
-        }
 
-        objective = compute_objective(tmp_path, policy, gen_config)
+        objective = compute_objective(tmp_path, policy, ["Search"], [200000], [1000])
         assert objective == -1e9
 
     def test_excludes_early_return_errors(self, tmp_path):
         """EarlyReturn errors should be filtered from goodput and p99."""
         policy = "sched_slo,ac_rajomon,abort_slo"
-        gen_config = {
-            "Apis": ["Search"],
-            "Slos": [200000],
-            "Rps": [1000],
-        }
 
         policy_dir = tmp_path / "0" / policy
         policy_dir.mkdir(parents=True)
@@ -169,7 +156,9 @@ class TestComputeObjective:
         df = pd.DataFrame(data)
         df.to_csv(policy_dir / "r1000_Search.csv", index=False)
 
-        objective = compute_objective(tmp_path, policy, gen_config, penalty_weight=10.0)
+        objective = compute_objective(
+            tmp_path, policy, ["Search"], [200000], [1000], penalty_weight=10.0
+        )
 
         # The 5 EarlyReturn requests with latency 300000 should be excluded
         # Only the 5 good requests with latency 50000 should count

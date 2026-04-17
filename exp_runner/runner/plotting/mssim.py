@@ -4,10 +4,11 @@ Plotting utilities for MSSIM experiment results.
 
 from __future__ import annotations
 
+import csv
 import json
 import re
 from pathlib import Path
-from typing import Dict, List, Sequence
+from typing import Dict, List, Sequence, Tuple
 
 import matplotlib
 
@@ -21,10 +22,11 @@ from .goodput import (
     _plot_early_return_breakdown,
     compute_early_return_breakdown,
     compute_early_return_last_child_breakdown,
+    plot_abort_reason_timeline,
 )
 from .util import (
     _read_request_csv,
-    apply_plot_defaults,
+    configure_plot_font_sizes,
     filter_excluded_errors,
     get_policy_display_name,
     get_policy_line_style,
@@ -32,10 +34,48 @@ from .util import (
 )
 
 plt.rcParams["figure.max_open_warning"] = 0
-apply_plot_defaults()
+configure_plot_font_sizes()
 
 
 _RPS_DIR_RE = re.compile(r"^rps_(?P<rps>[0-9_]+(?:\.[0-9_]+)?)$")
+
+
+def _place_line_chart_legend(
+    fig,
+    ax,
+    *,
+    max_cols: int = 4,
+    top_margin: float = 0.91,
+) -> None:
+    handles, labels = ax.get_legend_handles_labels()
+    if handles:
+        fig.legend(
+            handles,
+            labels,
+            loc="upper center",
+            bbox_to_anchor=(0.5, 0.975),
+            ncols=min(max_cols, len(handles)),
+            frameon=False,
+        )
+        fig.tight_layout(rect=[0, 0, 1, top_margin])
+        return
+
+    fig.tight_layout()
+
+
+def _set_line_chart_ylim(
+    ax,
+    policy_series: Dict[str, Sequence[float]],
+    *,
+    top_factor: float = 1.2,
+    minimum_top: float = 1.0,
+) -> None:
+    ymax = 0.0
+    for values in policy_series.values():
+        if values:
+            ymax = max(ymax, max(float(v or 0.0) for v in values))
+    ymax = max(minimum_top, ymax)
+    ax.set_ylim(0, ymax * top_factor)
 
 
 def _parse_rps_dir(path: Path) -> float:
@@ -150,7 +190,9 @@ def _load_policy_data(policy_dir: Path, warmup_sec: float) -> Dict[float, pd.Dat
             print(f"Warning: missing e2e_latency_us in {csv_path}")
             continue
 
-        df = filter_excluded_errors(df)
+        # NOTE: do not drop EarlyReturn/ClientTimeout rows here. Downstream
+        # compute paths (goodput, latency percentiles, CDF) filter them out
+        # locally, while early-return and abort-reason plots need those rows.
         df = _filter_after_warmup(df, warmup_sec, csv_path)
         if df.empty:
             continue
@@ -177,11 +219,13 @@ def _load_policy_data(policy_dir: Path, warmup_sec: float) -> Dict[float, pd.Dat
     return combined
 
 
-def _effective_duration_sec(
-    df: pd.DataFrame, duration_sec: float, warmup_sec: float
-) -> float:
-    if duration_sec and duration_sec > warmup_sec:
-        return duration_sec - warmup_sec
+def _effective_duration_sec(df: pd.DataFrame, duration_sec: float) -> float:
+    # The loadgen drops warmup samples at the source (commit b42e6656), so the
+    # per-RPS CSV covers exactly `DurationSecs` of post-warmup traffic. Use
+    # that as the goodput denominator directly — do NOT subtract warmup here,
+    # or the numerator (30s of samples) / denominator (15s) → 2× inflation.
+    if duration_sec and duration_sec > 0:
+        return duration_sec
 
     if df.empty or "start_at" not in df.columns:
         return 1.0
@@ -199,9 +243,7 @@ def _effective_duration_sec(
     return duration if duration > 0 else 1.0
 
 
-def _compute_goodput(
-    df: pd.DataFrame, slo_ms: float, duration_sec: float, warmup_sec: float
-) -> float:
+def _compute_goodput(df: pd.DataFrame, slo_ms: float, duration_sec: float) -> float:
     if df.empty:
         return 0.0
 
@@ -223,7 +265,7 @@ def _compute_goodput(
         return 0.0
 
     meets_slo = df["e2e_latency_ms"] <= slo_ms
-    denom = _effective_duration_sec(df, duration_sec, warmup_sec)
+    denom = _effective_duration_sec(df, duration_sec)
     return float(meets_slo.sum()) / denom
 
 
@@ -280,10 +322,13 @@ def _plot_goodput_lines(
     ax.set_xlabel("Offered load (RPS)")
     ax.set_ylabel(ylabel)
     ax.set_title(title)
-    ax.set_ylim(bottom=0)
+    _set_line_chart_ylim(
+        ax,
+        policy_series,
+        minimum_top=0.1 if "fraction" in ylabel.lower() else 1.0,
+    )
     ax.grid(True, which="both", linestyle="--", alpha=0.4)
-    ax.legend()
-    fig.tight_layout()
+    _place_line_chart_legend(fig, ax, top_margin=0.91)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, dpi=300)
     plt.close(fig)
@@ -354,7 +399,6 @@ def _plot_latency_cdf(
 ) -> None:
     """Plot CDF of e2e latency for all policies at a specific RPS."""
     fig, ax = plt.subplots(figsize=(10, 6))
-    cmap = plt.get_cmap("tab10")
 
     any_data = False
     for idx, (policy, df) in enumerate(policy_data.items()):
@@ -369,16 +413,14 @@ def _plot_latency_cdf(
 
         values = np.sort(latencies.to_numpy())
         cdf = (np.arange(1, len(values) + 1) / len(values)).astype(float)
-        # CDF: dense lines, drop the marker dimension to avoid clutter.
         style = get_policy_line_style(policy)
-        style.pop("marker", None)
-        if style["color"] is None:
-            style["color"] = cmap(idx % cmap.N)
+        style["markevery"] = max(len(values) // 12, 1)
         ax.plot(
             values,
             cdf,
             label=get_policy_display_name(policy),
             linewidth=2,
+            markersize=5,
             **style,
         )
         any_data = True
@@ -420,6 +462,7 @@ def _plot_goodput_timeline(
     """
     fig, ax = plt.subplots(figsize=(14, 6))
     cmap = plt.get_cmap("tab10")
+    csv_rows: List[Tuple[str, float, float]] = []
 
     for idx, (policy, rps_data) in enumerate(policy_data_by_rps.items()):
         all_times: List[float] = []
@@ -469,8 +512,10 @@ def _plot_goodput_timeline(
             for tc in t_centers:
                 lo, hi = tc - window_sec / 2, tc + window_sec / 2
                 mask = (t_arr >= lo) & (t_arr < hi)
+                rate = float(g_arr[mask].sum()) / window_sec
                 all_times.append(tc)
-                all_goodput.append(float(g_arr[mask].sum()) / window_sec)
+                all_goodput.append(rate)
+                csv_rows.append((policy, tc, rate))
 
         if not all_times:
             continue
@@ -485,6 +530,7 @@ def _plot_goodput_timeline(
             all_goodput,
             label=get_policy_display_name(policy),
             linewidth=1.5,
+            zorder=3,
             **style,
         )
 
@@ -500,7 +546,13 @@ def _plot_goodput_timeline(
         step_t.append(t_start + duration_sec)
         step_rps.append(rps)
     ax.fill_between(
-        step_t, step_rps, step=None, color="grey", alpha=0.12, label="Offered RPS"
+        step_t,
+        step_rps,
+        step=None,
+        color="grey",
+        alpha=0.12,
+        label="Offered RPS",
+        zorder=1,
     )
     ax.step(
         step_t,
@@ -510,6 +562,7 @@ def _plot_goodput_timeline(
         linewidth=1.5,
         linestyle="-",
         alpha=0.5,
+        zorder=1,
     )
 
     ax.set_xlabel("Time (s)")
@@ -518,11 +571,17 @@ def _plot_goodput_timeline(
     ax.set_xlim(left=0, right=len(rps_sequence) * duration_sec)
     ax.set_ylim(bottom=0)
     ax.grid(True, which="both", linestyle="--", alpha=0.4)
-    ax.legend()
-    fig.tight_layout()
+    _place_line_chart_legend(fig, ax, top_margin=0.90)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, dpi=300)
     plt.close(fig)
+
+    # Emit matching CSV (same per-window data points used to draw the plot).
+    csv_path = output_path.with_suffix(".csv")
+    with csv_path.open("w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["policy", "time_sec", "goodput_rps"])
+        w.writerows(csv_rows)
 
 
 def _plot_early_return_timeline(
@@ -724,7 +783,12 @@ def generate_plots(args) -> None:
         policy_data: Dict[str, Dict[float, pd.DataFrame]] = {}
         for policy in policies:
             policy_dir = iteration_dir / policy
-            policy_data[policy] = _load_policy_data(policy_dir, warmup_sec)
+            # Pass warmup_sec=0: the loadgen now drops warmup samples at the
+            # source (matching hotel/socialnet), so per-RPS CSVs already
+            # contain only post-warmup data. Filtering again here would
+            # double-count the warmup offset and push data into the wrong
+            # half of each period's timeline slot.
+            policy_data[policy] = _load_policy_data(policy_dir, 0.0)
 
         goodput_by_policy: Dict[str, List[float]] = {}
         percentiles_by_policy: Dict[str, Dict[float, List[float]]] = {}
@@ -743,9 +807,7 @@ def generate_plots(args) -> None:
 
             for rps in rps_values:
                 df = policy_data.get(policy, {}).get(rps, pd.DataFrame())
-                goodput_values.append(
-                    _compute_goodput(df, slo_ms, duration_sec, warmup_sec)
-                )
+                goodput_values.append(_compute_goodput(df, slo_ms, duration_sec))
                 pct = _compute_latency_percentiles(df, percentiles)
                 for p in percentiles:
                     percentile_values[p].append(pct[p])
@@ -826,6 +888,16 @@ def generate_plots(args) -> None:
             rps_sequence,
             policy_data,
             duration_sec=duration_sec,
+        )
+        plot_abort_reason_timeline(
+            str(iteration_output / "abort_reason_timeline.png"),
+            rps_sequence,
+            list(policies),
+            policy_data,
+            duration_sec=duration_sec,
+            data_dir=str(data_dir),
+            iteration=iteration,
+            warmup_sec=warmup_sec,
         )
 
         # Plot early return breakdowns
@@ -931,7 +1003,9 @@ def generate_plots(args) -> None:
                 for iteration in iteration_ids:
                     iteration_dir = data_dir / str(iteration)
                     policy_dir = iteration_dir / policy
-                    policy_data_iter = _load_policy_data(policy_dir, warmup_sec)
+                    # warmup_sec=0: loadgen already drops warmup samples at
+                    # source (see parallel call at _load_policy_data above).
+                    policy_data_iter = _load_policy_data(policy_dir, 0.0)
                     df = policy_data_iter.get(rps, pd.DataFrame())
                     if not df.empty:
                         combined_dfs.append(df)

@@ -7,7 +7,7 @@ import pandas as pd
 import seaborn as sns
 
 from .util import (
-    apply_plot_defaults,
+    configure_plot_font_sizes,
     filter_excluded_errors,
     get_plot_worker_count,
     get_policy_display_name,
@@ -24,7 +24,7 @@ import matplotlib.pyplot as plt
 # Suppress warning about too many open figures when running in parallel
 # We properly close all figures, but many may be open simultaneously during parallel execution
 plt.rcParams["figure.max_open_warning"] = 0
-apply_plot_defaults()
+configure_plot_font_sizes()
 
 
 MS_TO_US = 10**3
@@ -47,13 +47,13 @@ def _plot_latency_cdf(
         latencies = np.sort(df_filtered["latency"].to_numpy() / MS_TO_US)
         percentiles = np.linspace(0, 100, len(latencies))
 
-        # CDF: dense lines, drop the marker dimension to avoid clutter.
         style = get_policy_line_style(policy)
-        style.pop("marker", None)
+        style["markevery"] = max(len(latencies) // 12, 1)
         ax.plot(
             latencies,
             percentiles,
             label=get_policy_display_name(policy),
+            markersize=5,
             **style,
         )
 

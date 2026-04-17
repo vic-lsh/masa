@@ -193,7 +193,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     Server::builder()
         .add_service(ServiceServer::new(svc))
-        .serve(addr)
+        .serve_with_masa(addr)
         .await?;
     queue_monitor_task.abort();
     let _ = queue_monitor_task.await;

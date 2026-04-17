@@ -6,9 +6,13 @@ from dataclasses import dataclass
 from argparse import Namespace
 from pathlib import Path
 
+import matplotlib
 import pandas as pd
 
 logger = logging.getLogger(__name__)
+
+PLOT_FONT_SCALE = 1.25
+_PLOT_FONT_SCALE_APPLIED = False
 
 
 @dataclass
@@ -21,6 +25,21 @@ class PlotData:
     duration_sec: float
     warmup_sec: float
     results: list[dict]
+
+
+def scale_fontsize(size: float | int) -> float:
+    return float(size) * PLOT_FONT_SCALE
+
+
+def configure_plot_font_sizes() -> None:
+    global _PLOT_FONT_SCALE_APPLIED
+    if _PLOT_FONT_SCALE_APPLIED:
+        return
+
+    matplotlib.rcParams["font.size"] = scale_fontsize(
+        float(matplotlib.rcParamsDefault["font.size"])
+    )
+    _PLOT_FONT_SCALE_APPLIED = True
 
 
 def _repair_row_parts(parts: list[str], *, expected_fields: int) -> list[str]:

@@ -67,7 +67,7 @@ class MssimBuilder(AppBuilder):
     """
 
     def __init__(self) -> None:
-        self._loadgen_built = False
+        self._built_loadgen_feature_keys: set[str] = set()
         self._built_feature_keys: set[str] = set()
 
     def build(
@@ -93,11 +93,19 @@ class MssimBuilder(AppBuilder):
         if not dockerfile.exists():
             raise FileNotFoundError(f"MSSIM dockerfile not found: {dockerfile}")
 
-        # Build load generator image once
-        if not self._loadgen_built:
-            # Use a unique cache ID to avoid race conditions in parallel builds
-            # Use "mssim-loadgen" as a consistent cache ID for the loadgen build
-            loadgen_cache_id = "mssim-loadgen"
+        # Canonicalize features upfront — both loadgen and generic-service
+        # use the same FEATURE_ARG so client-side gates (e.g. ac_rajomon's
+        # try_acquire_tokens) compile into the loadgen binary.
+        policy = (features or "").strip() or "default"
+        # Use normalized tag for image tagging (consistent with other apps)
+        tag = normalize_features_to_tag(policy)
+        # Canonicalize features for build arg (sort, deduplicate)
+        features_for_build = _canonicalize_features_for_build(policy)
+
+        # Build load generator image per feature combo (the binary's
+        # #[cfg(feature = ...)] gates depend on FEATURE_ARG).
+        if tag not in self._built_loadgen_feature_keys:
+            loadgen_cache_id = f"mssim-loadgen-{tag}"
             loadgen_cmd = [
                 "docker",
                 "buildx",
@@ -108,6 +116,8 @@ class MssimBuilder(AppBuilder):
                 "--target",
                 "loadgen",
                 "--build-arg",
+                f"FEATURE_ARG={features_for_build}",
+                "--build-arg",
                 f"CACHE_ID={loadgen_cache_id}",
                 "-f",
                 str(dockerfile),
@@ -117,14 +127,7 @@ class MssimBuilder(AppBuilder):
                 loadgen_cmd.insert(-1, "--no-cache")
 
             executor.run(loadgen_cmd, cwd=repo_root, check=True)
-            self._loadgen_built = True
-
-        # Build generic service image for policy/features
-        policy = (features or "").strip() or "default"
-        # Use normalized tag for image tagging (consistent with other apps)
-        tag = normalize_features_to_tag(policy)
-        # Canonicalize features for build arg (sort, deduplicate)
-        features_for_build = _canonicalize_features_for_build(policy)
+            self._built_loadgen_feature_keys.add(tag)
 
         if tag not in self._built_feature_keys:
             feature_image = _generic_service_image_for_policy(policy)
@@ -283,6 +286,16 @@ class MssimApp(AppPlugin):
 
         # SKIP LOADGEN in compose generation, ExpDriver will run it as a task
         env["MSSIM_SKIP_LOADGEN"] = "1"
+
+        # Write policy_param.json and forward POLICY_PARAMS_PATH to the
+        # orchestrator subprocess. The generic-service containers pick it up
+        # via env + volume injection in apps/mssim/simulator/orchestrator.py;
+        # the loadgen is wired separately in get_loadgen_spec since ExpDriver
+        # runs it outside docker-compose.
+        policy_params_path = self._write_policy_params(
+            output_dir, config.policy_params, policy
+        )
+        env["POLICY_PARAMS_PATH"] = str(policy_params_path)
 
         project_name = generate_project_name(
             prefix="mssim",
@@ -519,8 +532,20 @@ class MssimApp(AppPlugin):
         }
         if "MAX_IN_FLIGHT" in env_vars:
             loadgen_env["MAX_IN_FLIGHT"] = env_vars["MAX_IN_FLIGHT"]
+        if "WARMUP_SEC" in env_vars:
+            loadgen_env["WARMUP_SEC"] = env_vars["WARMUP_SEC"]
 
         frontend_json_path = output_dir / "frontend.json"
+
+        volumes = {str(frontend_json_path): "/app/frontend.json"}
+        policy_params_mount = self._policy_params_loadgen_mount(output_dir)
+        if policy_params_mount:
+            volumes.update(policy_params_mount)
+            # mssim's generic-service Dockerfile doesn't use the shared
+            # entrypoint that hotel/socialnet rely on, so set the env var
+            # explicitly here — the mssim-loadgen image uses the same image
+            # style, so the same direct-env approach applies.
+            loadgen_env["MASA_POLICY_PARAMS_PATH"] = self.POLICY_PARAMS_CONTAINER_PATH
 
         # Artifacts
         artifacts = [("/app/loadgen_output/.", "")]  # Copy to output_dir
@@ -534,7 +559,7 @@ class MssimApp(AppPlugin):
             name="mssim-loadgen",
             image=MSSIM_LOADGEN_IMAGE,
             env_vars=loadgen_env,
-            volumes={str(frontend_json_path): "/app/frontend.json"},
+            volumes=volumes,
             artifacts=artifacts,
             network=network,
             command=[
