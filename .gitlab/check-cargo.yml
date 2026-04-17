@@ -1,5 +1,12 @@
 cargo_check:
     stage: quick-checks
+    rules:
+        - changes:
+              - "**/*.rs"
+              - "**/Cargo.toml"
+              - Cargo.lock
+              - scripts/check.sh
+              - .gitlab/check-cargo.yml
     variables:
         CI: "true"
     parallel:
@@ -20,6 +27,13 @@ cargo_check:
 
 cargo_check_tests:
     stage: quick-checks
+    rules:
+        - changes:
+              - "**/*.rs"
+              - "**/Cargo.toml"
+              - Cargo.lock
+              - scripts/check.sh
+              - .gitlab/check-cargo.yml
     variables:
         CI: "true"
     script:
