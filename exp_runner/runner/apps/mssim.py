@@ -391,7 +391,18 @@ class MssimApp(AppPlugin):
 
         services_values = []
         for svc_name, svc_info in deploy_data.get("services", {}).items():
-            if svc_name == "USER" or svc_name.startswith("USER-"):
+            # The orchestrator normalizes "USER" to "user" for deployment
+            # names (see apps/mssim/simulator/utils.py), so the deployment
+            # key is e.g. "user-s-86516878". But the Rust service looks up
+            # self in the call_graph (edges.csv), which keys callers as
+            # "USER" (normalized to "user"). Setting SERVICE_NAME=USER makes
+            # the self-name match, so callees_of() returns the correct
+            # children instead of an empty set.
+            if (
+                svc_name == "USER"
+                or svc_name.startswith("USER-")
+                or svc_name.startswith("user-")
+            ):
                 env_svc_name = "USER"
             else:
                 env_svc_name = svc_name
@@ -411,7 +422,11 @@ class MssimApp(AppPlugin):
                 }
             )
 
-        # Set replicas to 1 for client handling
+        # Set replicas to 1 for client handling. The existing ip field is the
+        # hostname *base* ({project_name}-{svc_name}); LoadBalancedChannel
+        # appends "-{replica_idx+1}" at connect time, so the final URL
+        # "{project_name}-{svc_name}-1" matches the k8s Service name (the chart
+        # appends "-1" in charts/mssim/templates/services.yaml).
         for svc_name in deploy_data.get("services", {}):
             deploy_data["services"][svc_name]["replicas"] = 1
 
@@ -448,6 +463,11 @@ class MssimApp(AppPlugin):
             "callgraphs": [],  # Populated below
             "services": services_values,
             "logLevel": "info",
+            # Match docker-compose deploy.resources.limits: 1 CPU, 10 GB memory per service
+            "defaultServiceResources": {
+                "limits": {"cpu": "1", "memory": "10Gi"},
+                "requests": {"cpu": "1", "memory": "1Gi"},
+            },
             "configMaps": {
                 "enabled": True,
                 # Read deployment.json content
@@ -461,31 +481,26 @@ class MssimApp(AppPlugin):
             if not cg_dir.exists() or not cg_dir.is_dir():
                 raise FileNotFoundError(f"MSSIM call graph directory missing: {cg_dir}")
 
-            files: dict[str, str] = {}
-            for file_path in sorted(cg_dir.iterdir()):
-                if file_path.is_file() and file_path.suffix.lower() in {
-                    ".json",
-                    ".csv",
-                }:
-                    files[file_path.name] = file_path.read_text(encoding="utf-8")
-
-            if not files:
+            # Verify at least one JSON/CSV file exists in the dir (sanity check)
+            has_data = any(
+                p.is_file() and p.suffix.lower() in {".json", ".csv"}
+                for p in cg_dir.iterdir()
+            )
+            if not has_data:
                 raise ValueError(
                     f"No JSON/CSV files found in call graph directory {cg_dir}"
                 )
 
             cg_name = _sanitize_callgraph_name(cg_dir.name, sanitized_names)
-            values["configMaps"]["callgraphs"].append(
-                {
-                    "name": cg_name,
-                    "files": files,
-                }
-            )
+            # Mount callgraph dir via hostPath. Kind's extraMounts exposes the
+            # host callgraph-parent dir into each node at /trace-graphs, so
+            # /trace-graphs/<cg_dir.name> is the in-node path. This avoids the
+            # 1 MiB ConfigMap limit (latency_percentiles.json is ~1.5 MiB).
             values["callgraphs"].append(
                 {
                     "name": cg_name,
                     "mountPath": cg_dir.name,
-                    "configMapName": f"{project_name}-callgraph-{cg_name}",
+                    "hostPath": str(cg_dir),
                 }
             )
 
