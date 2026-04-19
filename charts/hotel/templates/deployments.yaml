@@ -1,0 +1,111 @@
+{{/* Hotel microservices (per-binary images). */}}
+{{- range $service := .Values.services }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "hotel.fullname" $ }}-{{ $service.name }}
+  labels:
+    {{- include "hotel.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $service.name }}
+spec:
+  replicas: {{ $service.replicas | default 1 }}
+  selector:
+    matchLabels:
+      {{- include "hotel.selectorLabels" $ | nindent 6 }}
+      app.kubernetes.io/component: {{ $service.name }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") $ | sha256sum }}
+      labels:
+        {{- include "hotel.selectorLabels" $ | nindent 8 }}
+        app.kubernetes.io/component: {{ $service.name }}
+    spec:
+      containers:
+        - name: service
+          image: "{{ $.Values.image.repository }}{{ $service.binary }}:{{ $.Values.image.tag | default $.Chart.AppVersion }}"
+          imagePullPolicy: {{ $.Values.image.pullPolicy }}
+          env:
+            - name: BINARY_NAME
+              value: {{ $service.binary | quote }}
+            - name: LOG_LEVEL
+              value: {{ $.Values.logLevel | quote }}
+          ports:
+            - containerPort: {{ $service.port }}
+              name: grpc
+              protocol: TCP
+          readinessProbe:
+            tcpSocket:
+              port: grpc
+            initialDelaySeconds: 2
+            periodSeconds: 2
+            failureThreshold: 30
+          {{- with ($service.resources | default $.Values.defaultServiceResources) }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: config
+              mountPath: /usr/config.json
+              subPath: config.json
+            - name: config
+              mountPath: /usr/policy_params.json
+              subPath: policy_params.json
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "hotel.fullname" $ }}-config
+{{- end }}
+
+{{/* Stateful infrastructure: mongo + redis. */}}
+{{- range $svc := .Values.infra }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "hotel.fullname" $ }}-{{ $svc.name }}
+  labels:
+    {{- include "hotel.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $svc.name }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "hotel.selectorLabels" $ | nindent 6 }}
+      app.kubernetes.io/component: {{ $svc.name }}
+  template:
+    metadata:
+      labels:
+        {{- include "hotel.selectorLabels" $ | nindent 8 }}
+        app.kubernetes.io/component: {{ $svc.name }}
+    spec:
+      containers:
+        - name: {{ $svc.name }}
+          image: {{ $svc.image | quote }}
+          imagePullPolicy: {{ default "IfNotPresent" $svc.pullPolicy }}
+          {{- with $svc.command }}
+          args:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          ports:
+            - containerPort: {{ $svc.port }}
+              protocol: TCP
+          {{- with ($svc.resources | default $.Values.defaultServiceResources) }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- if $svc.volumeClaim }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          {{- end }}
+      {{- if $svc.volumeClaim }}
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ include "hotel.fullname" $ }}-{{ $svc.volumeClaim }}
+      {{- end }}
+{{- end }}

@@ -1,0 +1,61 @@
+# Default values for hotel.
+
+image:
+  repository: ""
+  tag: latest
+  pullPolicy: IfNotPresent
+
+nameOverride: ""
+fullnameOverride: ""
+
+logLevel: "info"
+
+service:
+  type: ClusterIP
+
+# Default resource limits applied when a service/infra entry omits its own.
+defaultServiceResources:
+  limits:
+    cpu: "4"
+    memory: "4Gi"
+  requests:
+    cpu: "100m"
+    memory: "128Mi"
+
+# Hotel microservices. Each produces a Deployment and a k8s Service. The
+# service DNS name is `{fullname}-{name}` when scaled=true (k8s Service
+# does DNS load-balancing across pods) or `{fullname}-{name}-1` when
+# scaled=false — this matches the names that exp_runner's
+# `create_hotel_config_dict` writes into hotel.json.
+services: []
+# - name: rate-service
+#   binary: hotel_rate
+#   replicas: 4
+#   port: 8663
+#   scaled: true
+
+# Stateful infrastructure (mongo / redis). Each produces a single-replica
+# Deployment and a `{fullname}-{name}-1` Service.
+infra: []
+# - name: rate-mongo
+#   image: mongo:7.0
+#   command: ["--port", "27003"]
+#   port: 27003
+#   volumeClaim: rate
+# - name: rate-redis
+#   image: redis:7.2
+#   command: ["redis-server", "--port", "11003", "--io-threads", "4"]
+#   port: 11003
+
+# PersistentVolumeClaims for mongo data directories. Bound by name from
+# infra[*].volumeClaim above.
+pvcs: []
+# - name: rate
+#   storage: 100Mi
+
+# Inline ConfigMap holding hotel.json and policy_params.json; mounted at
+# /usr/config.json and /usr/policy_params.json in every service pod.
+configMaps:
+  enabled: false
+  hotelJson: ""
+  policyParamsJson: ""
