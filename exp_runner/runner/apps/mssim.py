@@ -395,14 +395,10 @@ class MssimApp(AppPlugin):
             # names (see apps/mssim/simulator/utils.py), so the deployment
             # key is e.g. "user-s-86516878". But the Rust service looks up
             # self in the call_graph (edges.csv), which keys callers as
-            # "USER" (normalized to "user"). Setting SERVICE_NAME=USER makes
-            # the self-name match, so callees_of() returns the correct
-            # children instead of an empty set.
-            if (
-                svc_name == "USER"
-                or svc_name.startswith("USER-")
-                or svc_name.startswith("user-")
-            ):
+            # "USER". Setting SERVICE_NAME=USER makes the self-name match,
+            # so callees_of() returns the correct children instead of empty.
+            svc_lower = svc_name.lower()
+            if svc_lower == "user" or svc_lower.startswith("user-"):
                 env_svc_name = "USER"
             else:
                 env_svc_name = svc_name
@@ -492,10 +488,14 @@ class MssimApp(AppPlugin):
                 )
 
             cg_name = _sanitize_callgraph_name(cg_dir.name, sanitized_names)
-            # Mount callgraph dir via hostPath. Kind's extraMounts exposes the
-            # host callgraph-parent dir into each node at /trace-graphs, so
-            # /trace-graphs/<cg_dir.name> is the in-node path. This avoids the
-            # 1 MiB ConfigMap limit (latency_percentiles.json is ~1.5 MiB).
+            # Mount callgraph dir via hostPath. Kind's extraMounts (see
+            # scripts/kind_utils.sh) identity-maps the callgraph-parent dir
+            # into each node, so `str(cg_dir)` is valid both on the host and
+            # inside the node. This avoids the 1 MiB ConfigMap limit
+            # (latency_percentiles.json is ~1.5 MiB). Assumes kind; on
+            # generic k8s this path won't exist inside the pod — switch back
+            # to ConfigMap if/when we need to support non-kind deployments
+            # with files under 1 MiB.
             values["callgraphs"].append(
                 {
                     "name": cg_name,
