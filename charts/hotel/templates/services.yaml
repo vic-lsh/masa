@@ -1,0 +1,50 @@
+{{/*
+  Hotel microservices. Every service Service gets a literal `-1` suffix
+  because the Rust `LoadBalancedChannel::new(base, port, replicas)` always
+  expands to `{base}-1`..`{base}-N` endpoints regardless of scaled flag —
+  matching the docker-compose container naming `{project}-{svc}-N`. At
+  replicas=1 this single Service suffices; multi-replica hotel runs would
+  need one Service per replica (not yet supported).
+*/}}
+{{- range $service := .Values.services }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "hotel.fullname" $ }}-{{ $service.name }}-1
+  labels:
+    {{- include "hotel.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $service.name }}
+spec:
+  type: {{ $.Values.service.type }}
+  ports:
+    - port: {{ $service.port }}
+      targetPort: grpc
+      protocol: TCP
+      name: grpc
+  selector:
+    {{- include "hotel.selectorLabels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $service.name }}
+{{- end }}
+
+{{/* Stateful infra Services — always single-replica, literal `-1` suffix. */}}
+{{- range $svc := .Values.infra }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "hotel.fullname" $ }}-{{ $svc.name }}-1
+  labels:
+    {{- include "hotel.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $svc.name }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ $svc.port }}
+      targetPort: {{ $svc.port }}
+      protocol: TCP
+      name: tcp
+  selector:
+    {{- include "hotel.selectorLabels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $svc.name }}
+{{- end }}
