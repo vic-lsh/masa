@@ -33,6 +33,10 @@ spec:
           ports:
             - containerPort: {{ $.Values.service.port }}
               name: grpc
+          {{- with ($service.resources | default $.Values.defaultServiceResources) }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           volumeMounts:
             - name: deployment-config
               mountPath: /app/config/deployment.json
@@ -47,7 +51,13 @@ spec:
             name: {{ $.Values.deploymentConfigMap }}
         {{- range $graph := $.Values.callgraphs }}
         - name: callgraph-{{ $graph.name }}
+          {{- if $graph.hostPath }}
+          hostPath:
+            path: {{ $graph.hostPath }}
+            type: Directory
+          {{- else }}
           configMap:
             name: {{ $graph.configMapName }}
+          {{- end }}
         {{- end }}
 {{- end }}
