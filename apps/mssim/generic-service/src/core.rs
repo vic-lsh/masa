@@ -21,6 +21,7 @@ use tracing::{info, warn};
 pub(crate) struct ServiceCore {
     config: CallGraphConfig,
     clients: Arc<RwLock<HashMap<ServiceName, RpcClient>>>,
+    clients_ready: Arc<std::sync::atomic::AtomicBool>,
     self_svc_name: ServiceName,
     is_root_service: bool,
     overshot_counter: AtomicUsize,
@@ -40,6 +41,7 @@ impl ServiceCore {
         let child_weights = config.call_graph.callees_of(&self_svc_name);
         let child_call_probabilities = compute_child_probabilities(&child_weights);
         let clients = Arc::new(RwLock::new(HashMap::new()));
+        let clients_ready = Arc::new(std::sync::atomic::AtomicBool::new(false));
 
         info!("Child services:");
         for child in child_weights.keys() {
@@ -64,12 +66,14 @@ impl ServiceCore {
                 children_for_log,
                 deployment,
                 Arc::clone(&clients),
+                Arc::clone(&clients_ready),
             ))
         };
 
         let state = Arc::new(ServiceCore {
             config,
             clients,
+            clients_ready,
             self_svc_name,
             is_root_service,
             overshot_counter: AtomicUsize::new(0),
@@ -81,6 +85,10 @@ impl ServiceCore {
 
     pub(crate) fn self_service_name(&self) -> &ServiceName {
         &self.self_svc_name
+    }
+
+    pub(crate) fn clients_ready_flag(&self) -> Arc<std::sync::atomic::AtomicBool> {
+        Arc::clone(&self.clients_ready)
     }
 
     pub(crate) fn is_root_service(&self) -> bool {
@@ -209,12 +217,27 @@ impl ServiceCore {
                     continue;
                 }
 
-                // Get client for this child service
+                // Get client for this child service. Before bootstrap
+                // completes, a miss is just a startup race (warn + continue;
+                // warmup absorbs it). After bootstrap completes, a miss
+                // means the deployment is misconfigured (e.g. DNS-name
+                // mismatch) and silently skipping would produce meaningless
+                // results (100% goodput because fanouts are no-ops), so
+                // fail loudly.
                 let client = match clients_guard.get(child_svc_name) {
-                    Some(client) => client.clone(),
+                    Some(c) => c.clone(),
                     None => {
+                        if self
+                            .clients_ready
+                            .load(std::sync::atomic::Ordering::Acquire)
+                        {
+                            panic!(
+                                "Child service {} not found in clients map after bootstrap — check deployment.json ip fields match actual service DNS names",
+                                child_svc_name.as_str()
+                            );
+                        }
                         warn!(
-                            "Child service {} not found in clients map",
+                            "Child service {} not found in clients map (bootstrap still in progress)",
                             child_svc_name.as_str()
                         );
                         continue;
