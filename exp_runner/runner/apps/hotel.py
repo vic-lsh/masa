@@ -2,6 +2,7 @@
 Hotel application plugin.
 """
 
+import copy
 import json
 import logging
 import re
@@ -11,6 +12,8 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional, Tuple
+
+import yaml
 
 if TYPE_CHECKING:
     from ..config import ExperimentConfig
@@ -30,32 +33,28 @@ logger = logging.getLogger(__name__)
 def create_gen_config_dict(
     *,
     template_config: dict,
+    frontend_host: str = "hotel_frontend",
 ) -> dict:
     """
     Generate project-specific gen_config.json content with namespaced frontend address.
 
-    Updates the "Addr" field to point to the project-prefixed frontend service.
+    Updates the "Addr" field to point to `frontend_host` (a compose alias for
+    Docker, or a k8s Service hostname like `{project}-hotel-frontend-service-1`
+    for Kubernetes).
     """
-    import copy
-
     config = copy.deepcopy(template_config)
 
     # Parse the original address
+    protocol = "http"
+    port = "8660"
     if "Addr" in config:
         addr = config["Addr"]
-        # Extract protocol and port from original address
         if "://" in addr:
             protocol, rest = addr.split("://", 1)
             if ":" in rest:
                 _, port = rest.rsplit(":", 1)
-            else:
-                port = "8660"  # default
-        else:
-            protocol = "http"
-            port = "8660"
 
-    # Use the service alias on the compose network so DNS returns all replicas.
-    config["Addr"] = f"{protocol}://hotel_frontend:{port}"
+    config["Addr"] = f"{protocol}://{frontend_host}:{port}"
 
     return config
 
@@ -72,8 +71,6 @@ def create_hotel_config_dict(
     - "local-rate-service" -> "{project_name}-rate-service"
     - "rate_mongo" -> "{project_name}-rate-mongo-1"
     """
-    import copy
-
     config = copy.deepcopy(template_config)
 
     # Service name mappings: config key -> (compose service name, is_scaled)
@@ -464,7 +461,7 @@ class HotelApp(AppPlugin):
 
     @property
     def supports_k8s(self) -> bool:
-        return False
+        return True
 
     def load_app_config(self, config_path: Path) -> dict:
         """Load hotel.json configuration file."""
@@ -592,9 +589,6 @@ class HotelApp(AppPlugin):
         """
         Prepare workload configuration and environment variables.
         """
-        if use_k8s:
-            raise NotImplementedError("Hotel app does not support Kubernetes yet")
-
         # Generate project name for namespace isolation
         project_name = generate_project_name(
             prefix="hotel",
@@ -609,8 +603,18 @@ class HotelApp(AppPlugin):
             project_name=project_name,
         )
 
+        # The frontend hostname differs between Docker (network alias
+        # `hotel_frontend`) and k8s (Service `{project}-hotel-frontend-service-1`
+        # — see charts/hotel/templates/services.yaml, which appends `-1` to
+        # non-scaled services).
+        if use_k8s:
+            frontend_host = f"{project_name}-hotel-frontend-service-1"
+        else:
+            frontend_host = "hotel_frontend"
+
         gen_config_dict = create_gen_config_dict(
             template_config=config.gen_config,
+            frontend_host=frontend_host,
         )
 
         # 2. Generate config files (Effects)
@@ -641,18 +645,188 @@ class HotelApp(AppPlugin):
         env_vars["PROJECT_CONFIG_PATH"] = str(project_config_path.resolve())
         env_vars["POLICY_PARAMS_PATH"] = str(project_policy_params_path)
 
-        # Clean up old build logs - handled by ExpDriver now (it uses output_dir/build_logs)
-        # But we might want to ensure we don't have stale ones if output_dir is reused?
-        # ExpDriver doesn't explicitly clean output_dir/build_logs before build,
-        # but builder might overwrite.
+        if use_k8s:
+            self._prepare_k8s_workload(
+                output_dir=output_dir,
+                project_name=project_name,
+                hotel_config=hotel_config_dict,
+                policy_params_path=project_policy_params_path,
+                image_tag=tag if tag else "latest",
+                log_level=env_vars.get("LOG_LEVEL", "info"),
+                env_vars=env_vars,
+            )
 
         return env_vars
+
+    def _prepare_k8s_workload(
+        self,
+        *,
+        output_dir: Path,
+        project_name: str,
+        hotel_config: dict,
+        policy_params_path: Path,
+        image_tag: str,
+        log_level: str,
+        env_vars: dict,
+    ) -> None:
+        """
+        Build a Helm `values.yaml` for the hotel chart and set HELM_VALUES_FILE.
+
+        The service/infra lists mirror `apps/hotel/scripts/local/containers+svcs.yaml`;
+        hostnames are kept in lock-step with `create_hotel_config_dict` so the
+        addresses baked into hotel.json resolve via k8s DNS.
+        """
+
+        # Ports come from hotel.json. Fall back to the docker-compose defaults
+        # when a field is absent (matches apps/hotel/scripts/local/containers+svcs.yaml).
+        def svc_port(name: str, default: int) -> int:
+            return int(hotel_config.get(name, {}).get("port", default))
+
+        def svc_replicas(name: str) -> int:
+            return int(hotel_config.get(name, {}).get("replicas", 1))
+
+        services = [
+            # Scaled microservices: k8s Service DNS (no `-1`) load-balances
+            # across pods, matching `{project}-{svc}` scaled addresses.
+            {
+                "name": "rate-service",
+                "binary": "hotel_rate",
+                "replicas": svc_replicas("rate"),
+                "port": svc_port("rate", 8663),
+                "scaled": True,
+            },
+            {
+                "name": "profile-service",
+                "binary": "hotel_profile",
+                "replicas": svc_replicas("profile"),
+                "port": svc_port("profile", 8662),
+                "scaled": True,
+            },
+            {
+                "name": "reservation-service",
+                "binary": "hotel_reservation",
+                "replicas": svc_replicas("reservation"),
+                "port": svc_port("reservation", 8666),
+                "scaled": True,
+            },
+            {
+                "name": "geo-service",
+                "binary": "hotel_geo",
+                "replicas": svc_replicas("geo"),
+                "port": svc_port("geo", 8661),
+                "scaled": True,
+            },
+            {
+                "name": "search-service",
+                "binary": "hotel_search",
+                "replicas": svc_replicas("search"),
+                "port": svc_port("search", 8668),
+                "scaled": True,
+            },
+            {
+                "name": "user-service",
+                "binary": "hotel_user",
+                "replicas": svc_replicas("user"),
+                "port": svc_port("user", 8669),
+                "scaled": True,
+            },
+            # Frontend is non-scaled — exp_runner writes `{project}-hotel-frontend-service-1`
+            # into gen_config.json, so the Service must carry the literal `-1`.
+            {
+                "name": "hotel-frontend-service",
+                "binary": "hotel_frontend",
+                "replicas": svc_replicas("frontend"),
+                "port": svc_port("frontend", 8660),
+                "scaled": False,
+            },
+        ]
+
+        # Mongo/redis ports match the docker-compose layout. Each infra entry
+        # is a single-replica Deployment + a `{project}-{name}-1` Service.
+        infra = [
+            {
+                "name": "rate-mongo",
+                "image": "mongo:7.0",
+                "command": ["--port", "27003"],
+                "port": 27003,
+                "volumeClaim": "rate",
+            },
+            {
+                "name": "rate-redis",
+                "image": "redis:7.2",
+                "command": ["redis-server", "--port", "11003", "--io-threads", "4"],
+                "port": 11003,
+            },
+            {
+                "name": "profile-mongo",
+                "image": "mongo:7.0",
+                "command": ["--port", "27004"],
+                "port": 27004,
+                "volumeClaim": "profile",
+            },
+            {
+                "name": "profile-redis",
+                "image": "redis:7.2",
+                "command": ["redis-server", "--port", "11004", "--io-threads", "4"],
+                "port": 11004,
+            },
+            {
+                "name": "reservation-mongo",
+                "image": "mongo:7.0",
+                "command": ["--port", "27005"],
+                "port": 27005,
+                "volumeClaim": "reservation",
+            },
+            {
+                "name": "reservation-redis",
+                "image": "redis:7.2",
+                "command": ["redis-server", "--port", "11005", "--io-threads", "4"],
+                "port": 11005,
+            },
+            {
+                "name": "user-mongo",
+                "image": "mongo:7.0",
+                "command": ["--port", "27006"],
+                "port": 27006,
+                "volumeClaim": "user",
+            },
+        ]
+
+        pvcs = [{"name": n} for n in ("rate", "profile", "reservation", "user")]
+
+        with policy_params_path.open() as f:
+            policy_params_text = f.read()
+
+        values = {
+            "fullnameOverride": project_name,
+            "image": {
+                "repository": "",
+                "tag": image_tag,
+                "pullPolicy": "Never",
+            },
+            "logLevel": log_level,
+            "service": {"type": "ClusterIP"},
+            "services": services,
+            "infra": infra,
+            "pvcs": pvcs,
+            "configMaps": {
+                "enabled": True,
+                "hotelJson": json.dumps(hotel_config, indent=2),
+                "policyParamsJson": policy_params_text,
+            },
+        }
+
+        values_path = output_dir / "values.yaml"
+        with values_path.open("w") as f:
+            yaml.dump(values, f, sort_keys=False)
+
+        env_vars["HELM_VALUES_FILE"] = str(values_path.resolve())
 
     def get_deployment_location(
         self, output_dir: Path, use_k8s: bool, repo_root: Path
     ) -> Tuple[Path, str]:
         if use_k8s:
-            raise NotImplementedError("Hotel app does not support Kubernetes yet")
+            return repo_root / "charts" / "hotel", "."
 
         # Default app dir is config.app_dir which is passed to ExpDriver -> deployment.start
         # But here we return (deploy_root, deploy_file).
@@ -675,10 +849,15 @@ class HotelApp(AppPlugin):
         image = f"hotel_client_bench:{tag}" if tag else "hotel_client_bench:latest"
         binary = "hotel_client_bench"
 
-        # Network
-        network = (
-            f"{project_name}_hotel_network" if project_name else "local_hotel_network"
-        )
+        # Network — unused in k8s mode (pods attach to the cluster network).
+        if use_k8s:
+            network = None
+        else:
+            network = (
+                f"{project_name}_hotel_network"
+                if project_name
+                else "local_hotel_network"
+            )
 
         # Env Vars
         task_env = {
@@ -700,6 +879,18 @@ class HotelApp(AppPlugin):
             volumes[str(gen_config_path)] = "/usr/gen_config.json"
         volumes.update(self._policy_params_loadgen_mount(output_dir))
 
+        # In k8s, the pod must stay alive after the load generator exits so
+        # that ExpDriver can `kubectl cp` artifacts out of the container —
+        # mirroring what mssim does. The entrypoint script always runs the
+        # loadgen binary directly, so we override `command` to wrap it.
+        command = None
+        if use_k8s:
+            command = [
+                "/bin/sh",
+                "-c",
+                "/usr/entrypoint.sh; echo HOTEL_LOADGEN_DONE; sleep infinity",
+            ]
+
         return TaskSpec(
             name=f"{project_name}-loadgen" if project_name else "hotel-loadgen",
             image=image,
@@ -708,4 +899,25 @@ class HotelApp(AppPlugin):
             volumes=volumes,
             cleanup=True,
             artifacts=[("/tmp/masa-load-gen/.", ".")],
+            command=command,
+            wait_for_log_pattern="HOTEL_LOADGEN_DONE" if use_k8s else None,
         )
+
+    def get_required_images(self, features: Optional[str] = None) -> list[str]:
+        tag = self.get_image_tag(features) or "latest"
+        binaries = [
+            "hotel_client_bench",
+            "hotel_frontend",
+            "hotel_geo",
+            "hotel_rate",
+            "hotel_review",
+            "hotel_search",
+            "hotel_profile",
+            "hotel_reservation",
+            "hotel_user",
+            "hotel_recommendation",
+        ]
+        images = [f"{b}:{tag}" for b in binaries]
+        # Stateful infra images — loaded into kind so tests work offline.
+        images.extend(["mongo:7.0", "redis:7.2"])
+        return images
