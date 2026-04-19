@@ -1,0 +1,15 @@
+{{- range $pvc := .Values.pvcs }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "hotel.fullname" $ }}-{{ $pvc.name }}
+  labels:
+    {{- include "hotel.labels" $ | nindent 4 }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ default "100Mi" $pvc.storage }}
+{{- end }}
