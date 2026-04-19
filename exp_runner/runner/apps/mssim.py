@@ -477,32 +477,56 @@ class MssimApp(AppPlugin):
             if not cg_dir.exists() or not cg_dir.is_dir():
                 raise FileNotFoundError(f"MSSIM call graph directory missing: {cg_dir}")
 
-            # Verify at least one JSON/CSV file exists in the dir (sanity check)
-            has_data = any(
-                p.is_file() and p.suffix.lower() in {".json", ".csv"}
-                for p in cg_dir.iterdir()
-            )
-            if not has_data:
+            # Collect JSON/CSV files and decide ConfigMap vs hostPath.
+            # etcd's per-object limit is 1 MiB; we budget 900 KiB for payload
+            # to leave headroom for ConfigMap metadata/base64 overhead.
+            CONFIGMAP_BUDGET_BYTES = 900 * 1024
+            files: dict[str, str] = {}
+            total_bytes = 0
+            for file_path in sorted(cg_dir.iterdir()):
+                if file_path.is_file() and file_path.suffix.lower() in {
+                    ".json",
+                    ".csv",
+                }:
+                    content = file_path.read_text(encoding="utf-8")
+                    files[file_path.name] = content
+                    total_bytes += len(content.encode("utf-8"))
+
+            if not files:
                 raise ValueError(
                     f"No JSON/CSV files found in call graph directory {cg_dir}"
                 )
 
             cg_name = _sanitize_callgraph_name(cg_dir.name, sanitized_names)
-            # Mount callgraph dir via hostPath. Kind's extraMounts (see
-            # scripts/kind_utils.sh) identity-maps the callgraph-parent dir
-            # into each node, so `str(cg_dir)` is valid both on the host and
-            # inside the node. This avoids the 1 MiB ConfigMap limit
-            # (latency_percentiles.json is ~1.5 MiB). Assumes kind; on
-            # generic k8s this path won't exist inside the pod — switch back
-            # to ConfigMap if/when we need to support non-kind deployments
-            # with files under 1 MiB.
-            values["callgraphs"].append(
-                {
-                    "name": cg_name,
-                    "mountPath": cg_dir.name,
-                    "hostPath": str(cg_dir),
-                }
-            )
+            # Prefer ConfigMap for portability (works on any k8s, incl. CI's
+            # bare kind). Fall back to hostPath when the payload would exceed
+            # etcd's 1 MiB ConfigMap limit — at that point the operator must
+            # ensure the kind cluster was created with extraMounts identity-
+            # mapping the callgraph dir (the local dev setup does this; CI
+            # does not). If you hit the hostPath branch in CI, fix the kind
+            # cluster config rather than bumping the budget here.
+            if total_bytes <= CONFIGMAP_BUDGET_BYTES:
+                values["configMaps"]["callgraphs"].append(
+                    {
+                        "name": cg_name,
+                        "files": files,
+                    }
+                )
+                values["callgraphs"].append(
+                    {
+                        "name": cg_name,
+                        "mountPath": cg_dir.name,
+                        "configMapName": f"{project_name}-callgraph-{cg_name}",
+                    }
+                )
+            else:
+                values["callgraphs"].append(
+                    {
+                        "name": cg_name,
+                        "mountPath": cg_dir.name,
+                        "hostPath": str(cg_dir),
+                    }
+                )
 
         values_path = output_dir / "values.yaml"
         with open(values_path, "w") as f:
