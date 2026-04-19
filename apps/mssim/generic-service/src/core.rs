@@ -1,5 +1,6 @@
 use crate::bootstrap::ConnectionBootstrap;
 use crate::busy_spin;
+use crate::client_registry::{ClientLookup, ClientRegistry};
 use crate::parent_chain::{encode_parent_chain, PARENT_CHAIN_METADATA_KEY};
 use crate::service_replay::ReplaySpanExecutor;
 use crate::service_stubs::{InvokeRequest, ReplayRequest};
@@ -12,7 +13,7 @@ use sim_config::svc::{CallGraphConfig, GraphId, ServiceName};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Once};
-use tokio::sync::{RwLock, RwLockReadGuard};
+use tokio::sync::RwLockReadGuard;
 use tokio::task::JoinSet;
 use tonic::masa_ext::MasaRequestExt;
 use tonic::{Request, Status};
@@ -20,7 +21,7 @@ use tracing::{info, warn};
 
 pub(crate) struct ServiceCore {
     config: CallGraphConfig,
-    clients: Arc<RwLock<HashMap<ServiceName, RpcClient>>>,
+    clients: Arc<ClientRegistry>,
     self_svc_name: ServiceName,
     is_root_service: bool,
     overshot_counter: AtomicUsize,
@@ -39,7 +40,7 @@ impl ServiceCore {
 
         let child_weights = config.call_graph.callees_of(&self_svc_name);
         let child_call_probabilities = compute_child_probabilities(&child_weights);
-        let clients = Arc::new(RwLock::new(HashMap::new()));
+        let clients = Arc::new(ClientRegistry::new());
 
         info!("Child services:");
         for child in child_weights.keys() {
@@ -81,6 +82,10 @@ impl ServiceCore {
 
     pub(crate) fn self_service_name(&self) -> &ServiceName {
         &self.self_svc_name
+    }
+
+    pub(crate) fn clients(&self) -> &Arc<ClientRegistry> {
+        &self.clients
     }
 
     pub(crate) fn is_root_service(&self) -> bool {
@@ -181,8 +186,6 @@ impl ServiceCore {
         parent_chain_for_children.push(self.self_svc_name.clone());
         let parent_chain_metadata = encode_parent_chain(&parent_chain_for_children)?;
 
-        let clients_guard = self.clients.read().await;
-
         // Execute each step sequentially
         for step in call_sequence {
             let mut tasks = JoinSet::new();
@@ -209,12 +212,11 @@ impl ServiceCore {
                     continue;
                 }
 
-                // Get client for this child service
-                let client = match clients_guard.get(child_svc_name) {
-                    Some(client) => client.clone(),
-                    None => {
+                let client = match self.clients.get_expect_ready(child_svc_name).await {
+                    ClientLookup::Found(c) => c,
+                    ClientLookup::StartupRace => {
                         warn!(
-                            "Child service {} not found in clients map",
+                            "Child service {} not found in clients map (bootstrap still in progress)",
                             child_svc_name.as_str()
                         );
                         continue;
@@ -285,6 +287,8 @@ impl ServiceCore {
 
         let clients_guard = self.clients.read().await;
         for (child_svc_name, client) in clients_guard.iter() {
+            // Iterating an empty map pre-bootstrap is a no-op fanout; the
+            // invariant check lives in `get_expect_ready` for by-name lookups.
             if child_svc_name == &self.self_svc_name {
                 continue;
             }
@@ -400,6 +404,11 @@ impl ServiceCore {
         self.clients.read().await
     }
 
+    #[cfg(test)]
+    pub(crate) async fn inject_client_for_test(&self, svc: ServiceName, client: RpcClient) {
+        self.clients.insert_for_test(svc, client).await;
+    }
+
     /// Use pre-loaded USER call sequence for root API.
     /// The call sequences are loaded upfront for all graphs at startup.
     pub(crate) async fn fanout_with_user_call_sequence(
@@ -430,11 +439,6 @@ impl ServiceCore {
             user_call_sequence,
         )
         .await
-    }
-
-    #[cfg(test)]
-    pub(crate) async fn inject_client_for_test(&self, svc: ServiceName, client: RpcClient) {
-        self.clients.write().await.insert(svc, client);
     }
 }
 
