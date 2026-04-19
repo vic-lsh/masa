@@ -15,11 +15,14 @@ use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 
 mod bootstrap;
+mod client_registry;
 mod core;
 mod parent_chain;
 mod service_replay;
 
 use core::ServiceCore;
+
+const BOOTSTRAP_TIMEOUT: Duration = Duration::from_secs(300);
 
 pub mod service_stubs {
     tonic::include_proto!("service");
@@ -35,7 +38,6 @@ pub(crate) type RpcClient = ServiceClient<LoadBalancedChannel>;
 
 struct AlibabaService {
     state: Arc<ServiceCore>,
-    _connection_task: std::sync::Mutex<Option<bootstrap::ConnectionBootstrapTask>>,
 }
 
 impl AlibabaService {
@@ -43,7 +45,7 @@ impl AlibabaService {
         self_svc_name: ServiceName,
         config: CallGraphConfig,
         deployment: Deployment,
-    ) -> Result<Self> {
+    ) -> Result<(Self, Option<bootstrap::ConnectionBootstrapTask>)> {
         let (state, bootstrap) = ServiceCore::initialize(self_svc_name, config, deployment)?;
         // Spawn bootstrap concurrently (not inline) so pairs of services that
         // call each other don't deadlock waiting for each other's Channel::new.
@@ -51,20 +53,11 @@ impl AlibabaService {
         // done, so startup-race misses are warnings, post-bootstrap misses fail.
         let connection_task = bootstrap.map(|task| task.spawn());
 
-        Ok(Self {
-            state,
-            _connection_task: std::sync::Mutex::new(connection_task),
-        })
+        Ok((Self { state }, connection_task))
     }
 
     fn state(&self) -> &ServiceCore {
         &self.state
-    }
-
-    fn take_connection_task(&self) -> Option<bootstrap::ConnectionBootstrapTask> {
-        // AlibabaService stores the task in an Option<...> behind &self; we
-        // need interior mutability to move it out. Use a Mutex for simplicity.
-        self._connection_task.lock().unwrap().take()
     }
 }
 
@@ -181,28 +174,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let deployment =
         Deployment::read_from_file(&deployment_path).expect("Failed to parse deployment");
 
-    let svc = AlibabaService::new(svc_name.clone(), config, deployment).await?;
+    let (svc, connection_task) = AlibabaService::new(svc_name.clone(), config, deployment).await?;
 
     // Wait for bootstrap to finish before serving so we don't absorb a flood
     // of "startup race" warnings. Use a timeout as a safety net: if bootstrap
     // is genuinely stuck (e.g. mutual-call deadlock), we force-flip the
-    // clients_ready flag and serve anyway — post-flag fanout misses will
-    // panic, making the failure observable instead of silently producing
-    // bogus goodput.
-    if let Some(mut task) = svc.take_connection_task() {
-        let flag = svc.state().clients_ready_flag();
-        let handle = task.take_handle();
-        match tokio::time::timeout(Duration::from_secs(300), handle).await {
+    // ready flag and serve anyway — post-flag fanout misses will panic,
+    // making the failure observable instead of silently producing bogus
+    // goodput.
+    if let Some(task) = connection_task {
+        let registry = Arc::clone(svc.state().clients());
+        match tokio::time::timeout(BOOTSTRAP_TIMEOUT, task.into_handle()).await {
             Ok(Ok(())) => info!("Bootstrap completed"),
-            Ok(Err(join_err)) => {
-                panic!("Bootstrap task panicked: {join_err}");
-            }
+            Ok(Err(join_err)) => panic!("Bootstrap task panicked: {join_err}"),
             Err(_elapsed) => {
                 tracing::warn!(
-                    "Bootstrap did not complete within 300s; forcing clients_ready \
-                     so further fanout misses will panic instead of silently succeeding"
+                    "Bootstrap did not complete within {:?}; forcing ready \
+                     so further fanout misses will panic instead of silently succeeding",
+                    BOOTSTRAP_TIMEOUT
                 );
-                flag.store(true, std::sync::atomic::Ordering::Release);
+                registry.force_ready();
             }
         }
     }
