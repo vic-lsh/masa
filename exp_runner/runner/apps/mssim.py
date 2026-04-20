@@ -391,7 +391,14 @@ class MssimApp(AppPlugin):
 
         services_values = []
         for svc_name, svc_info in deploy_data.get("services", {}).items():
-            if svc_name == "USER" or svc_name.startswith("USER-"):
+            # The orchestrator normalizes "USER" to "user" for deployment
+            # names (see apps/mssim/simulator/utils.py), so the deployment
+            # key is e.g. "user-s-86516878". But the Rust service looks up
+            # self in the call_graph (edges.csv), which keys callers as
+            # "USER". Setting SERVICE_NAME=USER makes the self-name match,
+            # so callees_of() returns the correct children instead of empty.
+            svc_lower = svc_name.lower()
+            if svc_lower == "user" or svc_lower.startswith("user-"):
                 env_svc_name = "USER"
             else:
                 env_svc_name = svc_name
@@ -411,7 +418,11 @@ class MssimApp(AppPlugin):
                 }
             )
 
-        # Set replicas to 1 for client handling
+        # Set replicas to 1 for client handling. The existing ip field is the
+        # hostname *base* ({project_name}-{svc_name}); LoadBalancedChannel
+        # appends "-{replica_idx+1}" at connect time, so the final URL
+        # "{project_name}-{svc_name}-1" matches the k8s Service name (the chart
+        # appends "-1" in charts/mssim/templates/services.yaml).
         for svc_name in deploy_data.get("services", {}):
             deploy_data["services"][svc_name]["replicas"] = 1
 
@@ -448,6 +459,11 @@ class MssimApp(AppPlugin):
             "callgraphs": [],  # Populated below
             "services": services_values,
             "logLevel": "info",
+            # Match docker-compose deploy.resources.limits: 1 CPU, 10 GB memory per service
+            "defaultServiceResources": {
+                "limits": {"cpu": "1", "memory": "10Gi"},
+                "requests": {"cpu": "1", "memory": "1Gi"},
+            },
             "configMaps": {
                 "enabled": True,
                 # Read deployment.json content
@@ -461,13 +477,20 @@ class MssimApp(AppPlugin):
             if not cg_dir.exists() or not cg_dir.is_dir():
                 raise FileNotFoundError(f"MSSIM call graph directory missing: {cg_dir}")
 
+            # Collect JSON/CSV files and decide ConfigMap vs hostPath.
+            # etcd's per-object limit is 1 MiB; we budget 900 KiB for payload
+            # to leave headroom for ConfigMap metadata/base64 overhead.
+            CONFIGMAP_BUDGET_BYTES = 900 * 1024
             files: dict[str, str] = {}
+            total_bytes = 0
             for file_path in sorted(cg_dir.iterdir()):
                 if file_path.is_file() and file_path.suffix.lower() in {
                     ".json",
                     ".csv",
                 }:
-                    files[file_path.name] = file_path.read_text(encoding="utf-8")
+                    content = file_path.read_text(encoding="utf-8")
+                    files[file_path.name] = content
+                    total_bytes += len(content.encode("utf-8"))
 
             if not files:
                 raise ValueError(
@@ -475,19 +498,35 @@ class MssimApp(AppPlugin):
                 )
 
             cg_name = _sanitize_callgraph_name(cg_dir.name, sanitized_names)
-            values["configMaps"]["callgraphs"].append(
-                {
-                    "name": cg_name,
-                    "files": files,
-                }
-            )
-            values["callgraphs"].append(
-                {
-                    "name": cg_name,
-                    "mountPath": cg_dir.name,
-                    "configMapName": f"{project_name}-callgraph-{cg_name}",
-                }
-            )
+            # Prefer ConfigMap for portability (works on any k8s, incl. CI's
+            # bare kind). Fall back to hostPath when the payload would exceed
+            # etcd's 1 MiB ConfigMap limit — at that point the operator must
+            # ensure the kind cluster was created with extraMounts identity-
+            # mapping the callgraph dir (the local dev setup does this; CI
+            # does not). If you hit the hostPath branch in CI, fix the kind
+            # cluster config rather than bumping the budget here.
+            if total_bytes <= CONFIGMAP_BUDGET_BYTES:
+                values["configMaps"]["callgraphs"].append(
+                    {
+                        "name": cg_name,
+                        "files": files,
+                    }
+                )
+                values["callgraphs"].append(
+                    {
+                        "name": cg_name,
+                        "mountPath": cg_dir.name,
+                        "configMapName": f"{project_name}-callgraph-{cg_name}",
+                    }
+                )
+            else:
+                values["callgraphs"].append(
+                    {
+                        "name": cg_name,
+                        "mountPath": cg_dir.name,
+                        "hostPath": str(cg_dir),
+                    }
+                )
 
         values_path = output_dir / "values.yaml"
         with open(values_path, "w") as f:

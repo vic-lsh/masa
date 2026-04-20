@@ -29,6 +29,27 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
+def _stage_path_without_commas(path: str, prefix: str, suffix: str) -> str:
+    """Copy `path` to a comma-free temp file and return the new path.
+
+    helm's `-f` and kubectl's `--from-file=X=path` both parse their argument
+    as a pflag StringSlice, which splits on commas. Policy directory names
+    contain commas (e.g. "sched_fifo,ac_rajomon"), so a path passing through
+    either flag must not contain any. No-op if `path` already has no comma.
+    Leaks the temp file on purpose — lifetime must extend until the
+    subprocess completes, and the OS reaps /tmp.
+    """
+    if "," not in path:
+        return path
+    staged = tempfile.NamedTemporaryFile(
+        prefix=prefix, suffix=suffix, delete=False, mode="wb"
+    )
+    with open(path, "rb") as src:
+        staged.write(src.read())
+    staged.close()
+    return staged.name
+
+
 class K8sManager(DeploymentManager):
     """
     Manages Kubernetes operations for experiments using Helm and Kubectl.
@@ -127,17 +148,9 @@ class K8sManager(DeploymentManager):
                 safe_name = path_obj.stem.lower().replace("_", "-")
                 cm_name = f"{task_spec.name}-{safe_name}-cm"[:63]  # Limit length
 
-                # kubectl --from-file splits its value on commas. Policy
-                # directories carry commas (e.g. `sched_fifo,ac_rajomon`), so
-                # stage the file under a comma-free path before referencing it.
-                src_path = host_path
-                if "," in src_path:
-                    staged = (
-                        Path(tempfile.gettempdir())
-                        / f"k8s-cm-{cm_name}-{path_obj.name}"
-                    )
-                    staged.write_bytes(path_obj.read_bytes())
-                    src_path = str(staged)
+                source_path = _stage_path_without_commas(
+                    str(host_path), prefix="k8s_cm_", suffix=f"_{path_obj.name}"
+                )
 
                 # Create CM
                 create_cm_cmd = [
@@ -147,7 +160,7 @@ class K8sManager(DeploymentManager):
                     cm_name,
                     "--namespace",
                     self.namespace,
-                    f"--from-file={path_obj.name}={src_path}",
+                    f"--from-file={path_obj.name}={source_path}",
                 ]
                 if self.kube_context:
                     create_cm_cmd.extend(["--context", self.kube_context])
@@ -352,22 +365,14 @@ class K8sManager(DeploymentManager):
             cmd.extend(["--kube-context", self.kube_context])
 
         # Handle environment variables
-        # We look for HELM_VALUES_FILE in env_vars to pass generic values.
-        # Helm splits `-f` arguments on commas, treating the value as a list of
-        # files. Our policy directory names contain commas (e.g.
-        # `sched_fifo,ac_rajomon`), so passing the path directly fails with
-        # "no such file or directory". Stage the file under a comma-free name
-        # so helm receives a single literal path.
+        # We look for HELM_VALUES_FILE in env_vars to pass generic values
         if "HELM_VALUES_FILE" in env_vars:
-            values_path = Path(env_vars["HELM_VALUES_FILE"])
-            if "," in str(values_path):
-                staged = (
-                    Path(tempfile.gettempdir()) / f"helm-values-{project_name}.yaml"
-                )
-                staged.write_bytes(values_path.read_bytes())
-                cmd.extend(["-f", str(staged)])
-            else:
-                cmd.extend(["-f", str(values_path)])
+            values_path = _stage_path_without_commas(
+                env_vars["HELM_VALUES_FILE"],
+                prefix="helm_values_",
+                suffix=".yaml",
+            )
+            cmd.extend(["-f", values_path])
 
         # Wait for deployment
         cmd.extend(["--wait", "--timeout", "300s"])
