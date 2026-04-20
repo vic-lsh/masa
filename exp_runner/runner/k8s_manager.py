@@ -361,7 +361,9 @@ class K8sManager(DeploymentManager):
         if "HELM_VALUES_FILE" in env_vars:
             values_path = Path(env_vars["HELM_VALUES_FILE"])
             if "," in str(values_path):
-                staged = Path(tempfile.gettempdir()) / f"helm-values-{project_name}.yaml"
+                staged = (
+                    Path(tempfile.gettempdir()) / f"helm-values-{project_name}.yaml"
+                )
                 staged.write_bytes(values_path.read_bytes())
                 cmd.extend(["-f", str(staged)])
             else:
