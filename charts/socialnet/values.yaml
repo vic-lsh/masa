@@ -1,0 +1,56 @@
+# Default values for socialnet.
+
+image:
+  repository: ""
+  tag: latest
+  pullPolicy: IfNotPresent
+
+nameOverride: ""
+fullnameOverride: ""
+
+logLevel: "info"
+
+service:
+  type: ClusterIP
+
+# Default resource limits applied to microservice pods only (not infra —
+# mongo/redis/memcached/rabbitmq run uncapped).
+defaultServiceResources:
+  limits:
+    cpu: "1"
+    memory: "4Gi"
+  requests:
+    cpu: "100m"
+    memory: "128Mi"
+
+# Socialnet microservices. Each produces a Deployment and a k8s Service named
+# `{fullname}-{name}-1` (the `-1` suffix matches the Rust client's
+# `LoadBalancedChannel` convention of expanding `{base}-1..{base}-N`).
+# Inter-service env vars are pre-resolved by exp_runner with the project prefix
+# baked into hostnames, so the addresses resolve via k8s DNS.
+services: []
+# - name: post-storage-service
+#   binary: post_storage_server
+#   replicas: 1
+#   port: 8080
+#   env:
+#     - name: POST_STORAGE_MONGODB_URI
+#       value: mongodb://my-project-post-storage-mongo:27017
+
+# Stateful infrastructure (mongo / redis / memcached / rabbitmq). Each produces
+# a single-replica Deployment and a `{fullname}-{name}` Service (no `-1`
+# suffix; these are referenced directly by hostname in service env vars).
+infra: []
+# - name: post-storage-mongo
+#   image: mongo:7.0
+#   port: 27017
+# - name: rabbitmq
+#   image: rabbitmq:3.13-management
+#   port: 5672
+
+# Inline ConfigMap holding socialnet.json and policy_params.json; mounted at
+# /usr/config.json and /usr/policy_params.json in every service pod.
+configMaps:
+  enabled: false
+  appConfigJson: "{}"
+  policyParamsJson: ""
