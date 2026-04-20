@@ -1,0 +1,13 @@
+{{- if .Values.configMaps.enabled -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "socialnet.fullname" . }}-config
+  labels:
+    {{- include "socialnet.labels" . | nindent 4 }}
+data:
+  config.json: |-
+{{ .Values.configMaps.appConfigJson | indent 4 }}
+  policy_params.json: |-
+{{ .Values.configMaps.policyParamsJson | indent 4 }}
+{{- end }}
