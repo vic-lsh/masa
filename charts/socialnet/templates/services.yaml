@@ -1,0 +1,55 @@
+{{/*
+  Socialnet microservice Services. Every Service gets a literal `-1` suffix
+  because the Rust `LoadBalancedChannel::new(base, port, replicas)` always
+  expands to `{base}-1`..`{base}-N` endpoints — matching the docker-compose
+  container naming `{project}-{svc}-N`. exp_runner sets every `*_REPLICAS=1`
+  env var in k8s mode so a single `-1` Service suffices and k8s does pod-level
+  load balancing across the Deployment's replicas.
+*/}}
+{{- range $service := .Values.services }}
+{{- if not $service.noListen }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "socialnet.fullname" $ }}-{{ $service.name }}-1
+  labels:
+    {{- include "socialnet.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $service.name }}
+spec:
+  type: {{ $.Values.service.type }}
+  ports:
+    - port: {{ $service.port }}
+      targetPort: grpc
+      protocol: TCP
+      name: grpc
+  selector:
+    {{- include "socialnet.selectorLabels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $service.name }}
+{{- end }}
+{{- end }}
+
+{{/*
+  Stateful infra Services. Referenced directly by hostname (no `-1` suffix)
+  in service env vars like `mongodb://{project}-post-storage-mongo:27017`.
+*/}}
+{{- range $svc := .Values.infra }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "socialnet.fullname" $ }}-{{ $svc.name }}
+  labels:
+    {{- include "socialnet.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $svc.name }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ $svc.port }}
+      targetPort: {{ $svc.port }}
+      protocol: TCP
+      name: tcp
+  selector:
+    {{- include "socialnet.selectorLabels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $svc.name }}
+{{- end }}

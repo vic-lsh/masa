@@ -127,6 +127,18 @@ class K8sManager(DeploymentManager):
                 safe_name = path_obj.stem.lower().replace("_", "-")
                 cm_name = f"{task_spec.name}-{safe_name}-cm"[:63]  # Limit length
 
+                # kubectl --from-file splits its value on commas. Policy
+                # directories carry commas (e.g. `sched_fifo,ac_rajomon`), so
+                # stage the file under a comma-free path before referencing it.
+                src_path = host_path
+                if "," in src_path:
+                    staged = (
+                        Path(tempfile.gettempdir())
+                        / f"k8s-cm-{cm_name}-{path_obj.name}"
+                    )
+                    staged.write_bytes(path_obj.read_bytes())
+                    src_path = str(staged)
+
                 # Create CM
                 create_cm_cmd = [
                     "kubectl",
@@ -135,7 +147,7 @@ class K8sManager(DeploymentManager):
                     cm_name,
                     "--namespace",
                     self.namespace,
-                    f"--from-file={path_obj.name}={host_path}",
+                    f"--from-file={path_obj.name}={src_path}",
                 ]
                 if self.kube_context:
                     create_cm_cmd.extend(["--context", self.kube_context])
@@ -340,9 +352,20 @@ class K8sManager(DeploymentManager):
             cmd.extend(["--kube-context", self.kube_context])
 
         # Handle environment variables
-        # We look for HELM_VALUES_FILE in env_vars to pass generic values
+        # We look for HELM_VALUES_FILE in env_vars to pass generic values.
+        # Helm splits `-f` arguments on commas, treating the value as a list of
+        # files. Our policy directory names contain commas (e.g.
+        # `sched_fifo,ac_rajomon`), so passing the path directly fails with
+        # "no such file or directory". Stage the file under a comma-free name
+        # so helm receives a single literal path.
         if "HELM_VALUES_FILE" in env_vars:
-            cmd.extend(["-f", env_vars["HELM_VALUES_FILE"]])
+            values_path = Path(env_vars["HELM_VALUES_FILE"])
+            if "," in str(values_path):
+                staged = Path(tempfile.gettempdir()) / f"helm-values-{project_name}.yaml"
+                staged.write_bytes(values_path.read_bytes())
+                cmd.extend(["-f", str(staged)])
+            else:
+                cmd.extend(["-f", str(values_path)])
 
         # Wait for deployment
         cmd.extend(["--wait", "--timeout", "300s"])
