@@ -34,6 +34,7 @@ services:
       - rate-redis
     environment:
       - LOG_LEVEL=${LOG_LEVEL:-info}
+      - SERVICE_NAME=rate
     volumes:
       - ${PROJECT_CONFIG_PATH}:/usr/config.json:ro
       - ${POLICY_PARAMS_PATH}:/usr/policy_params.json:ro
@@ -77,6 +78,7 @@ services:
       - profile-redis
     environment:
       - LOG_LEVEL=${LOG_LEVEL:-info}
+      - SERVICE_NAME=profile
     volumes:
       - ${PROJECT_CONFIG_PATH}:/usr/config.json:ro
       - ${POLICY_PARAMS_PATH}:/usr/policy_params.json:ro
@@ -120,6 +122,7 @@ services:
       - reservation-redis
     environment:
       - LOG_LEVEL=${LOG_LEVEL:-info}
+      - SERVICE_NAME=reservation
     volumes:
       - ${PROJECT_CONFIG_PATH}:/usr/config.json:ro
       - ${POLICY_PARAMS_PATH}:/usr/policy_params.json:ro
@@ -151,6 +154,7 @@ services:
       - user-mongo
     environment:
       - LOG_LEVEL=${LOG_LEVEL:-info}
+      - SERVICE_NAME=user
     volumes:
       - ${PROJECT_CONFIG_PATH}:/usr/config.json:ro
       - ${POLICY_PARAMS_PATH}:/usr/policy_params.json:ro
@@ -167,6 +171,7 @@ services:
       - hotel_network
     environment:
       - LOG_LEVEL=${LOG_LEVEL:-info}
+      - SERVICE_NAME=geo
     volumes:
       - ${PROJECT_CONFIG_PATH}:/usr/config.json:ro
       - ${POLICY_PARAMS_PATH}:/usr/policy_params.json:ro
@@ -186,6 +191,7 @@ services:
       - rate-service
     environment:
       - LOG_LEVEL=${LOG_LEVEL:-info}
+      - SERVICE_NAME=search
     volumes:
       - ${PROJECT_CONFIG_PATH}:/usr/config.json:ro
       - ${POLICY_PARAMS_PATH}:/usr/policy_params.json:ro
@@ -211,6 +217,7 @@ services:
       - search-service
     environment:
       - LOG_LEVEL=${LOG_LEVEL:-info}
+      - SERVICE_NAME=frontend
     volumes:
       - ${PROJECT_CONFIG_PATH}:/usr/config.json:ro
       - ${POLICY_PARAMS_PATH}:/usr/policy_params.json:ro

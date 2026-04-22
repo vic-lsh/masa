@@ -243,6 +243,9 @@ pub struct TraceRecord {
     pub error: String,
     pub q_lat_init: u64,
     pub q_lat_resume: u64,
+    /// JSON-encoded map of service name → queue length at first poll.
+    /// Populated only when `trace_queue_latency` feature is enabled.
+    pub queue_lengths: String,
     pub additional_metrics: Vec<String>,
 }
 
@@ -265,7 +268,7 @@ pub fn update_rajomon_price_from_metadata(md: &tonic::metadata::MetadataMap, api
 }
 
 impl TraceRecord {
-    pub const HEADERS: [&'static str; 9] = [
+    pub const HEADERS: [&'static str; 10] = [
         "api",
         "request_id",
         "slo",
@@ -275,6 +278,7 @@ impl TraceRecord {
         "error",
         "q_lat_init",
         "q_lat_resume",
+        "queue_lengths",
     ];
 
     pub fn to_csv_header() -> String {
@@ -283,7 +287,7 @@ impl TraceRecord {
 
     pub fn to_csv_row(&self) -> String {
         let generic = format!(
-            "{},{},{},{},{},{},{},{},{}",
+            "{},{},{},{},{},{},{},{},{},{}",
             self.api,
             self.request_id,
             self.slo_us,
@@ -292,7 +296,8 @@ impl TraceRecord {
             self.latency,
             Self::escape_error(&self.error),
             self.q_lat_init,
-            self.q_lat_resume
+            self.q_lat_resume,
+            Self::escape_error(&self.queue_lengths),
         );
 
         if self.additional_metrics.is_empty() {
@@ -311,12 +316,23 @@ impl TraceRecord {
     }
 }
 
+fn format_queue_lengths(ql: &HashMap<String, u64>) -> String {
+    if ql.is_empty() {
+        return String::new();
+    }
+    let pairs: Vec<String> = ql
+        .iter()
+        .map(|(k, v)| format!("\"{}\":{}", k, v))
+        .collect();
+    format!("{{{}}}", pairs.join(","))
+}
+
 impl<R, C> RequestStats<R, C>
 where
     R: RequestType<C>,
     C: Client,
 {
-    const HEADERS: [&'static str; 9] = TraceRecord::HEADERS;
+    const HEADERS: [&'static str; 10] = TraceRecord::HEADERS;
 
     fn new(
         ctx: Context,
@@ -333,20 +349,21 @@ where
     }
 
     fn to_trace_record(&self) -> TraceRecord {
-        let (init_lat, resume_lat) = match &self.response {
+        let (init_lat, resume_lat, queue_lengths) = match &self.response {
             Some((metadata, _)) => {
                 if let Some(ctx_str) = metadata.get("ctx").and_then(|v| v.to_str().ok()) {
                     let ctx = Context::from_header_string(ctx_str);
                     if let Some(ql) = ctx.queue_latencies {
-                        (ql.initial, ql.resume)
+                        let ql_json = format_queue_lengths(&ql.queue_lengths);
+                        (ql.initial, ql.resume, ql_json)
                     } else {
-                        (0, 0)
+                        (0, 0, String::new())
                     }
                 } else {
-                    (0, 0)
+                    (0, 0, String::new())
                 }
             }
-            None => (0, 0),
+            None => (0, 0, String::new()),
         };
 
         let additional = match &self.response {
@@ -364,6 +381,7 @@ where
             error: self.error.clone(),
             q_lat_init: init_lat,
             q_lat_resume: resume_lat,
+            queue_lengths,
             additional_metrics: additional,
         }
     }
