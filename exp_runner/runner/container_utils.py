@@ -42,15 +42,22 @@ def extract_service_name(container_name: str) -> str:
         if match:
             name = match.group(1)
 
-    # Handle socialnet prefix patterns
-    elif name.startswith("socialnet-") or name.startswith("socialnet_"):
-        # Match pattern: socialnet-{slug}-{hexdigest}-{service}-{replica}
-        match = re.match(r"socialnet-[a-z0-9-]+-[a-f0-9]{12}-(.*)", name)
+    # Handle socialnet prefix patterns. The plugin uses prefix "sn" so the
+    # generated project_name fits inside the 63-char k8s DNS label limit
+    # (see SocialnetApp.prepare_workload). Older artifacts may still use the
+    # historical "socialnet-" prefix, so strip both.
+    elif (
+        name.startswith("sn-")
+        or name.startswith("socialnet-")
+        or name.startswith("socialnet_")
+    ):
+        # Match pattern: {sn|socialnet}-{slug}-{hexdigest}-{service}-{replica}
+        match = re.match(r"(?:sn|socialnet)-[a-z0-9-]+-[a-f0-9]{12}-(.*)", name)
         if match:
             name = match.group(1)
         else:
-            # Fallback: Remove socialnet prefix
-            name = re.sub(r"^socialnet[-_]", "", name)
+            # Fallback: Remove the bare prefix
+            name = re.sub(r"^(?:sn|socialnet)[-_]", "", name)
 
     # Handle synthetic local prefix
     elif name.startswith("local-"):
