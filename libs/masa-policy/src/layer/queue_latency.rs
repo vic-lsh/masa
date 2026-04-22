@@ -25,7 +25,9 @@ impl LayerServer for QueueLatencyServer {
 
 #[cfg(feature = "trace_queue_latency")]
 mod inner {
+    use std::collections::HashMap;
     use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+    use std::sync::{Mutex, OnceLock};
 
     use masa_core::{Context, QueueLatencies};
     use tonic_core::{CowGrpcMethod, Response, Status};
@@ -34,11 +36,21 @@ mod inner {
     use super::QueueLatencyServer;
     use crate::context_ext::MasaResponseExt;
 
+    static SERVICE_NAME: OnceLock<String> = OnceLock::new();
+
+    fn service_name() -> &'static str {
+        SERVICE_NAME.get_or_init(|| {
+            std::env::var("SERVICE_NAME").unwrap_or_else(|_| "unknown".to_string())
+        })
+    }
+
     #[derive(Debug)]
     pub(crate) struct QueueLatencyLayer {
         initial_q_lat: AtomicU64,
         resume_q_lat: AtomicU64,
         is_first_poll: AtomicBool,
+        own_queue_len: AtomicU64,
+        child_queue_lengths: Mutex<HashMap<String, u64>>,
     }
 
     impl Layer for QueueLatencyLayer {
@@ -50,19 +62,23 @@ mod inner {
                 initial_q_lat: AtomicU64::new(0),
                 resume_q_lat: AtomicU64::new(0),
                 is_first_poll: AtomicBool::new(true),
+                own_queue_len: AtomicU64::new(0),
+                child_queue_lengths: Mutex::new(HashMap::new()),
             }
         }
 
         #[inline]
         fn before_poll<Ret>(&self, _ctx: &Context) -> Result<(), Result<Response<Ret>, Status>> {
             let queue_latency = tokio::task::obtain_task_queue_latency().as_micros() as u64;
-            if queue_latency > 0 {
-                if self.is_first_poll.swap(false, Ordering::Relaxed) {
+            if self.is_first_poll.swap(false, Ordering::Relaxed) {
+                if queue_latency > 0 {
                     self.initial_q_lat
                         .fetch_add(queue_latency, Ordering::AcqRel);
-                } else {
-                    self.resume_q_lat.fetch_add(queue_latency, Ordering::AcqRel);
                 }
+                let q_len = tokio::runtime::current_thread_queue_len() as u64;
+                self.own_queue_len.store(q_len, Ordering::Release);
+            } else if queue_latency > 0 {
+                self.resume_q_lat.fetch_add(queue_latency, Ordering::AcqRel);
             }
             Ok(())
         }
@@ -80,6 +96,15 @@ mod inner {
                     if let Some(ql) = ctx.queue_latencies {
                         self.initial_q_lat.fetch_add(ql.initial, Ordering::AcqRel);
                         self.resume_q_lat.fetch_add(ql.resume, Ordering::AcqRel);
+                        if !ql.queue_lengths.is_empty() {
+                            let mut child_qls = self.child_queue_lengths.lock().unwrap();
+                            for (svc, len) in ql.queue_lengths {
+                                child_qls
+                                    .entry(svc)
+                                    .and_modify(|e| *e = (*e).max(len))
+                                    .or_insert(len);
+                            }
+                        }
                     }
                 }
             }
@@ -90,7 +115,14 @@ mod inner {
         fn finalize<Ret>(&self, ctx: &mut Context, _result: &mut Result<Response<Ret>, Status>) {
             let initial = self.initial_q_lat.load(Ordering::Acquire);
             let resume = self.resume_q_lat.load(Ordering::Acquire);
-            ctx.queue_latencies = Some(QueueLatencies { initial, resume });
+            let own_len = self.own_queue_len.load(Ordering::Acquire);
+            let mut queue_lengths = std::mem::take(&mut *self.child_queue_lengths.lock().unwrap());
+            queue_lengths.insert(service_name().to_string(), own_len);
+            ctx.queue_latencies = Some(QueueLatencies {
+                initial,
+                resume,
+                queue_lengths,
+            });
         }
     }
 

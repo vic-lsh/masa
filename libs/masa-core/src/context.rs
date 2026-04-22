@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use serde::{Deserialize, Serialize};
 
@@ -20,6 +22,10 @@ pub enum FutureSpan {
 pub struct QueueLatencies {
     pub initial: u64,
     pub resume: u64,
+    /// Queue length at each service when this request's task was first polled.
+    /// Populated only when `trace_queue_latency` feature is enabled.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub queue_lengths: HashMap<String, u64>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]

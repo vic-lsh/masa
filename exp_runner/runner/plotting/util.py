@@ -1,4 +1,5 @@
 import argparse
+import csv as _csv
 import json
 import logging
 import os
@@ -150,17 +151,30 @@ def _read_request_csv(file_path: str) -> pd.DataFrame:
             if not line:
                 continue
 
-            parts = line.split(",")
-            if _needs_repair(parts, expected_fields=expected):
+            # Use csv.reader first: correctly handles quoted fields such as
+            # queue_lengths JSON (e.g. '{"frontend":5,"search":12}') whose
+            # embedded commas would otherwise produce a wrong field count.
+            try:
+                csv_parts = next(_csv.reader([line]))
+            except Exception:
+                csv_parts = line.split(",")
+
+            if len(csv_parts) == expected:
+                parts = csv_parts
+            else:
+                # Wrong field count even after proper CSV parsing — fall back
+                # to split+repair for rows with unescaped commas in the error
+                # field (e.g. gRPC status strings).
                 repaired += 1
-                parts = _repair_row_parts(parts, expected_fields=expected)
+                parts = _repair_row_parts(line.split(","), expected_fields=expected)
             rows.append(parts)
 
     df = pd.DataFrame(rows, columns=columns)
 
     # Convert any non-string columns to numeric where possible.
+    _string_cols = {"api", "error", "queue_lengths"}
     for col in columns:
-        if col in ("api", "error"):
+        if col in _string_cols:
             continue
         df[col] = pd.to_numeric(df[col], errors="coerce")
 
