@@ -138,11 +138,13 @@ where
     }
 
     /// Returns the mean-only estimate (k=0), used for conservative early-return thresholds.
+    #[allow(dead_code)]
     pub(crate) fn get_mean_estimate(&self, key: K) -> Option<u64> {
         self.get_estimate_with(key, E::mean_estimate)
     }
 
     /// Returns the floor estimate, used for ER thresholds that are robust to mean inflation.
+    #[allow(dead_code)]
     pub(crate) fn get_mean_floor_estimate(&self, key: K) -> Option<u64> {
         self.get_estimate_with(key, E::mean_floor_estimate)
     }

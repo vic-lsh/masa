@@ -10,7 +10,7 @@ use tonic_core::CowGrpcMethod;
 /// Process-local: two different processes may assign different `MethodId`s to
 /// the same (service, method) pair. Use [`RootMethod`](masa_core::RootMethod)
 /// for cross-process identity.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct MethodId(u64);
 
 /// Global registry for mapping (Service, Method) pairs to unique IDs.
