@@ -1,26 +1,41 @@
-{{/* Hotel microservices (per-binary images). */}}
+{{/*
+  Hotel microservices (per-binary images).
+
+  Each `services[]` entry expands to `replicas` independent Deployments named
+  `{fullname}-{name}-1`..`{fullname}-{name}-N`, each with `replicas: 1` and a
+  unique component label. Paired with the matching per-pod Services in
+  services.yaml, this gives the Rust `LoadBalancedChannel` true client-side
+  fan-out to N endpoints — kube-proxy IP-level LB doesn't fan out per-RPC on
+  a single long-lived gRPC/HTTP-2 connection, so we need distinct endpoints.
+  Mirrors the docker-compose `scale: N` semantics in
+  `apps/hotel/scripts/local/containers+svcs.yaml`.
+*/}}
 {{- range $service := .Values.services }}
+{{- $replicas := int ($service.replicas | default 1) }}
+{{- range $i := until $replicas }}
+{{- $idx := add $i 1 }}
+{{- $component := printf "%s-%d" $service.name $idx }}
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "hotel.fullname" $ }}-{{ $service.name }}
+  name: {{ include "hotel.fullname" $ }}-{{ $component }}
   labels:
     {{- include "hotel.labels" $ | nindent 4 }}
-    app.kubernetes.io/component: {{ $service.name }}
+    app.kubernetes.io/component: {{ $component }}
 spec:
-  replicas: {{ $service.replicas | default 1 }}
+  replicas: 1
   selector:
     matchLabels:
       {{- include "hotel.selectorLabels" $ | nindent 6 }}
-      app.kubernetes.io/component: {{ $service.name }}
+      app.kubernetes.io/component: {{ $component }}
   template:
     metadata:
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") $ | sha256sum }}
       labels:
         {{- include "hotel.selectorLabels" $ | nindent 8 }}
-        app.kubernetes.io/component: {{ $service.name }}
+        app.kubernetes.io/component: {{ $component }}
     spec:
       containers:
         - name: service
@@ -56,6 +71,7 @@ spec:
         - name: config
           configMap:
             name: {{ include "hotel.fullname" $ }}-config
+{{- end }}
 {{- end }}
 
 {{/* Stateful infrastructure: mongo + redis. */}}

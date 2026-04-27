@@ -14,13 +14,16 @@ service:
   type: ClusterIP
 
 # Default resource limits applied to microservice pods only (not infra —
-# mongo/redis/memcached/rabbitmq run uncapped).
+# mongo/redis/memcached/rabbitmq run uncapped). Mirrors the docker-compose
+# `cpus: "4"` per microservice. `requests` is kept low so a many-pod
+# deployment still schedules on a small kind node; `limits` lets pods burst
+# to 4 cores when the host has spare capacity.
 defaultServiceResources:
   limits:
-    cpu: "1"
+    cpu: "4"
     memory: "4Gi"
   requests:
-    cpu: "100m"
+    cpu: "200m"
     memory: "128Mi"
 
 # Socialnet microservices. Each produces a Deployment and a k8s Service named
