@@ -22,11 +22,18 @@ defaultServiceResources:
     cpu: "100m"
     memory: "128Mi"
 
-# Hotel microservices. Each produces a Deployment and a k8s Service. The
-# service DNS name is `{fullname}-{name}` when scaled=true (k8s Service
-# does DNS load-balancing across pods) or `{fullname}-{name}-1` when
-# scaled=false — this matches the names that exp_runner's
-# `create_hotel_config_dict` writes into hotel.json.
+# Hotel microservices. Each entry expands to `replicas` Deployments and
+# `replicas` Services named `{fullname}-{name}-1`..`{fullname}-{name}-N`
+# (matching docker-compose `{project}-{svc}-N`). The Rust
+# `LoadBalancedChannel` then opens one gRPC connection per `-i` Service so
+# load actually fans out across pods (kube-proxy IP-LB doesn't fan out
+# per-RPC on a single HTTP/2 connection).
+#
+# `create_hotel_config_dict` writes the *base* hostname `{project}-{name}`
+# into hotel.json for scaled services; the Rust client appends `-1..-N`.
+# Non-scaled services (frontend) have replicas=1 and the `-1`-suffixed
+# Service name baked directly into hotel.json. The `scaled` flag below is
+# a hint to the runner — the chart treats every entry uniformly.
 services: []
 # - name: rate-service
 #   binary: hotel_rate
