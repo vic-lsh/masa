@@ -26,7 +26,7 @@ from .goodput import (
 )
 from .queueing import (
     extract_queue_lengths_long as _extract_queue_lengths_long,
-    plot_goodput_abort_timeline as _plot_goodput_abort_timeline,
+    plot_queue_latency_cdf as _plot_queue_latency_cdf,
     plot_queue_length_cdf_per_service as _plot_queue_length_cdf_per_service,
     plot_queue_length_timeline as _plot_queue_length_timeline,
 )
@@ -947,8 +947,8 @@ def generate_plots(args) -> None:
                 rps,
                 rps_policy_data,
             )
-            _plot_goodput_abort_timeline(
-                iteration_output / f"goodput_abort_timeline_{rps:g}rps.png",
+            _plot_queue_latency_cdf(
+                iteration_output / f"queue_latency_cdf_{rps:g}rps.png",
                 rps,
                 rps_policy_data,
             )
@@ -1052,8 +1052,8 @@ def generate_plots(args) -> None:
                 rps,
                 avg_rps_policy_data,
             )
-            _plot_goodput_abort_timeline(
-                output_dir / f"goodput_abort_timeline_{rps:g}rps_avg.png",
+            _plot_queue_latency_cdf(
+                output_dir / f"queue_latency_cdf_{rps:g}rps_avg.png",
                 rps,
                 avg_rps_policy_data,
             )

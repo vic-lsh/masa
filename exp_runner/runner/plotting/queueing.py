@@ -430,83 +430,66 @@ def plot_queue_length_timeline(
     plt.close(fig)
 
 
-def plot_goodput_abort_timeline(
+def plot_queue_latency_cdf(
     output_path: Path,
     rps: float,
     policy_data: Dict[str, pd.DataFrame],
 ) -> None:
-    """Plot goodput rate and EarlyReturn abort rate over time, one subplot per policy.
+    """Plot CDF of per-request total queueing latency, one line per policy.
 
-    Correlated spikes in queue length and abort rate reveal chronic over-admission;
-    a stable abort rate despite long queues suggests burst absorption.
+    Side-by-side CDFs make it easy to compare how much time requests spend
+    waiting in queues under each policy at a given RPS.
     """
-    policies = [
-        p for p, df in policy_data.items()
-        if "start_at" in df.columns and not df.empty
-    ]
-    if not policies:
-        return
+    cmap = plt.get_cmap("tab10")
+    fig, ax = plt.subplots(figsize=(10, 6))
 
-    n = len(policies)
-    ncols = min(3, n)
-    nrows = int(np.ceil(n / ncols))
-    fig, axes = plt.subplots(nrows, ncols, figsize=(6 * ncols, 4 * nrows), squeeze=False)
+    # Per-API total queueing latency = q_lat_init + q_lat_resume. The
+    # per-service `*_queueing_latency` columns are a breakdown of the same
+    # quantity, so including them would double-count.
+    global_cols = ["q_lat_init", "q_lat_resume"]
 
-    for pol_idx, policy in enumerate(policies):
-        ax = axes[pol_idx // ncols][pol_idx % ncols]
-        df = policy_data[policy].copy()
-        df = df[df["start_at"].notna() & (df["start_at"] > 0)]
+    any_data = False
+    for policy_idx, (policy, df) in enumerate(policy_data.items()):
         if df.empty:
-            axes[pol_idx // ncols][pol_idx % ncols].axis("off")
+            continue
+        present = [c for c in global_cols if c in df.columns]
+        if not present:
             continue
 
-        t_min = df["start_at"].min()
-        df["t_sec"] = (df["start_at"] - t_min) / 1e6
-        bin_idx = (df["t_sec"] // _TIMELINE_BIN_SEC) * _TIMELINE_BIN_SEC
-
-        is_abort = (
-            df["error_type"] == "EarlyReturn"
-            if "error_type" in df.columns
-            else pd.Series(False, index=df.index)
+        total_ms = (
+            df[present].apply(pd.to_numeric, errors="coerce").sum(axis=1) / MS_TO_US
         )
-        is_timeout = (
-            df["error"] == "/ClientTimeout"
-            if "error" in df.columns
-            else pd.Series(False, index=df.index)
-        )
-        if "slo" in df.columns and "latency" in df.columns:
-            is_goodput = ~is_abort & ~is_timeout & (df["latency"] <= df["slo"])
-        else:
-            is_goodput = ~is_abort & ~is_timeout
+        total_ms = total_ms.dropna()
+        if total_ms.empty:
+            continue
 
-        goodput_rate = is_goodput.groupby(bin_idx).sum() / _TIMELINE_BIN_SEC
-        abort_rate = is_abort.groupby(bin_idx).sum() / _TIMELINE_BIN_SEC
-
+        values = np.sort(total_ms.to_numpy())
+        cdf = (np.arange(1, len(values) + 1) / len(values)).astype(float)
+        style = get_policy_line_style(policy)
+        if style["color"] is None:
+            style["color"] = cmap(policy_idx % cmap.N)
+        style["markevery"] = max(len(values) // 12, 1)
         ax.plot(
-            goodput_rate.index,
-            goodput_rate.values,
-            label="Goodput",
-            color="tab:green",
+            values,
+            cdf,
+            label=get_policy_display_name(policy),
             linewidth=2,
+            markersize=5,
+            **style,
         )
-        ax.plot(
-            abort_rate.index,
-            abort_rate.values,
-            label="EarlyReturn (aborted)",
-            color="tab:red",
-            linewidth=2,
-            linestyle="--",
-        )
-        ax.set_title(get_policy_display_name(policy))
-        ax.set_xlabel("Time (s)")
-        ax.set_ylabel(f"Req/s ({_TIMELINE_BIN_SEC:.0f}s bins)")
-        ax.legend()
-        ax.grid(True, linestyle="--", alpha=0.4)
+        any_data = True
 
-    for i in range(n, nrows * ncols):
-        axes[i // ncols][i % ncols].axis("off")
+    if not any_data:
+        plt.close(fig)
+        return
 
-    fig.suptitle(f"Goodput vs. abort rate over time — {rps:g} RPS")
+    ax.set_xlabel("Total queueing latency (ms)")
+    ax.set_ylabel("CDF")
+    ax.set_title(f"Queue latency CDF at {rps:g} RPS")
+    ax.grid(True, which="both", linestyle="--", alpha=0.4)
+    ax.set_xlim(left=0)
+    ax.legend()
+
     fig.tight_layout()
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, dpi=300)
@@ -608,13 +591,17 @@ def generate_plots(args, plot_data: PlotData | None = None) -> None:
                                 ),
                             )
                         )
-                if has_start_at:
+                has_global_queue_cols = any(
+                    ("q_lat_init" in df.columns or "q_lat_resume" in df.columns)
+                    for df in policy_data.values()
+                )
+                if has_global_queue_cols:
                     futures.append(
                         (
-                            plot_goodput_abort_timeline,
+                            plot_queue_latency_cdf,
                             (
                                 Path(queueing_dir)
-                                / f"goodput_abort_timeline_{api}_{rps:g}rps.png",
+                                / f"queue_latency_cdf_{api}_{rps:g}rps.png",
                                 rps,
                                 policy_data,
                             ),
