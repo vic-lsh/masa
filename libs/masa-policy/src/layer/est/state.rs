@@ -13,13 +13,14 @@ use std::hash::Hash;
 use std::ops::Deref;
 use std::sync::{
     atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering},
-    Arc, Mutex,
+    Arc, Mutex, OnceLock,
 };
 use std::time::{Duration, Instant};
 
 use masa_core::{Context, LatencyEstimator, ResponseMeta};
 use tonic_core::{Code, CowGrpcMethod, Response, Status};
 
+use super::fanout::{recover_groups, ChildRecord, FanoutPatternTable};
 use super::latency_map::{LatencyMap, MethodKey, ParentToChildKey, RootToLocalKey};
 use crate::context_ext::MasaResponseExt;
 use crate::registry::MethodId;
@@ -30,7 +31,7 @@ use crate::MethodRegistry;
 // ══════════════════════════════════════════════════════════════════════════
 
 /// Three estimate flavors for after-child wall-clock time (parent's post-child work duration).
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 pub(crate) struct AfterChildEstimates {
     /// Full estimate (mean + k*stddev, capped at time_left).
     pub full: u64,
@@ -38,6 +39,27 @@ pub(crate) struct AfterChildEstimates {
     pub mean: u64,
     /// Floor estimate (spike-resistant, capped at time_left).
     pub floor: u64,
+}
+
+/// Runtime toggle for fanout-aware after-child estimation.
+///
+/// Reads `MASA_FANOUT_AWARE` once on first access; default is `true` (new
+/// behavior). Set `MASA_FANOUT_AWARE=0` (or `false`/`off`/`no`) to use the
+/// legacy per-edge `(parent, child)` map for both reads and writes — useful
+/// for A/B testing the fix on the same binary.
+pub(crate) fn fanout_aware_enabled() -> bool {
+    static CACHED: OnceLock<bool> = OnceLock::new();
+    *CACHED.get_or_init(|| {
+        let val = match std::env::var("MASA_FANOUT_AWARE") {
+            Ok(v) => {
+                let v = v.trim().to_ascii_lowercase();
+                !matches!(v.as_str(), "0" | "false" | "off" | "no")
+            }
+            Err(_) => true,
+        };
+        log::info!("MASA_FANOUT_AWARE = {}", val);
+        val
+    })
 }
 
 // ═════════════════════════════════════════════════════════════��════════════
@@ -50,6 +72,9 @@ pub(crate) struct AfterChildEstimates {
 #[derive(Debug)]
 pub(crate) struct LatencyEstimatorsInner<E: LatencyEstimator + Default + 'static> {
     /// Remaining wall-clock time after each child RPC completes (parent→child key).
+    /// Used by the admission-control feasibility check; now updated with the
+    /// fanout-corrected post-join time (`parent_end - max(group.end)`) so
+    /// siblings on the critical path do not pollute it.
     after_child_wallclock: LatencyMap<ParentToChildKey, E>,
     /// Wall-clock duration of child RPC calls (parent→child key).
     child_wallclock: LatencyMap<ParentToChildKey, E>,
@@ -57,6 +82,10 @@ pub(crate) struct LatencyEstimatorsInner<E: LatencyEstimator + Default + 'static
     subtree_compute: LatencyMap<MethodKey, E>,
     /// Total wall-clock latency per method (root API type → local method key).
     method_wallclock: LatencyMap<RootToLocalKey, E>,
+    /// Fanout-group post-join estimates, keyed on (parent_method, sorted
+    /// multiset of sibling child_methods). Read at child-issue time for
+    /// deadline tightening.
+    fanout_patterns: FanoutPatternTable<E>,
     /// Counter for periodic logging.
     print_counter: AtomicUsize,
 }
@@ -96,6 +125,7 @@ impl<E: LatencyEstimator + Default + 'static> LatencyEstimators<E> {
             child_wallclock: LatencyMap::new(),
             subtree_compute: LatencyMap::new(),
             method_wallclock: LatencyMap::new(),
+            fanout_patterns: FanoutPatternTable::new(),
             print_counter: AtomicUsize::new(0),
         });
 
@@ -108,6 +138,9 @@ impl<E: LatencyEstimator + Default + 'static> LatencyEstimators<E> {
 
     /// Estimated wall-clock time from child RPC completion to parent end, capped at `cap`.
     /// Returns all three estimate flavors (full, mean, floor).
+    /// Used by the admission feasibility check; the estimation/scheduling
+    /// path uses the fanout-aware variant below.
+    #[allow(dead_code)]
     pub(crate) fn est_after_child_wallclock(
         &self,
         key: ParentToChildKey,
@@ -132,6 +165,27 @@ impl<E: LatencyEstimator + Default + 'static> LatencyEstimators<E> {
         }
     }
 
+    /// Lookup an after-child wall-clock estimate for the child being
+    /// issued. When the runtime toggle [`fanout_aware_enabled`] is true
+    /// (default), use the fanout-group pattern table keyed on
+    /// `base_signature`; otherwise fall back to the legacy per-edge map
+    /// keyed on `(parent, new_child_id)`.
+    pub(crate) fn est_after_child_wallclock_for_group(
+        &self,
+        parent: MethodId,
+        base_signature: &[MethodId],
+        new_child_id: MethodId,
+        cap: u64,
+    ) -> AfterChildEstimates {
+        if fanout_aware_enabled() {
+            self.fanout_patterns
+                .lookup_estimate(parent, base_signature, cap)
+        } else {
+            let key = ParentToChildKey::parent_rpc_method(parent).child_rpc_method(new_child_id);
+            self.est_after_child_wallclock(key, cap)
+        }
+    }
+
     /// Estimated wall-clock duration of a child RPC call.
     pub(crate) fn est_child_wallclock(&self, key: ParentToChildKey) -> Option<u64> {
         self.child_wallclock.get_estimate(key)
@@ -149,6 +203,16 @@ impl<E: LatencyEstimator + Default + 'static> LatencyEstimators<E> {
     /// Track wall-clock time from child RPC completion to parent request end.
     pub(crate) fn track_after_child_wallclock(&self, key: ParentToChildKey, duration_us: u64) {
         self.after_child_wallclock.track(key, duration_us);
+    }
+
+    /// Track one observed fanout group's post-join time.
+    pub(crate) fn track_fanout_group(
+        &self,
+        parent: MethodId,
+        signature: Vec<MethodId>,
+        post_join_us: u64,
+    ) {
+        self.fanout_patterns.update(parent, signature, post_join_us);
     }
 
     /// Track wall-clock duration of a child RPC call.
@@ -213,12 +277,13 @@ where
                 log_pair_map_if_non_empty("Est Child Wallclock", &shared.child_wallclock);
                 log_method_map_if_non_empty("Est Subtree Compute", &shared.subtree_compute);
                 log_pair_map_if_non_empty("Est Method Wallclock", &shared.method_wallclock);
+                log_fanout_patterns_if_non_empty(&shared.fanout_patterns);
             }
         });
     }
 }
 
-fn log_pair_map_if_non_empty<K, E>(_label: &'static str, map: &LatencyMap<K, E>)
+fn log_pair_map_if_non_empty<K, E>(label: &'static str, map: &LatencyMap<K, E>)
 where
     K: Copy + Eq + Hash + fmt::Display + 'static,
     E: LatencyEstimator + Default + 'static,
@@ -234,7 +299,34 @@ where
             parts.push(format!("{}: (no estimate)", key));
         }
     });
-    // log::info!("{}: {}", label, parts.join(", "));
+    log::info!("{}: {}", label, parts.join(", "));
+}
+
+fn log_fanout_patterns_if_non_empty<E: LatencyEstimator + Default + 'static>(
+    table: &FanoutPatternTable<E>,
+) {
+    if table.is_empty() {
+        return;
+    }
+    let mut parts = Vec::new();
+    table.for_each_pattern(|parent, signature, est, count| {
+        let parent_name = super::latency_map::format_method_name(parent);
+        let sig_str = signature
+            .iter()
+            .map(|id| super::latency_map::format_method_name(*id))
+            .collect::<Vec<_>>()
+            .join(",");
+        let est_str = if est.can_estimate() {
+            format!("{} us", est.estimate())
+        } else {
+            "(no estimate)".to_string()
+        };
+        parts.push(format!(
+            "{}|[{}] n={}: {}",
+            parent_name, sig_str, count, est_str
+        ));
+    });
+    log::info!("Est Fanout Groups: {}", parts.join(" ;; "));
 }
 
 fn log_method_map_if_non_empty<E: LatencyEstimator + Default + 'static>(
@@ -266,7 +358,9 @@ pub(crate) struct EstimationTracker<E: LatencyEstimator + Default + 'static> {
     pub(crate) resolved_method_id: MethodId,
     pub(crate) root_method_id: Option<MethodId>,
     pub(crate) est: LatencyEstimators<E>,
-    child_end_times: Mutex<Vec<(ParentToChildKey, Instant)>>,
+    /// All child RPCs issued under this handler invocation, in issue order.
+    /// Used at handler exit to recover fanout groups via interval-overlap.
+    children: Mutex<Vec<ChildRecord>>,
     request_start: Instant,
 }
 
@@ -280,17 +374,37 @@ impl<E: LatencyEstimator + Default + 'static> EstimationTracker<E> {
             resolved_method_id,
             root_method_id,
             est,
-            child_end_times: Mutex::new(Vec::new()),
+            children: Mutex::new(Vec::new()),
             request_start: Instant::now(),
         }
     }
 
     /// Create a child RPC tracker for the given child method.
+    ///
+    /// Records the child's start and computes a `base_signature`: the sorted
+    /// multiset of still-open earlier children plus this child. That set is
+    /// guaranteed to be a multiset-subset of the eventual fanout group, so
+    /// it is the issue-time lower bound used to look up a group estimate.
     pub(crate) fn begin_child(&self, child_method: &CowGrpcMethod) -> ChildRPCTracker {
         let child_id = MethodRegistry::global().get_or_register(child_method.clone());
         let key =
             ParentToChildKey::parent_rpc_method(self.resolved_method_id).child_rpc_method(child_id);
-        ChildRPCTracker::new(key)
+        let now = Instant::now();
+        let mut children = self.children.lock().unwrap();
+        let mut base_signature: Vec<MethodId> = children
+            .iter()
+            .filter(|c| c.end.is_none())
+            .map(|c| c.child_id)
+            .collect();
+        base_signature.push(child_id);
+        base_signature.sort();
+        let index = children.len();
+        children.push(ChildRecord {
+            child_id,
+            start: now,
+            end: None,
+        });
+        ChildRPCTracker::new(key, child_id, index, base_signature, now)
     }
 
     /// Record a completed child RPC: track child wallclock on success, or inject
@@ -302,29 +416,56 @@ impl<E: LatencyEstimator + Default + 'static> EstimationTracker<E> {
     ) {
         if is_early_return_response(response) {
             self.est.track_er_feedback(tracker.key);
+            // Leave the ChildRecord with end=None so it is excluded from
+            // group recovery — early-returned children carry no useful
+            // post-join signal.
         } else {
             self.est
                 .track_child_wallclock(tracker.key, tracker.elapsed_us());
-            self.child_end_times
-                .lock()
-                .unwrap()
-                .push((tracker.key, Instant::now()));
+            let now = Instant::now();
+            let mut children = self.children.lock().unwrap();
+            if let Some(record) = children.get_mut(tracker.child_index) {
+                record.end = Some(now);
+            }
         }
     }
 
     /// Flush deferred observations at request finalization.
     ///
-    /// Tracks remaining-wallclock (time from child end to parent end) and
-    /// method-wallclock (total request duration).
+    /// When fanout-aware estimation is enabled, recovers fanout groups from
+    /// observed intervals, updates the fanout pattern table, and mirrors
+    /// the corrected post-join time into the per-edge map so admission
+    /// feasibility checks see the same value. When disabled, reproduces
+    /// the legacy per-child delta `parent_end - child.end` to keep the A/B
+    /// test honest.
     pub(crate) fn flush(&self) {
         let parent_end = Instant::now();
 
-        let child_end_times = std::mem::take(&mut *self.child_end_times.lock().unwrap());
-        for (key, child_end) in child_end_times {
-            self.est.track_after_child_wallclock(
-                key,
-                parent_end.duration_since(child_end).as_micros() as u64,
-            );
+        let children = std::mem::take(&mut *self.children.lock().unwrap());
+        if fanout_aware_enabled() {
+            let groups = recover_groups(&children, parent_end);
+            for (signature, post_join_us) in &groups {
+                self.est.track_fanout_group(
+                    self.resolved_method_id,
+                    signature.clone(),
+                    *post_join_us,
+                );
+                for child_id in signature {
+                    let key = ParentToChildKey::parent_rpc_method(self.resolved_method_id)
+                        .child_rpc_method(*child_id);
+                    self.est.track_after_child_wallclock(key, *post_join_us);
+                }
+            }
+        } else {
+            for c in &children {
+                let Some(end) = c.end else {
+                    continue;
+                };
+                let key = ParentToChildKey::parent_rpc_method(self.resolved_method_id)
+                    .child_rpc_method(c.child_id);
+                let after = parent_end.saturating_duration_since(end).as_micros() as u64;
+                self.est.track_after_child_wallclock(key, after);
+            }
         }
 
         if let Some(key) = self.method_wallclock_key() {
@@ -351,14 +492,31 @@ impl<E: LatencyEstimator + Default + 'static> EstimationTracker<E> {
 #[derive(Debug, Clone)]
 pub(crate) struct ChildRPCTracker {
     pub key: ParentToChildKey,
+    /// Index into the parent EstimationTracker's `children` vec.
+    pub(crate) child_index: usize,
+    /// Sorted multiset of still-open earlier children + this child at issue
+    /// time. Lower bound on the eventual fanout-group signature; used by
+    /// the estimation layer to look up the matching group's EMA.
+    pub(crate) base_signature: Vec<MethodId>,
+    #[allow(dead_code)]
+    pub(crate) child_id: MethodId,
     start_time: Instant,
 }
 
 impl ChildRPCTracker {
-    fn new(key: ParentToChildKey) -> Self {
+    fn new(
+        key: ParentToChildKey,
+        child_id: MethodId,
+        child_index: usize,
+        base_signature: Vec<MethodId>,
+        start_time: Instant,
+    ) -> Self {
         Self {
             key,
-            start_time: Instant::now(),
+            child_index,
+            base_signature,
+            child_id,
+            start_time,
         }
     }
 
