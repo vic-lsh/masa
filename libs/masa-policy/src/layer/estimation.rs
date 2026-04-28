@@ -226,7 +226,7 @@ impl EstimationLayer {
         #[cfg(feature = "sched_pred")]
         {
             let d = ctx.deadline().saturating_sub(est_remaining);
-            (d, PriorityHint::new(d))
+            (d, PriorityHint::new(d.saturating_sub(masa_core::time_now())))
         }
         #[cfg(not(feature = "sched_pred"))]
         {
