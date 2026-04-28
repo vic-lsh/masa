@@ -38,6 +38,14 @@ pub struct ResponseMeta {
     /// Number of early returns in the subtree (this hop + all children).
     #[serde(default)]
     pub early_return_count: u32,
+    /// Whether any hop in this request's subtree (this hop or any descendant)
+    /// tripped its local deadline under `signal_slack`. Saturated at 1 so a
+    /// single user-facing request never counts as multiple events, regardless
+    /// of how many hops it traversed. Stored as `u32` for forward-compat with
+    /// any future weighted use; today consumers should treat it as a boolean
+    /// (`> 0`).
+    #[serde(default)]
+    pub deadline_signal_count: u32,
 }
 
 /// Identifies the root (ingress) RPC method. Transported over the wire as a
