@@ -509,9 +509,12 @@ class SocialnetApp(AppPlugin):
                 ],
             },
             {
+                # Mirrors `scale: 4` in apps/socialnet/docker-compose.yaml —
+                # the chart emits 4 Deployments + 4 Services, and the
+                # compose-post client below sets USER_TIMELINE_REPLICAS=4.
                 "name": "user-timeline-service",
                 "binary": "user_timeline_server",
-                "replicas": 1,
+                "replicas": 4,
                 "port": 8080,
                 "env": [
                     {
@@ -716,7 +719,7 @@ class SocialnetApp(AppPlugin):
                         "value": svc_host("user-timeline-service"),
                     },
                     {"name": "USER_TIMELINE_PORT", "value": "8080"},
-                    {"name": "USER_TIMELINE_REPLICAS", "value": "1"},
+                    {"name": "USER_TIMELINE_REPLICAS", "value": "4"},
                     {
                         "name": "HOME_TIMELINE_IP",
                         "value": svc_host("home-timeline-service"),
