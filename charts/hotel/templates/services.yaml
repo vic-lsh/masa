@@ -1,20 +1,26 @@
 {{/*
-  Hotel microservices. Every service Service gets a literal `-1` suffix
-  because the Rust `LoadBalancedChannel::new(base, port, replicas)` always
-  expands to `{base}-1`..`{base}-N` endpoints regardless of scaled flag —
-  matching the docker-compose container naming `{project}-{svc}-N`. At
-  replicas=1 this single Service suffices; multi-replica hotel runs would
-  need one Service per replica (not yet supported).
+  Hotel microservices. Each `services[]` entry produces `replicas` Services
+  named `{fullname}-{name}-1`..`{fullname}-{name}-N`, one per Deployment
+  from deployments.yaml. The Rust `LoadBalancedChannel::new(base, port,
+  replicas)` opens N independent gRPC channels to `{base}-1..{base}-N` —
+  matching the docker-compose container naming `{project}-{svc}-N`. Each
+  Service selects exactly one pod via the unique component label. Non-scaled
+  services (e.g. hotel-frontend-service) have replicas=1 and produce a
+  single `-1` Service, which `create_hotel_config_dict` references directly.
 */}}
 {{- range $service := .Values.services }}
+{{- $replicas := int ($service.replicas | default 1) }}
+{{- range $i := until $replicas }}
+{{- $idx := add $i 1 }}
+{{- $component := printf "%s-%d" $service.name $idx }}
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "hotel.fullname" $ }}-{{ $service.name }}-1
+  name: {{ include "hotel.fullname" $ }}-{{ $component }}
   labels:
     {{- include "hotel.labels" $ | nindent 4 }}
-    app.kubernetes.io/component: {{ $service.name }}
+    app.kubernetes.io/component: {{ $component }}
 spec:
   type: {{ $.Values.service.type }}
   ports:
@@ -24,7 +30,8 @@ spec:
       name: grpc
   selector:
     {{- include "hotel.selectorLabels" $ | nindent 4 }}
-    app.kubernetes.io/component: {{ $service.name }}
+    app.kubernetes.io/component: {{ $component }}
+{{- end }}
 {{- end }}
 
 {{/* Stateful infra Services — always single-replica, literal `-1` suffix. */}}
