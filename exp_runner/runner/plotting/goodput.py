@@ -22,6 +22,8 @@ from .util import (
     PlotData,
     prepare_output_dir,
     scale_fontsize,
+    scale_linewidth,
+    scale_markersize,
 )
 
 matplotlib.use("Agg")  # Use non-interactive backend for thread safety
@@ -963,8 +965,8 @@ def _plot_all_api_goodput_clean(
             rps_values,
             y,
             label=get_policy_display_name(policy),
-            linewidth=2,
-            markersize=6,
+            linewidth=scale_linewidth(2),
+            markersize=scale_markersize(6),
             **get_policy_line_style(policy),
         )
     ax1.set_ylabel("Goodput (req/s meeting SLO)")
@@ -994,8 +996,8 @@ def _plot_all_api_goodput_clean(
             rps_values,
             fraction_values,
             label=get_policy_display_name(policy),
-            linewidth=2,
-            markersize=6,
+            linewidth=scale_linewidth(2),
+            markersize=scale_markersize(6),
             **get_policy_line_style(policy),
         )
     fraction_series = {
@@ -1502,7 +1504,7 @@ def plot_goodput_timeline(
             label=get_policy_display_name(policy),
             color=color,
             linestyle=get_policy_linestyle(policy),
-            linewidth=1.5,
+            linewidth=scale_linewidth(1.5),
         )
 
     # Save timeline data to CSV
@@ -1529,7 +1531,7 @@ def plot_goodput_timeline(
         step_rps,
         where="post",
         color="grey",
-        linewidth=1.5,
+        linewidth=scale_linewidth(1.5),
         linestyle="-",
         alpha=0.5,
     )
@@ -1626,7 +1628,7 @@ def plot_early_return_timeline(
             label=get_policy_display_name(policy),
             color=color,
             linestyle=get_policy_linestyle(policy),
-            linewidth=1.5,
+            linewidth=scale_linewidth(1.5),
         )
 
     if csv_rows:
@@ -1652,7 +1654,7 @@ def plot_early_return_timeline(
         step_rps,
         where="post",
         color="grey",
-        linewidth=1.5,
+        linewidth=scale_linewidth(1.5),
         linestyle="-",
         alpha=0.5,
     )
@@ -1886,7 +1888,7 @@ def plot_abort_reason_timeline(
                 reason_rates[reason],
                 label=reason,
                 color=color,
-                linewidth=1.5,
+                linewidth=scale_linewidth(1.5),
             )
             for t, rate in zip(reason_times[reason], reason_rates[reason]):
                 csv_rows.append(
@@ -1906,7 +1908,7 @@ def plot_abort_reason_timeline(
                     shed_rates,
                     label="ClientShed",
                     color=color,
-                    linewidth=1.5,
+                    linewidth=scale_linewidth(1.5),
                     linestyle="--",
                 )
                 for t, rate in zip(shed_times, shed_rates):
@@ -1940,7 +1942,7 @@ def plot_abort_reason_timeline(
             step_rps,
             where="post",
             color="grey",
-            linewidth=1.5,
+            linewidth=scale_linewidth(1.5),
             linestyle="-",
             alpha=0.5,
         )

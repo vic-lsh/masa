@@ -16,6 +16,7 @@ from .util import (
     PlotData,
     prepare_output_dir,
     read_data,
+    scale_markersize,
 )
 
 matplotlib.use("Agg")  # Use non-interactive backend for thread safety
@@ -53,7 +54,7 @@ def _plot_latency_cdf(
             latencies,
             percentiles,
             label=get_policy_display_name(policy),
-            markersize=5,
+            markersize=scale_markersize(5),
             **style,
         )
 

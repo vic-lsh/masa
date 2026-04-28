@@ -12,7 +12,9 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
-PLOT_FONT_SCALE = 1.25
+PLOT_FONT_SCALE = 1.875
+PLOT_LINEWIDTH_SCALE = 1.5
+PLOT_MARKER_SCALE = 1.5
 _PLOT_FONT_SCALE_APPLIED = False
 
 
@@ -32,13 +34,63 @@ def scale_fontsize(size: float | int) -> float:
     return float(size) * PLOT_FONT_SCALE
 
 
+def scale_linewidth(width: float | int) -> float:
+    return float(width) * PLOT_LINEWIDTH_SCALE
+
+
+def scale_markersize(size: float | int) -> float:
+    return float(size) * PLOT_MARKER_SCALE
+
+
 def configure_plot_font_sizes() -> None:
+    """Apply global font/line/marker scaling to matplotlib defaults.
+
+    Affects every plot in this package (and any unspecified rcParam consumer)
+    via rcParams, so call sites that don't override these values pick up the
+    scaling automatically. Call sites that *do* override (e.g.
+    `linewidth=2`) should wrap with `scale_linewidth(...)` / `scale_markersize(...)`
+    so explicit values scale alongside the defaults.
+    """
     global _PLOT_FONT_SCALE_APPLIED
     if _PLOT_FONT_SCALE_APPLIED:
         return
 
-    matplotlib.rcParams["font.size"] = scale_fontsize(
-        float(matplotlib.rcParamsDefault["font.size"])
+    defaults = matplotlib.rcParamsDefault
+    base_font = float(defaults["font.size"])
+
+    # Resolve a font-size rcParam to a number. Some defaults are strings
+    # ("medium") that mean "1.0 × font.size"; some default to None ("inherit
+    # from legend.fontsize"). Skip None — matplotlib's own resolution wins.
+    def _resolve_size(value):
+        if value is None:
+            return None
+        if isinstance(value, str):
+            scalings = getattr(matplotlib.font_manager, "font_scalings", None) or {}
+            return scalings.get(value, 1.0) * base_font
+        return float(value)
+
+    matplotlib.rcParams["font.size"] = scale_fontsize(base_font)
+    # Axes / tick / legend / title fonts scale with the same factor so
+    # individual plots don't have to thread `scale_fontsize` everywhere.
+    for key in (
+        "axes.titlesize",
+        "axes.labelsize",
+        "xtick.labelsize",
+        "ytick.labelsize",
+        "legend.fontsize",
+        "legend.title_fontsize",
+        "figure.titlesize",
+    ):
+        resolved = _resolve_size(defaults.get(key))
+        if resolved is None:
+            continue
+        matplotlib.rcParams[key] = scale_fontsize(resolved)
+
+    matplotlib.rcParams["lines.linewidth"] = scale_linewidth(
+        float(defaults["lines.linewidth"])
+    )
+    matplotlib.rcParams["lines.markersize"] = scale_markersize(
+        float(defaults["lines.markersize"])
     )
     _PLOT_FONT_SCALE_APPLIED = True
 
@@ -363,8 +415,8 @@ def apply_plot_defaults() -> None:
     """Apply shared matplotlib rcParams defaults for all Masa plots."""
     import matplotlib.pyplot as plt
 
-    plt.rcParams["legend.fontsize"] = 13
-    plt.rcParams["legend.title_fontsize"] = 13
+    plt.rcParams["legend.fontsize"] = scale_fontsize(13)
+    plt.rcParams["legend.title_fontsize"] = scale_fontsize(13)
 
 
 def get_policy_color(policy: str) -> str | None:
