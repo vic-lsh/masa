@@ -101,6 +101,7 @@ impl Idle {
         ret
     }
 
+    #[cfg_attr(feature = "sched_mt", allow(dead_code))]
     pub(super) fn transition_worker_to_searching(&self) -> bool {
         let state = State::load(&self.state, SeqCst);
         if 2 * state.num_searching() >= self.num_workers {
@@ -165,6 +166,7 @@ impl State {
         ret
     }
 
+    #[cfg_attr(feature = "sched_mt", allow(dead_code))]
     fn load(cell: &AtomicUsize, ordering: Ordering) -> State {
         State(cell.load(ordering))
     }
@@ -173,6 +175,7 @@ impl State {
         cell.fetch_add(num_searching | (1 << UNPARK_SHIFT), SeqCst);
     }
 
+    #[cfg_attr(feature = "sched_mt", allow(dead_code))]
     fn inc_num_searching(cell: &AtomicUsize, ordering: Ordering) {
         cell.fetch_add(1, ordering);
     }

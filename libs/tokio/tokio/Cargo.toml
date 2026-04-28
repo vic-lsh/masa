@@ -29,6 +29,7 @@ scheduler_trace = []
 static = []
 sched_prio = []
 tailclipper = ["sched_prio"]
+sched_mt = ["sched_prio"]
 sched_fifo = []
 # enable everything
 full = [

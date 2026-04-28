@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use tokio;
+#[cfg(not(feature = "sched_mt"))]
 use tokio::runtime::current_thread_queue_len;
 use tokio::task::JoinHandle;
 use tonic::{Request, Response, Status};
@@ -37,12 +38,19 @@ impl QueueMonitorTask {
             let start_time = Instant::now();
             loop {
                 interval.tick().await;
-                let queue_len = current_thread_queue_len();
-                let elapsed = start_time.elapsed();
-                println!(
-                    "current_thread_queue_len: {} (elapsed: {:?})",
-                    queue_len, elapsed
-                );
+                #[cfg(not(feature = "sched_mt"))]
+                {
+                    let queue_len = current_thread_queue_len();
+                    let elapsed = start_time.elapsed();
+                    println!(
+                        "current_thread_queue_len: {} (elapsed: {:?})",
+                        queue_len, elapsed
+                    );
+                }
+                #[cfg(feature = "sched_mt")]
+                {
+                    let _ = start_time.elapsed();
+                }
             }
         });
 

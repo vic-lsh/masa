@@ -20,6 +20,9 @@ pub(crate) use park::{Parker, Unparker};
 
 pub(crate) mod queue;
 
+#[cfg(feature = "sched_mt")]
+mod prio_queue;
+
 mod worker;
 pub(crate) use worker::{Context, Launch, Shared};
 

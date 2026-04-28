@@ -21,7 +21,8 @@ pub struct Args {
     pub config: PathBuf,
 }
 
-#[tokio::main(flavor = "current_thread")]
+#[cfg_attr(feature = "sched_mt", tokio::main)]
+#[cfg_attr(not(feature = "sched_mt"), tokio::main(flavor = "current_thread"))]
 //#[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     init_logging();

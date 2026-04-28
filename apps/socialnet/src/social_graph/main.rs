@@ -33,7 +33,8 @@ impl LocalArgs {
     }
 }
 
-#[tokio::main(flavor = "current_thread")]
+#[cfg_attr(feature = "sched_mt", tokio::main)]
+#[cfg_attr(not(feature = "sched_mt"), tokio::main(flavor = "current_thread"))]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Use tracing for consistent logging
     let subscriber = FmtSubscriber::builder()

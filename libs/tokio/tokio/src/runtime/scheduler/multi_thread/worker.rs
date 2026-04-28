@@ -62,6 +62,8 @@ use crate::runtime::context;
 use crate::runtime::scheduler::multi_thread::{
     idle, queue, Counters, Handle, Idle, Overflow, Parker, Stats, TraceStatus, Unparker,
 };
+#[cfg(feature = "sched_mt")]
+use crate::runtime::scheduler::multi_thread::prio_queue;
 use crate::runtime::scheduler::{inject, Defer, Lock};
 use crate::runtime::task::OwnedTasks;
 use crate::runtime::{
@@ -137,6 +139,7 @@ struct Core {
     stats: Stats,
 
     /// How often to check the global queue
+    #[cfg_attr(feature = "sched_mt", allow(dead_code))]
     global_queue_interval: u32,
 
     /// Fast random number generator.
@@ -181,6 +184,12 @@ pub(crate) struct Shared {
 
     pub(super) worker_metrics: Box<[WorkerMetrics]>,
 
+    /// Single shared priority queue used when `sched_mt` is enabled.
+    /// All workers push and pop through this mutex-protected heap instead
+    /// of per-worker local queues.
+    #[cfg(feature = "sched_mt")]
+    pub(super) prio_queue: prio_queue::SharedPrioQueue<Notified>,
+
     /// Only held to trigger some code on drop. This is used to get internal
     /// runtime metrics that can be useful when doing performance
     /// investigations. This does nothing (empty struct, no drop impl) unless
@@ -200,6 +209,7 @@ pub(crate) struct Synced {
 /// Used to communicate with a worker from other threads.
 struct Remote {
     /// Steals tasks from this worker.
+    #[cfg_attr(feature = "sched_mt", allow(dead_code))]
     pub(super) steal: queue::Steal<Arc<Handle>>,
 
     /// Unparks the associated worker thread
@@ -298,6 +308,8 @@ pub(super) fn create(
             scheduler_metrics: SchedulerMetrics::new(),
             worker_metrics: worker_metrics.into_boxed_slice(),
             _counters: Counters,
+            #[cfg(feature = "sched_mt")]
+            prio_queue: prio_queue::SharedPrioQueue::new(),
         },
         driver: driver_handle,
         blocking_spawner,
@@ -752,6 +764,10 @@ impl Core {
 
     /// Return the next notified task available to this worker.
     fn next_task(&mut self, worker: &Worker) -> Option<Notified> {
+        #[cfg(feature = "sched_mt")]
+        return worker.handle.shared.prio_queue.pop();
+
+        #[cfg(not(feature = "sched_mt"))]
         if self.tick % self.global_queue_interval == 0 {
             // Update the global queue interval, if needed
             self.tune_global_queue_interval(worker);
@@ -816,35 +832,47 @@ impl Core {
     /// a new worker will actually try to steal. The idea is to make sure not all
     /// workers will be trying to steal at the same time.
     fn steal_work(&mut self, worker: &Worker) -> Option<Notified> {
-        if !self.transition_to_searching(worker) {
+        // Under sched_mt all tasks are in the single shared priority queue;
+        // next_task() already checked it, so there is nothing left to steal.
+        #[cfg(feature = "sched_mt")]
+        {
+            let _ = worker;
             return None;
         }
 
-        let num = worker.handle.shared.remotes.len();
-        // Start from a random worker
-        let start = self.rand.fastrand_n(num as u32) as usize;
-
-        for i in 0..num {
-            let i = (start + i) % num;
-
-            // Don't steal from ourself! We know we don't have work.
-            if i == worker.index {
-                continue;
+        #[cfg(not(feature = "sched_mt"))]
+        {
+            if !self.transition_to_searching(worker) {
+                return None;
             }
 
-            let target = &worker.handle.shared.remotes[i];
-            if let Some(task) = target
-                .steal
-                .steal_into(&mut self.run_queue, &mut self.stats)
-            {
-                return Some(task);
+            let num = worker.handle.shared.remotes.len();
+            // Start from a random worker
+            let start = self.rand.fastrand_n(num as u32) as usize;
+
+            for i in 0..num {
+                let i = (start + i) % num;
+
+                // Don't steal from ourself! We know we don't have work.
+                if i == worker.index {
+                    continue;
+                }
+
+                let target = &worker.handle.shared.remotes[i];
+                if let Some(task) = target
+                    .steal
+                    .steal_into(&mut self.run_queue, &mut self.stats)
+                {
+                    return Some(task);
+                }
             }
+
+            // Fallback on checking the global queue
+            worker.handle.next_remote_task()
         }
-
-        // Fallback on checking the global queue
-        worker.handle.next_remote_task()
     }
 
+    #[cfg_attr(feature = "sched_mt", allow(dead_code))]
     fn transition_to_searching(&mut self, worker: &Worker) -> bool {
         if !self.is_searching {
             self.is_searching = worker.handle.shared.idle.transition_worker_to_searching();
@@ -862,6 +890,7 @@ impl Core {
         worker.handle.transition_worker_from_searching();
     }
 
+    #[cfg_attr(feature = "sched_mt", allow(dead_code))]
     fn has_tasks(&self) -> bool {
         self.lifo_slot.is_some() || self.run_queue.has_tasks()
     }
@@ -880,7 +909,13 @@ impl Core {
     /// Returns true if the transition happened, false if there is work to do first.
     fn transition_to_parked(&mut self, worker: &Worker) -> bool {
         // Workers should not park if they have work to do
-        if self.has_tasks() || self.is_traced {
+        let has_work = {
+            #[cfg(feature = "sched_mt")]
+            { !worker.handle.shared.prio_queue.is_empty() }
+            #[cfg(not(feature = "sched_mt"))]
+            { self.has_tasks() }
+        };
+        if has_work || self.is_traced {
             return false;
         }
 
@@ -906,9 +941,14 @@ impl Core {
 
     /// Returns `true` if the transition happened.
     fn transition_from_parked(&mut self, worker: &Worker) -> bool {
-        // If a task is in the lifo slot/run queue, then we must unpark regardless of
-        // being notified
-        if self.has_tasks() {
+        // If there is work available, unpark regardless of being notified.
+        let has_work = {
+            #[cfg(feature = "sched_mt")]
+            { !worker.handle.shared.prio_queue.is_empty() }
+            #[cfg(not(feature = "sched_mt"))]
+            { self.has_tasks() }
+        };
+        if has_work {
             // When a worker wakes, it should only transition to the "searching"
             // state when the wake originates from another worker *or* a new task
             // is pushed. We do *not* want the worker to transition to "searching"
@@ -981,6 +1021,7 @@ impl Core {
         park.shutdown(&handle.driver);
     }
 
+    #[cfg_attr(feature = "sched_mt", allow(dead_code))]
     fn tune_global_queue_interval(&mut self, worker: &Worker) {
         let next = self
             .stats
@@ -1041,13 +1082,25 @@ impl Handle {
         }
     }
 
-    fn schedule_local(&self, core: &mut Core, task: Notified, is_yield: bool) {
+    fn schedule_local(&self, core: &mut Core, task: Notified, _is_yield: bool) {
         core.stats.inc_local_schedule_count();
+
+        #[cfg(feature = "sched_mt")]
+        {
+            self.shared.prio_queue.push(task);
+            if core.park.is_some() {
+                self.notify_parked_local();
+            }
+            return;
+        }
 
         // Spawning from the worker thread. If scheduling a "yield" then the
         // task must always be pushed to the back of the queue, enabling other
         // tasks to be executed. If **not** a yield, then there is more
         // flexibility and the task may go to the front of the queue.
+        #[cfg(not(feature = "sched_mt"))]
+        let is_yield = _is_yield;
+        #[cfg(not(feature = "sched_mt"))]
         let should_notify = if is_yield || !core.lifo_enabled {
             core.run_queue
                 .push_back_or_overflow(task, self, &mut core.stats);
@@ -1070,6 +1123,7 @@ impl Handle {
         // Only notify if not currently parked. If `park` is `None`, then the
         // scheduling is from a resource driver. As notifications often come in
         // batches, the notification is delayed until the park is complete.
+        #[cfg(not(feature = "sched_mt"))]
         if should_notify && core.park.is_some() {
             self.notify_parked_local();
         }
@@ -1088,10 +1142,19 @@ impl Handle {
     fn push_remote_task(&self, task: Notified) {
         self.shared.scheduler_metrics.inc_remote_schedule_count();
 
-        let mut synced = self.shared.synced.lock();
-        // safety: passing in correct `idle::Synced`
-        unsafe {
-            self.shared.inject.push(&mut synced.inject, task);
+        #[cfg(feature = "sched_mt")]
+        {
+            self.shared.prio_queue.push(task);
+            return;
+        }
+
+        #[cfg(not(feature = "sched_mt"))]
+        {
+            let mut synced = self.shared.synced.lock();
+            // safety: passing in correct `idle::Synced`
+            unsafe {
+                self.shared.inject.push(&mut synced.inject, task);
+            }
         }
     }
 
@@ -1127,15 +1190,26 @@ impl Handle {
     }
 
     fn notify_if_work_pending(&self) {
-        for remote in &self.shared.remotes[..] {
-            if !remote.steal.is_empty() {
+        #[cfg(feature = "sched_mt")]
+        {
+            if !self.shared.prio_queue.is_empty() {
                 self.notify_parked_local();
-                return;
             }
+            return;
         }
 
-        if !self.shared.inject.is_empty() {
-            self.notify_parked_local();
+        #[cfg(not(feature = "sched_mt"))]
+        {
+            for remote in &self.shared.remotes[..] {
+                if !remote.steal.is_empty() {
+                    self.notify_parked_local();
+                    return;
+                }
+            }
+
+            if !self.shared.inject.is_empty() {
+                self.notify_parked_local();
+            }
         }
     }
 
@@ -1224,6 +1298,7 @@ fn with_current<R>(f: impl FnOnce(Option<&Context>) -> R) -> R {
 }
 
 // `u32::abs_diff` is not available on Tokio's MSRV.
+#[cfg_attr(feature = "sched_mt", allow(dead_code))]
 fn abs_diff(a: u32, b: u32) -> u32 {
     if a > b {
         a - b

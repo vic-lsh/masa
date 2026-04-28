@@ -119,10 +119,12 @@ impl Stats {
         self.batch.end_poll();
     }
 
+    #[cfg_attr(feature = "sched_mt", allow(dead_code))]
     pub(crate) fn incr_steal_count(&mut self, by: u16) {
         self.batch.incr_steal_count(by);
     }
 
+    #[cfg_attr(feature = "sched_mt", allow(dead_code))]
     pub(crate) fn incr_steal_operations(&mut self) {
         self.batch.incr_steal_operations();
     }

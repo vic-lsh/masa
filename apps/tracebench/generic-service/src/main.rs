@@ -6,6 +6,7 @@ use std::env;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+#[cfg(not(feature = "sched_mt"))]
 use tokio::runtime::current_thread_queue_len;
 use tonic::{transport::Server, Request, Response, Status};
 use trace_config::deployment::Deployment;
@@ -152,7 +153,8 @@ fn init_tracing() {
         .init();
 }
 
-#[tokio::main(flavor = "current_thread")]
+#[cfg_attr(feature = "sched_mt", tokio::main)]
+#[cfg_attr(not(feature = "sched_mt"), tokio::main(flavor = "current_thread"))]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     init_tracing();
 
@@ -206,12 +208,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let start_time = Instant::now();
         loop {
             interval.tick().await;
-            let queue_len = current_thread_queue_len();
-            let elapsed = start_time.elapsed();
-            info!(
-                "current_thread_queue_len: {} (elapsed: {:?})",
-                queue_len, elapsed
-            );
+            #[cfg(not(feature = "sched_mt"))]
+            {
+                let queue_len = current_thread_queue_len();
+                let elapsed = start_time.elapsed();
+                info!(
+                    "current_thread_queue_len: {} (elapsed: {:?})",
+                    queue_len, elapsed
+                );
+            }
+            #[cfg(feature = "sched_mt")]
+            let _ = start_time.elapsed();
         }
     });
 

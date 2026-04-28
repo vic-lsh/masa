@@ -194,7 +194,8 @@ fn hash_mac_address_pid(mac: &str) -> u16 {
     hash
 }
 
-#[tokio::main(flavor = "current_thread")]
+#[cfg_attr(feature = "sched_mt", tokio::main)]
+#[cfg_attr(not(feature = "sched_mt"), tokio::main(flavor = "current_thread"))]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // env_logger::init();
     // let addr = "[::1]:50051".parse()?;

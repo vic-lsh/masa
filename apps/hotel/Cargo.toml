@@ -58,6 +58,7 @@ scheduler_trace = [
     "tokio/scheduler_trace",
 ]
 sched_slo = ["masa/sched_slo"]
+sched_mt = ["masa/sched_mt"]
 sched_tailclipper = ["masa/sched_tailclipper"]
 sched_fifo = ["masa/sched_fifo"]
 sched_oracle = ["masa/sched_oracle"]

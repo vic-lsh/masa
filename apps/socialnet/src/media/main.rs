@@ -8,7 +8,8 @@ pub mod media {
     tonic::include_proto!("media");
 }
 
-#[tokio::main(flavor = "current_thread")]
+#[cfg_attr(feature = "sched_mt", tokio::main)]
+#[cfg_attr(not(feature = "sched_mt"), tokio::main(flavor = "current_thread"))]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // let addr = "[::1]:50051".parse::<SocketAddr>().unwrap();
 

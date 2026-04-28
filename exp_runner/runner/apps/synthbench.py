@@ -170,6 +170,7 @@ class SynthbenchApp(AppPlugin):
                     "DOCKER_COMPOSE_PROJECT_NAME=${DOCKER_COMPOSE_PROJECT_NAME:-}",
                     "MASA_FANOUT_AWARE=${MASA_FANOUT_AWARE:-1}",
                     "SYNTHBENCH_DISABLE_CPU_YIELD=${SYNTHBENCH_DISABLE_CPU_YIELD:-0}",
+                    "CPUS_PER_REPLICA=${CPUS_PER_REPLICA}",
                 ],
                 "volumes": ["${APP_CONFIG_PATH}:/usr/config.json:ro"],
                 "deploy": {"resources": {"limits": {"cpus": "${CPUS_PER_REPLICA}"}}},
@@ -212,7 +213,7 @@ class SynthbenchApp(AppPlugin):
                 env_vars["CHILD_REPLICAS"] = str(total_replicas)
 
                 # CPUs per replica (use default if not specified)
-                cpus_per_replica = app_config.get("child_cpus_per_replica", 1)
+                cpus_per_replica = call_graph.get("child_cpus_per_replica", 1)
                 env_vars["CPUS_PER_REPLICA"] = str(cpus_per_replica)
                 env_vars["SYNTHBENCH_DISABLE_CPU_YIELD"] = (
                     "1" if app_config.get("disable_cpu_yield", False) else "0"

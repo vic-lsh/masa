@@ -51,7 +51,9 @@ impl MetricsBatch {
 
 cfg_rt_multi_thread! {
     impl MetricsBatch {
+        #[cfg_attr(feature = "sched_mt", allow(dead_code))]
         pub(crate) fn incr_steal_count(&mut self, _by: u16) {}
+        #[cfg_attr(feature = "sched_mt", allow(dead_code))]
         pub(crate) fn incr_steal_operations(&mut self) {}
         pub(crate) fn incr_overflow_count(&mut self) {}
     }

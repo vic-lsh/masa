@@ -15,8 +15,31 @@ pub struct Args {
     pub config: PathBuf,
 }
 
+#[cfg(not(feature = "sched_mt"))]
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    main_inner().await
+}
+
+#[cfg(feature = "sched_mt")]
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let workers = std::env::var("CPUS_PER_REPLICA")
+        .ok()
+        .and_then(|v| v.parse::<f64>().ok())
+        .map(|f| (f as usize).max(1))
+        .unwrap_or_else(|| {
+            std::thread::available_parallelism()
+                .map(|n| n.get())
+                .unwrap_or(4)
+        });
+    tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(workers)
+        .enable_all()
+        .build()?
+        .block_on(main_inner())
+}
+
+async fn main_inner() -> Result<(), Box<dyn std::error::Error>> {
     init_logging();
 
     log::info!("Scheduler mode: {:?}", tokio::runtime::get_sched_flavor());
