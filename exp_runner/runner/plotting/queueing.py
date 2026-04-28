@@ -19,6 +19,8 @@ from .util import (
     prepare_output_dir,
     read_data,
     scale_fontsize,
+    scale_linewidth,
+    scale_markersize,
 )
 
 matplotlib.use("Agg")  # Use non-interactive backend for thread safety
@@ -237,8 +239,8 @@ def _plot_total_queueing_latency(
             rps_values,
             totals,
             label=get_policy_display_name(policy),
-            linewidth=2,
-            markersize=6,
+            linewidth=scale_linewidth(2),
+            markersize=scale_markersize(6),
             **get_policy_line_style(policy),
         )
 
@@ -334,7 +336,7 @@ def plot_queue_length_cdf_per_service(
                 values,
                 cdf,
                 label=get_policy_display_name(policy),
-                linewidth=2,
+                linewidth=scale_linewidth(2),
                 **style,
             )
             any_data = True
@@ -408,7 +410,7 @@ def plot_queue_length_timeline(
                 binned.index,
                 binned.values,
                 label=get_policy_display_name(policy),
-                linewidth=2,
+                linewidth=scale_linewidth(2),
                 **style,
             )
             any_data = True
@@ -487,14 +489,14 @@ def plot_goodput_abort_timeline(
             goodput_rate.values,
             label="Goodput",
             color="tab:green",
-            linewidth=2,
+            linewidth=scale_linewidth(2),
         )
         ax.plot(
             abort_rate.index,
             abort_rate.values,
             label="EarlyReturn (aborted)",
             color="tab:red",
-            linewidth=2,
+            linewidth=scale_linewidth(2),
             linestyle="--",
         )
         ax.set_title(get_policy_display_name(policy))

@@ -14,6 +14,8 @@ from .util import (
     get_policy_display_name,
     get_policy_line_style,
     scale_fontsize,
+    scale_linewidth,
+    scale_markersize,
 )
 
 logger = logging.getLogger(__name__)
@@ -194,8 +196,8 @@ def _plot_service_cpu(
             df_policy["time_bin_mid"],
             smoothed_cpu,
             label=get_policy_display_name(policy),
-            linewidth=2,
-            markersize=3,
+            linewidth=scale_linewidth(2),
+            markersize=scale_markersize(3),
             **styles[policy],
         )
 
@@ -424,8 +426,8 @@ def _plot_policy_services(
         ax.plot(
             df_grouped["time_rounded"],
             df_grouped["cpu_percent"],
-            linewidth=2,
-            markersize=3,
+            linewidth=scale_linewidth(2),
+            markersize=scale_markersize(3),
             **style,
         )
 

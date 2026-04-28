@@ -37,6 +37,8 @@ from .util import (
     get_policy_display_name,
     get_policy_line_style,
     read_policies,
+    scale_linewidth,
+    scale_markersize,
 )
 
 plt.rcParams["figure.max_open_warning"] = 0
@@ -425,8 +427,8 @@ def _plot_latency_cdf(
             values,
             cdf,
             label=get_policy_display_name(policy),
-            linewidth=2,
-            markersize=5,
+            linewidth=scale_linewidth(2),
+            markersize=scale_markersize(5),
             **style,
         )
         any_data = True
@@ -535,7 +537,7 @@ def _plot_goodput_timeline(
             all_times,
             all_goodput,
             label=get_policy_display_name(policy),
-            linewidth=1.5,
+            linewidth=scale_linewidth(1.5),
             zorder=3,
             **style,
         )
@@ -565,7 +567,7 @@ def _plot_goodput_timeline(
         step_rps,
         where="post",
         color="grey",
-        linewidth=1.5,
+        linewidth=scale_linewidth(1.5),
         linestyle="-",
         alpha=0.5,
         zorder=1,
@@ -659,7 +661,7 @@ def _plot_early_return_timeline(
             all_times,
             all_er_rate,
             label=get_policy_display_name(policy),
-            linewidth=1.5,
+            linewidth=scale_linewidth(1.5),
             **style,
         )
 
@@ -686,7 +688,7 @@ def _plot_early_return_timeline(
         step_rps,
         where="post",
         color="grey",
-        linewidth=1.5,
+        linewidth=scale_linewidth(1.5),
         linestyle="-",
         alpha=0.5,
     )
