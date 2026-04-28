@@ -76,12 +76,13 @@ Key policy flags:
 **Composable modifiers:**
 - `abort_slo`: Returns early for requests past their e2e deadline, avoiding wasteful work. Composable with any scheduling policy.
 - `abort_slack`: Superset of `abort_slo` — also predictively aborts when estimated remaining compute time exceeds time left. Requires `estimator`.
+- `signal_slack`: Same trigger as `abort_slack`, but the request continues; emits a soft `deadline_signal_count` to `ac_pred` so the ingress AIMD shrinks `admit_p` (throttling new arrivals) without aborting in-flight work. Requires `estimator` and `ac_pred`; mutually exclusive with `abort_slack`.
 
 **Admission control** (mutually exclusive):
 - `ac_pred`: Progressive cost-aware admission control — uses compute-time estimates and downstream utilization signals. Requires `estimator`.
 - `ac_rajomon`: Token-bucket rate limiting admission control.
 
-`scripts/check.sh` checks: default (no features), `sched_fifo`, `sched_fifo,abort_slo`, `sched_slo`, `sched_slo,abort_slo`, `sched_tailclipper,abort_slo`, `sched_slo,ac_rajomon`, `sched_slo,ac_pred,est_mean_var`, `sched_pred,abort_slo,ac_pred,est_mean_var`, `sched_pred,abort_slack,est_mean_var`.
+`scripts/check.sh` checks: default (no features), `sched_fifo`, `sched_fifo,abort_slo`, `sched_slo`, `sched_slo,abort_slo`, `sched_tailclipper,abort_slo`, `sched_slo,ac_rajomon`, `sched_slo,ac_pred,est_mean_var`, `sched_pred,abort_slo,ac_pred,est_mean_var`, `sched_pred,abort_slack,est_mean_var`, `sched_pred,signal_slack,ac_pred,est_mean_var`.
 
 ## Architecture
 

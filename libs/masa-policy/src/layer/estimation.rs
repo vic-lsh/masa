@@ -1,5 +1,5 @@
 // Estimation layer — latency tracking, deadline tightening, reprioritization,
-// and ABORT_SLACK local deadline checks.
+// and local deadline checks (ABORT_SLACK / SIGNAL_SLACK).
 //
 // Active when the `estimator` feature is enabled. Runs independently of the
 // admission control layer (ac_pred / ac_rajomon / noop).
@@ -7,7 +7,7 @@
 use std::sync::OnceLock;
 use std::task::Poll;
 
-use masa_core::{Context, PriorityHint, RootMethod, ABORT_SLACK};
+use masa_core::{Context, PriorityHint, RootMethod, ABORT_SLACK, SIGNAL_SLACK};
 use tonic_core::{Code, CowGrpcMethod, Response, Status};
 
 use super::est::estimator::DefaultLatencyEstimator;
@@ -60,8 +60,9 @@ impl LayerServer for EstimationServer {
 /// Per-request estimation layer state.
 ///
 /// Tracks latency distributions, tightens child deadlines (when `sched_pred`
-/// is enabled), handles ABORT_SLACK local deadline checks, and manages
-/// response metadata propagation.
+/// is enabled), handles local deadline checks (ABORT_SLACK aborts the request,
+/// SIGNAL_SLACK only signals admission control), and manages response metadata
+/// propagation.
 #[derive(Debug)]
 pub(crate) struct EstimationLayer {
     pub(crate) estimation: EstimationTracker<DefaultLatencyEstimator>,
@@ -97,7 +98,8 @@ impl Layer for EstimationLayer {
         }
     }
 
-    /// Reprioritize the current task and check ABORT_SLACK local deadline.
+    /// Reprioritize the current task and check the local deadline
+    /// (ABORT_SLACK aborts; SIGNAL_SLACK marks the soft signal).
     #[inline]
     fn before_poll<Ret>(&self, ctx: &Context) -> Result<(), Result<Response<Ret>, Status>> {
         if ABORT_SLACK {
@@ -113,6 +115,8 @@ impl Layer for EstimationLayer {
                 )));
             }
         }
+
+        self.mark_deadline_signal_if_late(ctx);
 
         #[cfg(feature = "sched_pred")]
         {
@@ -178,7 +182,11 @@ impl Layer for EstimationLayer {
         Ok(())
     }
 
-    /// Stop compute tracking and check ABORT_SLACK local deadline on Pending.
+    /// Stop compute tracking and check the local deadline.
+    ///
+    /// ABORT_SLACK can only replace a Pending poll with an early return.
+    /// SIGNAL_SLACK records a soft signal on every post-poll check, including
+    /// Ready, because it does not alter the response.
     #[inline]
     fn after_poll<Ret>(
         &self,
@@ -201,15 +209,27 @@ impl Layer for EstimationLayer {
                 }
             }
         }
+        self.mark_deadline_signal_if_late(ctx);
         Ok(())
     }
 
     /// Flush estimation observations and build response metadata.
+    ///
+    /// Three response classes drive different bookkeeping:
+    /// 1. `Err(EarlyReturn)` — abort path. Mark local early-return; skip
+    ///    flush so the latency estimator only learns from on-time work.
+    /// 2. `Ok` but the subtree tripped `signal_slack` — request finished
+    ///    successfully, but its wallclock was inflated by the
+    ///    signal-but-continue runtime. Skip flush for the same reason: an
+    ///    inflated observation poisons the estimator, which then
+    ///    over-tightens child deadlines in the next requests and triggers
+    ///    even more signals.
+    /// 3. `Ok` and on-time — the only case where the estimator should learn.
     #[inline]
     fn finalize<Ret>(&self, ctx: &mut Context, result: &mut Result<Response<Ret>, Status>) {
         if is_early_return_response(result) {
             self.request_metadata.mark_early_return();
-        } else {
+        } else if !self.request_metadata.is_subtree_signaled() {
             self.estimation.flush();
         }
         self.request_metadata.inject_response_meta(ctx);
@@ -217,6 +237,16 @@ impl Layer for EstimationLayer {
 }
 
 impl EstimationLayer {
+    #[inline]
+    fn mark_deadline_signal_if_late(&self, ctx: &Context) {
+        if SIGNAL_SLACK {
+            let local_deadline = ctx.deadline();
+            if local_deadline != 0 && masa_core::time_now() > local_deadline {
+                self.request_metadata.mark_deadline_signal();
+            }
+        }
+    }
+
     /// Compute child deadline and priority hint.
     ///
     /// When `sched_pred` is enabled, tightens the deadline by subtracting
