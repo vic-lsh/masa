@@ -117,7 +117,6 @@ def _plot_abort_reason_stacked(
         "E2EDeadline": "#999999",  # grey
         "LocalDeadlineExceeded": "#D55E00",  # vermillion
         "BeforePollFeasibility": "#E69F00",  # orange
-        "BeforeChildFeasibility": "#F0E442",  # yellow
         "PredAdmissionRej": "#56B4E9",  # sky blue
         "RajomonAdmissionRej": "#0072B2",  # blue
         "RajomonChildBudgetRej": "#009E73",  # bluish green
@@ -147,7 +146,6 @@ def _plot_abort_reason_stacked(
         "E2EDeadline",
         "LocalDeadlineExceeded",
         "BeforePollFeasibility",
-        "BeforeChildFeasibility",
         "PredAdmissionRej",
         "RajomonAdmissionRej",
         "RajomonChildBudgetRej",
