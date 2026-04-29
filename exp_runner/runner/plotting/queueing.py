@@ -19,6 +19,8 @@ from .util import (
     prepare_output_dir,
     read_data,
     scale_fontsize,
+    scale_linewidth,
+    scale_markersize,
 )
 
 matplotlib.use("Agg")  # Use non-interactive backend for thread safety
@@ -189,7 +191,6 @@ def _plot_queueing_breakdown(
         ncols=min(5, len(component_names)),
     )
 
-    fig.suptitle(title, fontsize=scale_fontsize(14), y=0.98)
     fig.tight_layout(rect=[0, 0, 1, 0.90])
     fig.savefig(output_path, dpi=300, bbox_inches="tight")
     plt.close(fig)
@@ -237,14 +238,13 @@ def _plot_total_queueing_latency(
             rps_values,
             totals,
             label=get_policy_display_name(policy),
-            linewidth=2,
-            markersize=6,
+            linewidth=scale_linewidth(2),
+            markersize=scale_markersize(6),
             **get_policy_line_style(policy),
         )
 
     ax.set_ylabel("Avg Total Queueing Latency (ms)")
     ax.set_xlabel("Load (requests per second)")
-    ax.set_title(title)
     ax.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
     ax.grid(True, alpha=0.3)
 
@@ -334,7 +334,7 @@ def plot_queue_length_cdf_per_service(
                 values,
                 cdf,
                 label=get_policy_display_name(policy),
-                linewidth=2,
+                linewidth=scale_linewidth(2),
                 **style,
             )
             any_data = True
@@ -352,7 +352,6 @@ def plot_queue_length_cdf_per_service(
     # Each data point is the max queue length observed at that service across
     # all calls within one root request. Repeated calls to the same service
     # are collapsed to a single max per root request.
-    fig.suptitle(f"Max queue length per root request, by service — {rps:g} RPS")
     fig.tight_layout()
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, dpi=300)
@@ -408,7 +407,7 @@ def plot_queue_length_timeline(
                 binned.index,
                 binned.values,
                 label=get_policy_display_name(policy),
-                linewidth=2,
+                linewidth=scale_linewidth(2),
                 **style,
             )
             any_data = True
@@ -423,7 +422,6 @@ def plot_queue_length_timeline(
     for i in range(len(services), nrows * ncols):
         axes[i // ncols][i % ncols].axis("off")
 
-    fig.suptitle(f"Queue length over time by service — {rps:g} RPS")
     fig.tight_layout()
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, dpi=300)
@@ -470,25 +468,28 @@ def plot_queue_latency_cdf(
             style["color"] = cmap(policy_idx % cmap.N)
         style["markevery"] = max(len(values) // 12, 1)
         ax.plot(
-            values,
-            cdf,
-            label=get_policy_display_name(policy),
-            linewidth=2,
-            markersize=5,
-            **style,
+            goodput_rate.index,
+            goodput_rate.values,
+            label="Goodput",
+            color="tab:green",
+            linewidth=scale_linewidth(2),
         )
-        any_data = True
+        ax.plot(
+            abort_rate.index,
+            abort_rate.values,
+            label="EarlyReturn (aborted)",
+            color="tab:red",
+            linewidth=scale_linewidth(2),
+            linestyle="--",
+        )
+        ax.set_title(get_policy_display_name(policy))
+        ax.set_xlabel("Time (s)")
+        ax.set_ylabel(f"Req/s ({_TIMELINE_BIN_SEC:.0f}s bins)")
+        ax.legend()
+        ax.grid(True, linestyle="--", alpha=0.4)
 
-    if not any_data:
-        plt.close(fig)
-        return
-
-    ax.set_xlabel("Total queueing latency (ms)")
-    ax.set_ylabel("CDF")
-    ax.set_title(f"Queue latency CDF at {rps:g} RPS")
-    ax.grid(True, which="both", linestyle="--", alpha=0.4)
-    ax.set_xlim(left=0)
-    ax.legend()
+    for i in range(n, nrows * ncols):
+        axes[i // ncols][i % ncols].axis("off")
 
     fig.tight_layout()
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -496,7 +497,9 @@ def plot_queue_latency_cdf(
     plt.close(fig)
 
 
-def generate_plots(args, plot_data: PlotData | None = None) -> None:
+def generate_plots(
+    args, plot_data: PlotData | None = None, *, summary_only: bool = False
+) -> None:
     prepare_output_dir(args)
 
     if plot_data is None:
@@ -511,6 +514,11 @@ def generate_plots(args, plot_data: PlotData | None = None) -> None:
         results = plot_data.results
 
     futures = []
+
+    # All queueing plots are per-iteration today; summary_only skips them
+    # entirely. (No averaged queueing plot exists yet.)
+    if summary_only:
+        return
 
     for i in range(repeats):
         queueing_dir = os.path.join(args.output_dir, str(i), "queueing")

@@ -3,6 +3,7 @@ import csv as _csv
 import json
 import logging
 import os
+import pickle
 from dataclasses import dataclass
 from argparse import Namespace
 from pathlib import Path
@@ -12,7 +13,9 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
-PLOT_FONT_SCALE = 1.25
+PLOT_FONT_SCALE = 2.8125
+PLOT_LINEWIDTH_SCALE = 2.25
+PLOT_MARKER_SCALE = 2.25
 _PLOT_FONT_SCALE_APPLIED = False
 
 
@@ -32,13 +35,63 @@ def scale_fontsize(size: float | int) -> float:
     return float(size) * PLOT_FONT_SCALE
 
 
+def scale_linewidth(width: float | int) -> float:
+    return float(width) * PLOT_LINEWIDTH_SCALE
+
+
+def scale_markersize(size: float | int) -> float:
+    return float(size) * PLOT_MARKER_SCALE
+
+
 def configure_plot_font_sizes() -> None:
+    """Apply global font/line/marker scaling to matplotlib defaults.
+
+    Affects every plot in this package (and any unspecified rcParam consumer)
+    via rcParams, so call sites that don't override these values pick up the
+    scaling automatically. Call sites that *do* override (e.g.
+    `linewidth=2`) should wrap with `scale_linewidth(...)` / `scale_markersize(...)`
+    so explicit values scale alongside the defaults.
+    """
     global _PLOT_FONT_SCALE_APPLIED
     if _PLOT_FONT_SCALE_APPLIED:
         return
 
-    matplotlib.rcParams["font.size"] = scale_fontsize(
-        float(matplotlib.rcParamsDefault["font.size"])
+    defaults = matplotlib.rcParamsDefault
+    base_font = float(defaults["font.size"])
+
+    # Resolve a font-size rcParam to a number. Some defaults are strings
+    # ("medium") that mean "1.0 × font.size"; some default to None ("inherit
+    # from legend.fontsize"). Skip None — matplotlib's own resolution wins.
+    def _resolve_size(value):
+        if value is None:
+            return None
+        if isinstance(value, str):
+            scalings = getattr(matplotlib.font_manager, "font_scalings", None) or {}
+            return scalings.get(value, 1.0) * base_font
+        return float(value)
+
+    matplotlib.rcParams["font.size"] = scale_fontsize(base_font)
+    # Axes / tick / legend / title fonts scale with the same factor so
+    # individual plots don't have to thread `scale_fontsize` everywhere.
+    for key in (
+        "axes.titlesize",
+        "axes.labelsize",
+        "xtick.labelsize",
+        "ytick.labelsize",
+        "legend.fontsize",
+        "legend.title_fontsize",
+        "figure.titlesize",
+    ):
+        resolved = _resolve_size(defaults.get(key))
+        if resolved is None:
+            continue
+        matplotlib.rcParams[key] = scale_fontsize(resolved)
+
+    matplotlib.rcParams["lines.linewidth"] = scale_linewidth(
+        float(defaults["lines.linewidth"])
+    )
+    matplotlib.rcParams["lines.markersize"] = scale_markersize(
+        float(defaults["lines.markersize"])
     )
     _PLOT_FONT_SCALE_APPLIED = True
 
@@ -255,7 +308,77 @@ def read_policies(config_dir: Path) -> list[str]:
     return policies
 
 
-def load_plot_data(config_dir: Path | str, data_dir: Path | str) -> PlotData:
+_PLOT_CACHE_FILENAME = ".plotcache.pkl"
+_PLOT_CACHE_VERSION = 1
+
+
+def _plot_cache_key(config_dir: Path, data_dir: Path) -> tuple:
+    """Cheap fingerprint of inputs to load_plot_data. Any change in the
+    gen_config, policies file, or per-RPS request CSVs invalidates the
+    cache."""
+    config_path = config_dir / "gen_config.json"
+    policies_path = config_dir / "policies"
+    parts: list = [_PLOT_CACHE_VERSION]
+    for p in (config_path, policies_path):
+        try:
+            st = p.stat()
+            parts.append((str(p.name), st.st_mtime_ns, st.st_size))
+        except FileNotFoundError:
+            parts.append((str(p.name), None, None))
+
+    csv_count = 0
+    max_mtime_ns = 0
+    total_size = 0
+    for csv_path in data_dir.rglob("r*.csv"):
+        try:
+            st = csv_path.stat()
+        except FileNotFoundError:
+            continue
+        csv_count += 1
+        if st.st_mtime_ns > max_mtime_ns:
+            max_mtime_ns = st.st_mtime_ns
+        total_size += st.st_size
+    parts.append(("csv", csv_count, max_mtime_ns, total_size))
+    return tuple(parts)
+
+
+def load_plot_data(
+    config_dir: Path | str,
+    data_dir: Path | str,
+    *,
+    use_cache: bool = True,
+) -> PlotData:
+    """Parse experiment data into a PlotData bundle.
+
+    Caching: when `use_cache` is true (default) the result is pickled to
+    `<data_dir>/.plotcache.pkl` keyed by gen_config / policies / CSV mtimes
+    and total size. Subsequent calls reuse the cached bundle when the inputs
+    are unchanged, which makes plot iteration ~10x faster on large data dirs.
+    Clear the cache manually (`rm <data_dir>/.plotcache.pkl`) or pass
+    `use_cache=False` to force re-parse.
+    """
+    config_dir_path = Path(config_dir)
+    data_dir_path = Path(data_dir)
+    cache_path = data_dir_path / _PLOT_CACHE_FILENAME
+
+    cache_key = None
+    if use_cache:
+        cache_key = _plot_cache_key(config_dir_path, data_dir_path)
+        if cache_path.exists():
+            try:
+                with open(cache_path, "rb") as f:
+                    blob = pickle.load(f)
+                if blob.get("key") == cache_key and isinstance(
+                    blob.get("data"), PlotData
+                ):
+                    logger.debug(f"plot cache hit: {cache_path}")
+                    return blob["data"]
+                logger.debug(f"plot cache stale at {cache_path}; re-parsing")
+            except Exception as exc:
+                logger.warning(
+                    f"plot cache at {cache_path} unreadable ({exc}); re-parsing"
+                )
+
     with open(os.path.join(config_dir, "gen_config.json")) as f:
         config = json.load(f)
     repeats = config["Repeats"]
@@ -308,7 +431,7 @@ def load_plot_data(config_dir: Path | str, data_dir: Path | str) -> PlotData:
 
     apis.append("ALL")
 
-    return PlotData(
+    plot_data = PlotData(
         repeats=repeats,
         apis=apis,
         policies=policies,
@@ -318,6 +441,19 @@ def load_plot_data(config_dir: Path | str, data_dir: Path | str) -> PlotData:
         warmup_sec=warmup_sec,
         results=results,
     )
+
+    if use_cache and cache_key is not None:
+        try:
+            tmp_path = cache_path.with_suffix(cache_path.suffix + ".tmp")
+            with open(tmp_path, "wb") as f:
+                pickle.dump(
+                    {"key": cache_key, "data": plot_data}, f, protocol=pickle.HIGHEST_PROTOCOL
+                )
+            tmp_path.replace(cache_path)
+        except Exception as exc:
+            logger.warning(f"plot cache write failed at {cache_path}: {exc}")
+
+    return plot_data
 
 
 def read_data(config_dir, data_dir):
@@ -363,8 +499,8 @@ def apply_plot_defaults() -> None:
     """Apply shared matplotlib rcParams defaults for all Masa plots."""
     import matplotlib.pyplot as plt
 
-    plt.rcParams["legend.fontsize"] = 13
-    plt.rcParams["legend.title_fontsize"] = 13
+    plt.rcParams["legend.fontsize"] = scale_fontsize(13)
+    plt.rcParams["legend.title_fontsize"] = scale_fontsize(13)
 
 
 def get_policy_color(policy: str) -> str | None:
