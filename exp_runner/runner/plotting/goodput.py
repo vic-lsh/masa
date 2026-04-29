@@ -1331,7 +1331,12 @@ def _plot_avg_goodput_bars(
     ax.set_ylabel("average goodput (req/s)")
     ax.set_xticks(index)
     ax.set_xticklabels([str(rps) for rps in rps_values])
-    ax.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
+    ax.legend(
+        loc="lower center",
+        bbox_to_anchor=(0.5, 1.02),
+        ncols=min(len(sorted_policies), 3),
+        frameon=False,
+    )
     _style_axes(ax)
     fig.tight_layout()
     fig.savefig(output_path, dpi=300, bbox_inches="tight")
