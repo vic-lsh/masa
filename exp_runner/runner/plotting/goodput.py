@@ -967,8 +967,8 @@ def _plot_all_api_goodput_clean(
             markersize=scale_markersize(6),
             **get_policy_line_style(policy),
         )
-    ax1.set_ylabel("Goodput (req/s meeting SLO)")
-    ax1.set_xlabel("Load (requests per second)")
+    ax1.set_ylabel("Goodput (req/s)")
+    ax1.set_xlabel("Load (req/s)")
     _set_line_chart_ylim(ax1, policy_total_goodputs)
 
     _place_line_chart_legend(fig1, ax1, max_cols=3, top_margin=0.91)
@@ -1005,7 +1005,7 @@ def _plot_all_api_goodput_clean(
         for policy in sorted_policies
     }
     ax3.set_ylabel("Goodput / Offered Load")
-    ax3.set_xlabel("Load (requests per second)")
+    ax3.set_xlabel("Load (req/s)")
     _set_line_chart_ylim(ax3, fraction_series, minimum_top=0.1)
 
     _place_line_chart_legend(fig3, ax3, max_cols=3, top_margin=0.91)
@@ -1270,8 +1270,8 @@ def _plot_policy_goodput_comparison(
             **get_policy_bar_style(policy),
         )
 
-    ax.set_xlabel("Requests Per Second (RPS)")
-    ax.set_ylabel("Goodput (requests meeting SLO per second)")
+    ax.set_xlabel("Load (req/s)")
+    ax.set_ylabel("Goodput (req/s)")
     ax.set_xticks(index)
     ax.set_xticklabels([str(rps) for rps in rps_values])
     ax.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
@@ -1299,6 +1299,43 @@ def _plot_goodput_time_series_task(
         bucket_seconds=1.0,
         title=title,
     )
+
+
+def _plot_avg_goodput_bars(
+    output_path: str,
+    sorted_policies: list,
+    rps_values: list,
+    avg_totals_by_policy: dict,
+) -> None:
+    """Render the canonical per-policy averaged-goodput bar chart.
+
+    Produces the same visual style as `goodput_<API>.png`: one bar per
+    (policy, RPS), x-axis labeled by RPS step, legend listing policies.
+    Used for both per-API plots and for the totalled ALL view.
+    """
+    index = np.arange(len(rps_values))
+    fig, ax = plt.subplots(figsize=(12, 6))
+    bar_width = 0.12
+
+    for j, policy in enumerate(sorted_policies):
+        offset = (j - len(sorted_policies) / 2 + 0.5) * bar_width
+        ax.bar(
+            index + offset,
+            avg_totals_by_policy.get(policy, []),
+            bar_width,
+            label=get_policy_display_name(policy),
+            **get_policy_bar_style(policy),
+        )
+
+    ax.set_xlabel("Requests Per Second (RPS)")
+    ax.set_ylabel("average goodput (req/s)")
+    ax.set_xticks(index)
+    ax.set_xticklabels([str(rps) for rps in rps_values])
+    ax.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
+    _style_axes(ax)
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=300, bbox_inches="tight")
+    plt.close(fig)
 
 
 def _plot_averaged_goodput(
@@ -1372,38 +1409,29 @@ def _plot_averaged_goodput(
             subtitle=f"Averaged over {repeats} run(s). Panel A: total; Panel B: per-policy stacked bars.",
             request_type_color_mapping=request_type_color_mapping,
         )
+        # Also emit a canonical bar chart of the totals so the ALL view has
+        # the same per-policy bars as goodput_<API>.png plots.
+        _plot_avg_goodput_bars(
+            os.path.join(output_dir, f"goodput_{api}_aggregated_bar.png"),
+            sorted_policies,
+            rps_values,
+            avg_totals,
+        )
         return
 
-    fig, ax = plt.subplots(figsize=(12, 6))
-    bar_width = 0.12
-
-    for j, policy in enumerate(sorted_policies):
-        average_goodput = (
+    avg_totals = {
+        policy: (
             sum(np.array(policy_goodputs[i][api][policy]) for i in range(repeats))
             / repeats
-        )
-        offset = (j - len(sorted_policies) / 2 + 0.5) * bar_width
-        ax.bar(
-            index + offset,
-            average_goodput,
-            bar_width,
-            label=get_policy_display_name(policy),
-            **get_policy_bar_style(policy),
-        )
-
-    ax.set_xlabel("Requests Per Second (RPS)")
-    ax.set_ylabel("average goodput (requests meeting SLO per second)")
-    ax.set_xticks(index)
-    ax.set_xticklabels([str(rps) for rps in rps_values])
-    ax.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
-    _style_axes(ax)
-    fig.tight_layout()
-    fig.savefig(
+        ).tolist()
+        for policy in sorted_policies
+    }
+    _plot_avg_goodput_bars(
         os.path.join(output_dir, f"goodput_{api}.png"),
-        dpi=300,
-        bbox_inches="tight",
+        sorted_policies,
+        rps_values,
+        avg_totals,
     )
-    plt.close(fig)
 
 
 def plot_goodput_timeline(
