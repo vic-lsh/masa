@@ -753,10 +753,39 @@ def _resolve_rps_values(
     raise FileNotFoundError("No RPS values found for MSSIM output")
 
 
-def generate_plots(args) -> None:
+def generate_plots(
+    args,
+    *,
+    only: list[str] | None = None,
+    skip: list[str] | None = None,
+    summary_only: bool = False,
+    use_cache: bool = True,
+) -> None:
+    """Render the mssim plot pipeline, honoring the same selector flags as
+    the regular hotel/socialnet/synthetic path.
+
+    Module names match `all.PLOT_MODULES` (goodput, latency, queueing, cpu)
+    so `--only goodput` skips latency/queueing/cpu sections — including the
+    per-RPS `_plot_goodput_abort_timeline` calls under queueing.
+    """
+    # Lazy import to avoid an `all` ↔ `mssim` import cycle.
+    from .all import _resolve_modules
+
+    enabled = _resolve_modules(only, skip)
+    if not enabled:
+        return
+    plot_goodput = "goodput" in enabled
+    plot_latency = "latency" in enabled
+    plot_queueing = "queueing" in enabled
+    plot_cpu = "cpu" in enabled
+
     config_dir = Path(args.config_dir)
     data_dir = Path(args.data_dir)
     output_dir = Path(args.output_dir)
+    # use_cache is honored via load_plot_data in the regular path; mssim
+    # parses raw policy_data on demand via _load_policy_data, which has no
+    # equivalent disk cache. Accept the kwarg for CLI symmetry.
+    _ = use_cache
 
     gen_config = _load_json(config_dir / "gen_config.json")
     mssim_config = _load_json(config_dir / "mssim.json")
@@ -849,107 +878,113 @@ def generate_plots(args) -> None:
         }
 
         iteration_output = output_dir / str(iteration)
-        _plot_goodput_lines(
-            iteration_output / "goodput_absolute.png",
-            rps_values,
-            goodput_by_policy,
-            title=f"Goodput vs RPS (SLO={slo_ms:g} ms)",
-            ylabel="Goodput (RPS)",
-        )
-        _write_goodput_csv(
-            iteration_output / "goodput_absolute.csv",
-            rps_values,
-            goodput_by_policy,
-        )
-        _plot_goodput_lines(
-            iteration_output / "goodput_fraction.png",
-            rps_values,
-            fraction_by_policy,
-            title=f"Goodput fraction vs RPS (SLO={slo_ms:g} ms)",
-            ylabel="Goodput / Offered load",
-        )
-        _write_goodput_csv(
-            iteration_output / "goodput_fraction.csv",
-            rps_values,
-            fraction_by_policy,
-        )
-        _plot_latency_percentiles(
-            iteration_output / "latency_percentiles.png",
-            rps_values,
-            percentiles_by_policy,
-            percentiles=percentiles,
-            slo_ms=slo_ms,
-        )
-        _plot_goodput_timeline(
-            iteration_output / "goodput_timeline.png",
-            rps_sequence,
-            policy_data,
-            duration_sec=duration_sec,
-            slo_ms=slo_ms,
-        )
-        _plot_early_return_timeline(
-            iteration_output / "early_return_timeline.png",
-            rps_sequence,
-            policy_data,
-            duration_sec=duration_sec,
-        )
-        plot_abort_reason_timeline(
-            str(iteration_output / "abort_reason_timeline.png"),
-            rps_sequence,
-            list(policies),
-            policy_data,
-            duration_sec=duration_sec,
-            data_dir=str(data_dir),
-            iteration=iteration,
-            warmup_sec=warmup_sec,
-        )
-
-        # Plot early return breakdowns
-        _plot_early_return_breakdown(
-            str(iteration_output / "early_return.png"),
-            policies=policies,
-            rps_values=rps_values,
-            policy_total_early_returns=total_early_returns_by_policy,
-            policy_early_returns_breakdown=early_returns_breakdown_by_policy,
-            title="Early-return requests breakdown by Service::Method",
-            stacked_services=True,
-        )
-        _plot_early_return_breakdown(
-            str(iteration_output / "early_return_last_child.png"),
-            policies=policies,
-            rps_values=rps_values,
-            policy_total_early_returns=total_early_returns_lc_by_policy,
-            policy_early_returns_breakdown=early_returns_lc_breakdown_by_policy,
-            title="Early-return requests breakdown by Last Child Service::Method",
-        )
-
-        # Generate CDF plots for each RPS value
-        for rps in rps_values:
-            rps_policy_data = {
-                policy: policy_data.get(policy, {}).get(rps, pd.DataFrame())
-                for policy in policies
-            }
-            _plot_latency_cdf(
-                iteration_output / f"latency_cdf_{rps:g}rps.png",
-                rps,
-                rps_policy_data,
+        if plot_goodput and not summary_only:
+            _plot_goodput_lines(
+                iteration_output / "goodput_absolute.png",
+                rps_values,
+                goodput_by_policy,
+                title=f"Goodput vs RPS (SLO={slo_ms:g} ms)",
+                ylabel="Goodput (RPS)",
+            )
+            _write_goodput_csv(
+                iteration_output / "goodput_absolute.csv",
+                rps_values,
+                goodput_by_policy,
+            )
+            _plot_goodput_lines(
+                iteration_output / "goodput_fraction.png",
+                rps_values,
+                fraction_by_policy,
+                title=f"Goodput fraction vs RPS (SLO={slo_ms:g} ms)",
+                ylabel="Goodput / Offered load",
+            )
+            _write_goodput_csv(
+                iteration_output / "goodput_fraction.csv",
+                rps_values,
+                fraction_by_policy,
+            )
+        if plot_latency and not summary_only:
+            _plot_latency_percentiles(
+                iteration_output / "latency_percentiles.png",
+                rps_values,
+                percentiles_by_policy,
+                percentiles=percentiles,
                 slo_ms=slo_ms,
             )
-            _plot_queue_length_cdf_per_service(
-                iteration_output / f"queue_length_cdf_{rps:g}rps.png",
-                rps,
-                rps_policy_data,
+        if plot_goodput and not summary_only:
+            _plot_goodput_timeline(
+                iteration_output / "goodput_timeline.png",
+                rps_sequence,
+                policy_data,
+                duration_sec=duration_sec,
+                slo_ms=slo_ms,
             )
-            _plot_queue_length_timeline(
-                iteration_output / f"queue_length_timeline_{rps:g}rps.png",
-                rps,
-                rps_policy_data,
+            _plot_early_return_timeline(
+                iteration_output / "early_return_timeline.png",
+                rps_sequence,
+                policy_data,
+                duration_sec=duration_sec,
             )
-            _plot_goodput_abort_timeline(
-                iteration_output / f"goodput_abort_timeline_{rps:g}rps.png",
-                rps,
-                rps_policy_data,
+            plot_abort_reason_timeline(
+                str(iteration_output / "abort_reason_timeline.png"),
+                rps_sequence,
+                list(policies),
+                policy_data,
+                duration_sec=duration_sec,
+                data_dir=str(data_dir),
+                iteration=iteration,
+                warmup_sec=warmup_sec,
             )
+
+            # Plot early return breakdowns
+            _plot_early_return_breakdown(
+                str(iteration_output / "early_return.png"),
+                policies=policies,
+                rps_values=rps_values,
+                policy_total_early_returns=total_early_returns_by_policy,
+                policy_early_returns_breakdown=early_returns_breakdown_by_policy,
+                title="Early-return requests breakdown by Service::Method",
+                stacked_services=True,
+            )
+            _plot_early_return_breakdown(
+                str(iteration_output / "early_return_last_child.png"),
+                policies=policies,
+                rps_values=rps_values,
+                policy_total_early_returns=total_early_returns_lc_by_policy,
+                policy_early_returns_breakdown=early_returns_lc_breakdown_by_policy,
+                title="Early-return requests breakdown by Last Child Service::Method",
+            )
+
+        # Generate CDF / queue plots for each RPS value
+        if (plot_latency or plot_queueing) and not summary_only:
+            for rps in rps_values:
+                rps_policy_data = {
+                    policy: policy_data.get(policy, {}).get(rps, pd.DataFrame())
+                    for policy in policies
+                }
+                if plot_latency:
+                    _plot_latency_cdf(
+                        iteration_output / f"latency_cdf_{rps:g}rps.png",
+                        rps,
+                        rps_policy_data,
+                        slo_ms=slo_ms,
+                    )
+                if plot_queueing:
+                    _plot_queue_length_cdf_per_service(
+                        iteration_output / f"queue_length_cdf_{rps:g}rps.png",
+                        rps,
+                        rps_policy_data,
+                    )
+                    _plot_queue_length_timeline(
+                        iteration_output / f"queue_length_timeline_{rps:g}rps.png",
+                        rps,
+                        rps_policy_data,
+                    )
+                    _plot_goodput_abort_timeline(
+                        iteration_output / f"goodput_abort_timeline_{rps:g}rps.png",
+                        rps,
+                        rps_policy_data,
+                    )
 
     if per_iteration_goodput:
         avg_goodput: Dict[str, List[float]] = {}
@@ -975,90 +1010,97 @@ def generate_plots(args) -> None:
                     ]
                     avg_percentiles[policy][p].append(float(np.nanmean(pct_values)))
 
-        _plot_goodput_lines(
-            output_dir / "goodput_absolute_avg.png",
-            rps_values,
-            avg_goodput,
-            title=f"Average goodput vs RPS (SLO={slo_ms:g} ms)",
-            ylabel="Goodput (RPS)",
-        )
-        _write_goodput_csv(
-            output_dir / "goodput_absolute_avg.csv",
-            rps_values,
-            avg_goodput,
-        )
-        fraction_by_policy = {
-            policy: [
-                (val / rps) if rps else float("nan")
-                for val, rps in zip(values, rps_values)
-            ]
-            for policy, values in avg_goodput.items()
-        }
-        _plot_goodput_lines(
-            output_dir / "goodput_fraction_avg.png",
-            rps_values,
-            fraction_by_policy,
-            title=f"Average goodput fraction vs RPS (SLO={slo_ms:g} ms)",
-            ylabel="Goodput / Offered load",
-        )
-        _write_goodput_csv(
-            output_dir / "goodput_fraction_avg.csv",
-            rps_values,
-            fraction_by_policy,
-        )
-        _plot_latency_percentiles(
-            output_dir / "latency_percentiles_avg.png",
-            rps_values,
-            avg_percentiles,
-            percentiles=percentiles,
-            slo_ms=slo_ms,
-        )
-        # Generate averaged CDF plots for each RPS value
-        # Combine data from all iterations for each policy and RPS
-        for rps in rps_values:
-            avg_rps_policy_data: Dict[str, pd.DataFrame] = {}
-            for policy in policies:
-                combined_dfs = []
-                for iteration in iteration_ids:
-                    iteration_dir = data_dir / str(iteration)
-                    policy_dir = iteration_dir / policy
-                    # warmup_sec=0: loadgen already drops warmup samples at
-                    # source (see parallel call at _load_policy_data above).
-                    policy_data_iter = _load_policy_data(policy_dir, 0.0)
-                    df = policy_data_iter.get(rps, pd.DataFrame())
-                    if not df.empty:
-                        combined_dfs.append(df)
-                if combined_dfs:
-                    avg_rps_policy_data[policy] = pd.concat(
-                        combined_dfs, ignore_index=True
-                    )
-                else:
-                    avg_rps_policy_data[policy] = pd.DataFrame()
-            _plot_latency_cdf(
-                output_dir / f"latency_cdf_{rps:g}rps_avg.png",
-                rps,
-                avg_rps_policy_data,
+        if plot_goodput:
+            _plot_goodput_lines(
+                output_dir / "goodput_absolute_avg.png",
+                rps_values,
+                avg_goodput,
+                title=f"Average goodput vs RPS (SLO={slo_ms:g} ms)",
+                ylabel="Goodput (RPS)",
+            )
+            _write_goodput_csv(
+                output_dir / "goodput_absolute_avg.csv",
+                rps_values,
+                avg_goodput,
+            )
+            fraction_by_policy = {
+                policy: [
+                    (val / rps) if rps else float("nan")
+                    for val, rps in zip(values, rps_values)
+                ]
+                for policy, values in avg_goodput.items()
+            }
+            _plot_goodput_lines(
+                output_dir / "goodput_fraction_avg.png",
+                rps_values,
+                fraction_by_policy,
+                title=f"Average goodput fraction vs RPS (SLO={slo_ms:g} ms)",
+                ylabel="Goodput / Offered load",
+            )
+            _write_goodput_csv(
+                output_dir / "goodput_fraction_avg.csv",
+                rps_values,
+                fraction_by_policy,
+            )
+        if plot_latency:
+            _plot_latency_percentiles(
+                output_dir / "latency_percentiles_avg.png",
+                rps_values,
+                avg_percentiles,
+                percentiles=percentiles,
                 slo_ms=slo_ms,
             )
-            _plot_queue_length_cdf_per_service(
-                output_dir / f"queue_length_cdf_{rps:g}rps_avg.png",
-                rps,
-                avg_rps_policy_data,
-            )
-            _plot_queue_length_timeline(
-                output_dir / f"queue_length_timeline_{rps:g}rps_avg.png",
-                rps,
-                avg_rps_policy_data,
-            )
-            _plot_goodput_abort_timeline(
-                output_dir / f"goodput_abort_timeline_{rps:g}rps_avg.png",
-                rps,
-                avg_rps_policy_data,
-            )
+        # Generate averaged CDF / queueing plots for each RPS value when
+        # those modules are enabled. Skip the rps loop entirely otherwise so
+        # we don't reload policy CSVs for nothing.
+        if plot_latency or plot_queueing:
+            for rps in rps_values:
+                avg_rps_policy_data: Dict[str, pd.DataFrame] = {}
+                for policy in policies:
+                    combined_dfs = []
+                    for iteration in iteration_ids:
+                        iteration_dir = data_dir / str(iteration)
+                        policy_dir = iteration_dir / policy
+                        # warmup_sec=0: loadgen already drops warmup samples at
+                        # source (see parallel call at _load_policy_data above).
+                        policy_data_iter = _load_policy_data(policy_dir, 0.0)
+                        df = policy_data_iter.get(rps, pd.DataFrame())
+                        if not df.empty:
+                            combined_dfs.append(df)
+                    if combined_dfs:
+                        avg_rps_policy_data[policy] = pd.concat(
+                            combined_dfs, ignore_index=True
+                        )
+                    else:
+                        avg_rps_policy_data[policy] = pd.DataFrame()
+                if plot_latency:
+                    _plot_latency_cdf(
+                        output_dir / f"latency_cdf_{rps:g}rps_avg.png",
+                        rps,
+                        avg_rps_policy_data,
+                        slo_ms=slo_ms,
+                    )
+                if plot_queueing:
+                    _plot_queue_length_cdf_per_service(
+                        output_dir / f"queue_length_cdf_{rps:g}rps_avg.png",
+                        rps,
+                        avg_rps_policy_data,
+                    )
+                    _plot_queue_length_timeline(
+                        output_dir / f"queue_length_timeline_{rps:g}rps_avg.png",
+                        rps,
+                        avg_rps_policy_data,
+                    )
+                    _plot_goodput_abort_timeline(
+                        output_dir / f"goodput_abort_timeline_{rps:g}rps_avg.png",
+                        rps,
+                        avg_rps_policy_data,
+                    )
 
-    # Generate CPU utilization plots
-    print("Generating CPU utilization plots...")
-    try:
-        cpu.plot_cpu_utilization(data_dir, output_dir, policies=policies)
-    except Exception as e:
-        print(f"Warning: Failed to generate CPU plots: {e}")
+    if plot_cpu:
+        # Generate CPU utilization plots
+        print("Generating CPU utilization plots...")
+        try:
+            cpu.plot_cpu_utilization(data_dir, output_dir, policies=policies)
+        except Exception as e:
+            print(f"Warning: Failed to generate CPU plots: {e}")
