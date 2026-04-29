@@ -100,8 +100,14 @@ def generate_all_plots(
 
     config_dir = Path(args.config_dir)
     if (config_dir / "mssim.json").exists():
-        # mssim has its own pipeline; selectors don't apply.
-        mssim.generate_plots(args)
+        # mssim has its own pipeline but honors the same selector kwargs.
+        mssim.generate_plots(
+            args,
+            only=only,
+            skip=skip,
+            summary_only=summary_only,
+            use_cache=use_cache,
+        )
         return
 
     prepare_output_dir(args)
