@@ -284,7 +284,10 @@ mod tests {
                 registry.get_or_register(CowGrpcMethod::new("TestIntegration", "Parent"));
             let child_mid =
                 registry.get_or_register(CowGrpcMethod::new("TestIntegration", "Child"));
-            let key = ParentToChildKey::parent_rpc_method(parent_mid).child_rpc_method(child_mid);
+            let root_mid = registry.get_or_register(CowGrpcMethod::new("TestIntegration", "Root"));
+            let key = ParentToChildKey::root_rpc_method(root_mid)
+                .parent_rpc_method(parent_mid)
+                .child_rpc_method(child_mid);
 
             {
                 est.child_wallclock_map().insert(key, LatencyRms::new(2));
