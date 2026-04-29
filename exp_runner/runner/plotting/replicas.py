@@ -162,7 +162,6 @@ def _plot_policy_replica_lines(
     ax.set_xlabel("Requests Per Second (RPS)")
     ax.set_ylabel("Total replicas")
     ax.set_ylim(bottom=0)
-    ax.set_title("Replica count by policy and RPS")
     ax.grid(axis="y", linestyle="--", alpha=0.4)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
