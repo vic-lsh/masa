@@ -19,10 +19,12 @@ import pandas as pd
 
 from . import cpu
 from .goodput import (
+    _plot_avg_goodput_bars,
     _plot_early_return_breakdown,
     compute_early_return_breakdown,
     compute_early_return_last_child_breakdown,
     plot_abort_reason_timeline,
+    sort_policies_by_type,
 )
 from .queueing import (
     extract_queue_lengths_long as _extract_queue_lengths_long,
@@ -1020,6 +1022,15 @@ def generate_plots(
             )
             _write_goodput_csv(
                 output_dir / "goodput_absolute_avg.csv",
+                rps_values,
+                avg_goodput,
+            )
+            # Companion bar chart with the same per-policy bar style as the
+            # hotel/socialnet/synthetic goodput_<API>.png plots; the helper
+            # also moves Masa to the rightmost bar internally.
+            _plot_avg_goodput_bars(
+                str(output_dir / "goodput_absolute_avg_bar.png"),
+                sort_policies_by_type(list(policies)),
                 rps_values,
                 avg_goodput,
             )
