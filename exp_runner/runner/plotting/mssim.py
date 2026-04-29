@@ -329,7 +329,6 @@ def _plot_goodput_lines(
 
     ax.set_xlabel("Offered load (RPS)")
     ax.set_ylabel(ylabel)
-    ax.set_title(title)
     _set_line_chart_ylim(
         ax,
         policy_series,
@@ -439,7 +438,6 @@ def _plot_latency_cdf(
 
     ax.set_xlabel("End-to-end latency (ms)")
     ax.set_ylabel("CDF")
-    ax.set_title(f"Latency CDF at {rps:g} RPS")
     ax.grid(True, which="both", linestyle="--", alpha=0.4)
     if slo_ms > 0:
         ax.axvline(
@@ -575,7 +573,6 @@ def _plot_goodput_timeline(
 
     ax.set_xlabel("Time (s)")
     ax.set_ylabel("RPS")
-    ax.set_title(f"Goodput timeline (SLO={slo_ms:g} ms, {window_sec:g}s window)")
     ax.set_xlim(left=0, right=len(rps_sequence) * duration_sec)
     ax.set_ylim(bottom=0)
     ax.grid(True, which="both", linestyle="--", alpha=0.4)
@@ -695,7 +692,6 @@ def _plot_early_return_timeline(
 
     ax.set_xlabel("Time (s)")
     ax.set_ylabel("RPS")
-    ax.set_title(f"Early-return timeline ({window_sec:g}s window)")
     ax.set_xlim(left=0, right=len(rps_sequence) * duration_sec)
     ax.set_ylim(bottom=0)
     ax.grid(True, which="both", linestyle="--", alpha=0.4)

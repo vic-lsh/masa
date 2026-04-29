@@ -579,7 +579,6 @@ def _plot_early_return_breakdown(
             fontsize=scale_fontsize(12),
         )
 
-    fig.suptitle(title, fontsize=scale_fontsize(18), y=1.13)
     fig.tight_layout(rect=[0, 0, 1, 0.88])
     fig.savefig(breakdown_path, dpi=300, bbox_inches="tight")
     plt.close(fig)
@@ -902,7 +901,6 @@ def _plot_slo_miss_breakdown(
         ncols=len(request_types),
     )
 
-    fig.suptitle(title, fontsize=scale_fontsize(14), y=0.98)
     fig.tight_layout(rect=[0, 0, 1, 0.90])
     fig.savefig(breakdown_path, dpi=300, bbox_inches="tight")
     plt.close(fig)
@@ -971,7 +969,6 @@ def _plot_all_api_goodput_clean(
         )
     ax1.set_ylabel("Goodput (req/s meeting SLO)")
     ax1.set_xlabel("Load (requests per second)")
-    ax1.set_title(_simplify_all_api_line_title(title))
     _set_line_chart_ylim(ax1, policy_total_goodputs)
 
     _place_line_chart_legend(fig1, ax1, max_cols=3, top_margin=0.91)
@@ -1009,7 +1006,6 @@ def _plot_all_api_goodput_clean(
     }
     ax3.set_ylabel("Goodput / Offered Load")
     ax3.set_xlabel("Load (requests per second)")
-    ax3.set_title(_simplify_all_api_line_title(title, fraction=True))
     _set_line_chart_ylim(ax3, fraction_series, minimum_top=0.1)
 
     _place_line_chart_legend(fig3, ax3, max_cols=3, top_margin=0.91)
@@ -1223,9 +1219,6 @@ def plot_goodput_time_series(
         ax.set_xlabel("Time since first request (seconds)")
         ax.set_ylabel("Goodput (requests / second)")
 
-    if title:
-        ax.set_title(title)
-
     ax.grid(axis="y", linestyle="--", alpha=0.7)
     fig.tight_layout()
     fig.savefig(output_path, dpi=300)
@@ -1279,7 +1272,6 @@ def _plot_policy_goodput_comparison(
 
     ax.set_xlabel("Requests Per Second (RPS)")
     ax.set_ylabel("Goodput (requests meeting SLO per second)")
-    ax.set_title(f"Goodput Comparison by Policy and RPS for {api} API")
     ax.set_xticks(index)
     ax.set_xticklabels([str(rps) for rps in rps_values])
     ax.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
@@ -1401,9 +1393,6 @@ def _plot_averaged_goodput(
 
     ax.set_xlabel("Requests Per Second (RPS)")
     ax.set_ylabel("average goodput (requests meeting SLO per second)")
-    ax.set_title(
-        f"average goodput comparison by policy and RPS for {api} API over {repeats} runs"
-    )
     ax.set_xticks(index)
     ax.set_xticklabels([str(rps) for rps in rps_values])
     ax.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
@@ -1538,7 +1527,6 @@ def plot_goodput_timeline(
 
     ax.set_xlabel("Time (s)")
     ax.set_ylabel("RPS")
-    ax.set_title(f"Goodput timeline ({window_sec:g}s window)")
     ax.set_xlim(left=0, right=len(rps_sequence) * effective_duration)
     ax.set_ylim(bottom=0)
     ax.grid(True, which="both", linestyle="--", alpha=0.4)
@@ -1661,7 +1649,6 @@ def plot_early_return_timeline(
 
     ax.set_xlabel("Time (s)")
     ax.set_ylabel("RPS")
-    ax.set_title(f"Early-return timeline ({window_sec:g}s window)")
     ax.set_xlim(left=0, right=len(rps_sequence) * effective_duration)
     ax.set_ylim(bottom=0)
     ax.grid(True, which="both", linestyle="--", alpha=0.4)
@@ -1955,11 +1942,6 @@ def plot_abort_reason_timeline(
 
     axes[-1, 0].set_xlabel("Time (s)")
     axes[-1, 0].set_xlim(left=0, right=len(rps_sequence) * effective_duration)
-    fig.suptitle(
-        f"Abort-reason timeline ({window_sec:g}s window)",
-        fontsize=scale_fontsize(14),
-        y=1.0,
-    )
     fig.tight_layout()
     fig.savefig(output_path, dpi=300)
     plt.close(fig)

@@ -191,7 +191,6 @@ def _plot_queueing_breakdown(
         ncols=min(5, len(component_names)),
     )
 
-    fig.suptitle(title, fontsize=scale_fontsize(14), y=0.98)
     fig.tight_layout(rect=[0, 0, 1, 0.90])
     fig.savefig(output_path, dpi=300, bbox_inches="tight")
     plt.close(fig)
@@ -246,7 +245,6 @@ def _plot_total_queueing_latency(
 
     ax.set_ylabel("Avg Total Queueing Latency (ms)")
     ax.set_xlabel("Load (requests per second)")
-    ax.set_title(title)
     ax.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
     ax.grid(True, alpha=0.3)
 
@@ -354,7 +352,6 @@ def plot_queue_length_cdf_per_service(
     # Each data point is the max queue length observed at that service across
     # all calls within one root request. Repeated calls to the same service
     # are collapsed to a single max per root request.
-    fig.suptitle(f"Max queue length per root request, by service — {rps:g} RPS")
     fig.tight_layout()
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, dpi=300)
@@ -425,7 +422,6 @@ def plot_queue_length_timeline(
     for i in range(len(services), nrows * ncols):
         axes[i // ncols][i % ncols].axis("off")
 
-    fig.suptitle(f"Queue length over time by service — {rps:g} RPS")
     fig.tight_layout()
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, dpi=300)
@@ -508,7 +504,6 @@ def plot_goodput_abort_timeline(
     for i in range(n, nrows * ncols):
         axes[i // ncols][i % ncols].axis("off")
 
-    fig.suptitle(f"Goodput vs. abort rate over time — {rps:g} RPS")
     fig.tight_layout()
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, dpi=300)

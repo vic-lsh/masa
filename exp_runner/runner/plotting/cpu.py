@@ -203,11 +203,6 @@ def _plot_service_cpu(
 
     ax.set_xlabel("Time (seconds)", fontsize=scale_fontsize(12))
     ax.set_ylabel("CPU Utilization (%)", fontsize=scale_fontsize(12))
-    ax.set_title(
-        f"CPU Utilization - {service}",
-        fontsize=scale_fontsize(14),
-        fontweight="bold",
-    )
     ax.legend(loc="best", fontsize=scale_fontsize(10))
     ax.grid(True, alpha=0.3)
     ax.set_ylim(0, 100)  # CPU utilization ranges from 0 to 100%
@@ -441,11 +436,6 @@ def _plot_policy_services(
     for idx in range(n_services, len(axes_flat)):
         axes_flat[idx].set_visible(False)
 
-    fig.suptitle(
-        f"CPU Utilization - {get_policy_display_name(policy)}",
-        fontsize=scale_fontsize(14),
-        fontweight="bold",
-    )
     fig.tight_layout()
 
     output_file = output_dir / f"cpu_policy_{_sanitize_filename(policy)}.png"
