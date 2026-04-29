@@ -1969,7 +1969,9 @@ def plot_abort_reason_timeline(
         pd.DataFrame(csv_rows).to_csv(csv_path, index=False)
 
 
-def generate_plots(args, plot_data: PlotData | None = None) -> None:
+def generate_plots(
+    args, plot_data: PlotData | None = None, *, summary_only: bool = False
+) -> None:
     prepare_output_dir(args)
 
     if plot_data is None:
@@ -2104,7 +2106,11 @@ def generate_plots(args, plot_data: PlotData | None = None) -> None:
     # Generate plots in parallel
     future_specs = []
 
-    for i in range(repeats):
+    # Skip per-iteration plots when summary_only — leaves only the averaged
+    # summary plots / CSVs below.
+    per_iter_repeats = 0 if summary_only else repeats
+
+    for i in range(per_iter_repeats):
         goodput_dir = os.path.join(args.output_dir, str(i), "goodput")
         os.makedirs(goodput_dir, exist_ok=True)
         for api in apis:
@@ -2129,7 +2135,7 @@ def generate_plots(args, plot_data: PlotData | None = None) -> None:
             )
 
     # Add goodput timeline plots (per iteration, ALL api only)
-    for i in range(repeats):
+    for i in range(per_iter_repeats):
         goodput_dir = os.path.join(args.output_dir, str(i), "goodput")
         policy_data_by_rps = {policy: results[i]["ALL"][policy] for policy in policies}
         future_specs.append(
@@ -2148,7 +2154,7 @@ def generate_plots(args, plot_data: PlotData | None = None) -> None:
         )
 
     # Add early-return timeline plots (per iteration, ALL api only)
-    for i in range(repeats):
+    for i in range(per_iter_repeats):
         er_dir = os.path.join(args.output_dir, str(i), "early_return")
         os.makedirs(er_dir, exist_ok=True)
         policy_data_by_rps = {policy: results[i]["ALL"][policy] for policy in policies}
@@ -2168,7 +2174,7 @@ def generate_plots(args, plot_data: PlotData | None = None) -> None:
         )
 
     # Add abort-reason timeline plots (per iteration, ALL api only)
-    for i in range(repeats):
+    for i in range(per_iter_repeats):
         er_dir = os.path.join(args.output_dir, str(i), "early_return")
         os.makedirs(er_dir, exist_ok=True)
         policy_data_by_rps = {policy: results[i]["ALL"][policy] for policy in policies}
@@ -2216,7 +2222,7 @@ def generate_plots(args, plot_data: PlotData | None = None) -> None:
             )
         )
 
-    for i in range(repeats):
+    for i in range(per_iter_repeats):
         er_dir = os.path.join(args.output_dir, str(i), "early_return")
         os.makedirs(er_dir, exist_ok=True)
         for api in apis:
@@ -2263,7 +2269,7 @@ def generate_plots(args, plot_data: PlotData | None = None) -> None:
                     )
                 )
 
-    for i in range(repeats):
+    for i in range(per_iter_repeats):
         er_dir = os.path.join(args.output_dir, str(i), "early_return")
         os.makedirs(er_dir, exist_ok=True)
         for api in apis:

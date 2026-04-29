@@ -327,7 +327,9 @@ def _save_latency_summary_csv(
         df.to_csv(output_path, index=False)
 
 
-def generate_plots(args, plot_data: PlotData | None = None) -> None:
+def generate_plots(
+    args, plot_data: PlotData | None = None, *, summary_only: bool = False
+) -> None:
     prepare_output_dir(args)
 
     if plot_data is None:
@@ -344,8 +346,15 @@ def generate_plots(args, plot_data: PlotData | None = None) -> None:
     # Generate plots in parallel
     futures = []
 
+    if summary_only:
+        # Skip per-iteration CDF / abort-reason / p99 plots — only the
+        # averaged summary plots and CSVs below run.
+        repeats_for_per_iter = 0
+    else:
+        repeats_for_per_iter = repeats
+
     # Submit CDF plots for each (repeat, api, rps)
-    for i in range(repeats):
+    for i in range(repeats_for_per_iter):
         latency_dir = os.path.join(args.output_dir, str(i), "latency")
         er_dir = os.path.join(args.output_dir, str(i), "early_return")
         os.makedirs(latency_dir, exist_ok=True)
