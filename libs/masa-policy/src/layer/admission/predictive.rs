@@ -111,10 +111,11 @@ impl Layer for PredAdmissionLayer {
         use masa_core::time_now;
 
         let child_id = crate::MethodRegistry::global().get_or_register(child_method_name.clone());
-        let key = ParentToChildKey::parent_rpc_method(
-            crate::MethodRegistry::global().get_or_register(self.rpc.clone()),
-        )
-        .child_rpc_method(child_id);
+        let parent_id = crate::MethodRegistry::global().get_or_register(self.rpc.clone());
+        let root_id = self.root_method_id.unwrap_or(parent_id);
+        let key = ParentToChildKey::root_rpc_method(root_id)
+            .parent_rpc_method(parent_id)
+            .child_rpc_method(child_id);
 
         let time_left = ctx.e2e_deadline().saturating_sub(time_now());
 

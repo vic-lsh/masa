@@ -172,6 +172,7 @@ impl<E: LatencyEstimator + Default + 'static> LatencyEstimators<E> {
     /// keyed on `(parent, new_child_id)`.
     pub(crate) fn est_after_child_wallclock_for_group(
         &self,
+        root: MethodId,
         parent: MethodId,
         base_signature: &[MethodId],
         new_child_id: MethodId,
@@ -179,9 +180,11 @@ impl<E: LatencyEstimator + Default + 'static> LatencyEstimators<E> {
     ) -> AfterChildEstimates {
         if fanout_aware_enabled() {
             self.fanout_patterns
-                .lookup_estimate(parent, base_signature, cap)
+                .lookup_estimate(root, parent, base_signature, cap)
         } else {
-            let key = ParentToChildKey::parent_rpc_method(parent).child_rpc_method(new_child_id);
+            let key = ParentToChildKey::root_rpc_method(root)
+                .parent_rpc_method(parent)
+                .child_rpc_method(new_child_id);
             self.est_after_child_wallclock(key, cap)
         }
     }
@@ -208,11 +211,13 @@ impl<E: LatencyEstimator + Default + 'static> LatencyEstimators<E> {
     /// Track one observed fanout group's post-join time.
     pub(crate) fn track_fanout_group(
         &self,
+        root: MethodId,
         parent: MethodId,
         signature: Vec<MethodId>,
         post_join_us: u64,
     ) {
-        self.fanout_patterns.update(parent, signature, post_join_us);
+        self.fanout_patterns
+            .update(root, parent, signature, post_join_us);
     }
 
     /// Track wall-clock duration of a child RPC call.
@@ -309,7 +314,8 @@ fn log_fanout_patterns_if_non_empty<E: LatencyEstimator + Default + 'static>(
         return;
     }
     let mut parts = Vec::new();
-    table.for_each_pattern(|parent, signature, est, count| {
+    table.for_each_pattern(|root, parent, signature, est, count| {
+        let root_name = super::latency_map::format_method_name(root);
         let parent_name = super::latency_map::format_method_name(parent);
         let sig_str = signature
             .iter()
@@ -322,8 +328,8 @@ fn log_fanout_patterns_if_non_empty<E: LatencyEstimator + Default + 'static>(
             "(no estimate)".to_string()
         };
         parts.push(format!(
-            "{}|[{}] n={}: {}",
-            parent_name, sig_str, count, est_str
+            "[{}]{}|[{}] n={}: {}",
+            root_name, parent_name, sig_str, count, est_str
         ));
     });
     log::info!("Est Fanout Groups: {}", parts.join(" ;; "));
@@ -387,8 +393,9 @@ impl<E: LatencyEstimator + Default + 'static> EstimationTracker<E> {
     /// it is the issue-time lower bound used to look up a group estimate.
     pub(crate) fn begin_child(&self, child_method: &CowGrpcMethod) -> ChildRPCTracker {
         let child_id = MethodRegistry::global().get_or_register(child_method.clone());
-        let key =
-            ParentToChildKey::parent_rpc_method(self.resolved_method_id).child_rpc_method(child_id);
+        let key = ParentToChildKey::root_rpc_method(self.root_or_self())
+            .parent_rpc_method(self.resolved_method_id)
+            .child_rpc_method(child_id);
         let now = Instant::now();
         let mut children = self.children.lock().unwrap();
         let mut base_signature: Vec<MethodId> = children
@@ -441,17 +448,20 @@ impl<E: LatencyEstimator + Default + 'static> EstimationTracker<E> {
     pub(crate) fn flush(&self) {
         let parent_end = Instant::now();
 
+        let root = self.root_or_self();
         let children = std::mem::take(&mut *self.children.lock().unwrap());
         if fanout_aware_enabled() {
             let groups = recover_groups(&children, parent_end);
             for (signature, post_join_us) in &groups {
                 self.est.track_fanout_group(
+                    root,
                     self.resolved_method_id,
                     signature.clone(),
                     *post_join_us,
                 );
                 for child_id in signature {
-                    let key = ParentToChildKey::parent_rpc_method(self.resolved_method_id)
+                    let key = ParentToChildKey::root_rpc_method(root)
+                        .parent_rpc_method(self.resolved_method_id)
                         .child_rpc_method(*child_id);
                     self.est.track_after_child_wallclock(key, *post_join_us);
                 }
@@ -461,7 +471,8 @@ impl<E: LatencyEstimator + Default + 'static> EstimationTracker<E> {
                 let Some(end) = c.end else {
                     continue;
                 };
-                let key = ParentToChildKey::parent_rpc_method(self.resolved_method_id)
+                let key = ParentToChildKey::root_rpc_method(root)
+                    .parent_rpc_method(self.resolved_method_id)
                     .child_rpc_method(c.child_id);
                 let after = parent_end.saturating_duration_since(end).as_micros() as u64;
                 self.est.track_after_child_wallclock(key, after);
@@ -472,6 +483,12 @@ impl<E: LatencyEstimator + Default + 'static> EstimationTracker<E> {
             let total_wall_clock = self.request_start.elapsed().as_micros() as u64;
             self.est.track_method_wallclock(key, total_wall_clock);
         }
+    }
+
+    /// Root API id, falling back to the resolved local method when the
+    /// context did not carry one (ingress-only requests, tests).
+    fn root_or_self(&self) -> MethodId {
+        self.root_method_id.unwrap_or(self.resolved_method_id)
     }
 
     /// Compound key for tracking into `method_wallclock`.
