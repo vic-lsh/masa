@@ -106,13 +106,13 @@ class TestDisplayName:
     def test_fifo_rajomon(self):
         assert (
             Policy.parse("sched_fifo,ac_rajomon").display_name
-            == "Rajomon (FIFO default)"
+            == "Rajomon (FIFO)"
         )
 
     def test_fifo_rajomon_with_drop(self):
         assert (
             Policy.parse("sched_fifo,abort_slo,ac_rajomon").display_name
-            == "Rajomon (FIFO default, drop@SLO)"
+            == "Rajomon (FIFO, drop@SLO)"
         )
 
     def test_e2e_slo_bare(self):
@@ -136,13 +136,13 @@ class TestDisplayName:
     def test_tailclipper_rajomon(self):
         assert (
             Policy.parse("sched_tailclipper,ac_rajomon").display_name
-            == "Rajomon (w/ TailClipper)"
+            == "Rajomon (TailClipper)"
         )
 
     def test_tailclipper_rajomon_with_drop(self):
         assert (
             Policy.parse("sched_tailclipper,abort_slo,ac_rajomon").display_name
-            == "Rajomon (w/ TailClipper, drop@SLO)"
+            == "Rajomon (TailClipper, drop@SLO)"
         )
 
     def test_masa_priority_bare(self):
@@ -227,7 +227,7 @@ class TestColor:
 
     # prio=oldest: dark-pink / reddish-purple / dark-wine by drop
     def test_oldest_no_drop(self):
-        assert Policy.parse("sched_tailclipper").color == "#AA3377"
+        assert Policy.parse("sched_tailclipper").color == "#555555"
 
     def test_oldest_abort_slo(self):
         assert Policy.parse("sched_tailclipper,abort_slo").color == "#CC79A7"

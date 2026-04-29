@@ -201,11 +201,11 @@ class Policy:
         if self.ac == "rajomon":
             if self.prio == "oldest":
                 base = "Rajomon"
-                details = ["w/ TailClipper"]
+                details = ["TailClipper"]
             else:
                 base = "Rajomon"
                 details = [
-                    "FIFO default" if self.prio == "fifo" else _PRIO_DISPLAY[self.prio]
+                    "FIFO" if self.prio == "fifo" else _PRIO_DISPLAY[self.prio]
                 ]
             if self.drop is not None:
                 details.append(_DROP_DISPLAY[self.drop])
@@ -241,7 +241,8 @@ class Policy:
             signal_slack  → indigo        #332288  (rare)
 
           prio=oldest (tailclipper):
-            no drop       → dark pink     #AA3377  (rare)
+            no drop       → dark grey     #555555  (groups with FIFO grey,
+                                                   used by Rajomon TailClipper)
             abort_slo     → reddish purple #CC79A7
             abort_slack   → dark wine     #882255  (rare)
             signal_slack  → mauve         #DDCC77  (rare)
@@ -261,7 +262,7 @@ class Policy:
             ("e2e_slo", "e2e_slo"): "#000000",
             ("e2e_slo", "slack"): "#88CCEE",
             ("e2e_slo", "slack_signal"): "#332288",
-            ("oldest", None): "#AA3377",
+            ("oldest", None): "#555555",
             ("oldest", "e2e_slo"): "#CC79A7",
             ("oldest", "slack"): "#882255",
             ("oldest", "slack_signal"): "#DDCC77",

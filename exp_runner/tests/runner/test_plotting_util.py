@@ -27,7 +27,7 @@ def test_get_policy_display_name_delegates_to_policy():
     assert get_policy_display_name("sched_pred,abort_slack,ac_pred") == "Masa"
     assert (
         get_policy_display_name("sched_tailclipper,ac_rajomon")
-        == "Rajomon (w/ TailClipper)"
+        == "Rajomon (TailClipper)"
     )
     assert get_policy_display_name("custom") == "custom"
 
