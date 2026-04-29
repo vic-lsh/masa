@@ -762,123 +762,8 @@ impl Core {
         self.tick = self.tick.wrapping_add(1);
     }
 
-    /// Return the next notified task available to this worker.
-    fn next_task(&mut self, worker: &Worker) -> Option<Notified> {
-        #[cfg(feature = "sched_mt")]
-        return worker.handle.shared.prio_queue.pop();
-
-        #[cfg(not(feature = "sched_mt"))]
-        if self.tick % self.global_queue_interval == 0 {
-            // Update the global queue interval, if needed
-            self.tune_global_queue_interval(worker);
-
-            worker
-                .handle
-                .next_remote_task()
-                .or_else(|| self.next_local_task())
-        } else {
-            let maybe_task = self.next_local_task();
-
-            if maybe_task.is_some() {
-                return maybe_task;
-            }
-
-            if worker.inject().is_empty() {
-                return None;
-            }
-
-            // Other threads can only **remove** tasks from the current worker's
-            // `run_queue`. So, we can be confident that by the time we call
-            // `run_queue.push_back` below, there will be *at least* `cap`
-            // available slots in the queue.
-            let cap = usize::min(
-                self.run_queue.remaining_slots(),
-                self.run_queue.max_capacity() / 2,
-            );
-
-            // The worker is currently idle, pull a batch of work from the
-            // injection queue. We don't want to pull *all* the work so other
-            // workers can also get some.
-            let n = usize::min(
-                worker.inject().len() / worker.handle.shared.remotes.len() + 1,
-                cap,
-            );
-
-            // Take at least one task since the first task is returned directly
-            // and not pushed onto the local queue.
-            let n = usize::max(1, n);
-
-            let mut synced = worker.handle.shared.synced.lock();
-            // safety: passing in the correct `inject::Synced`.
-            let mut tasks = unsafe { worker.inject().pop_n(&mut synced.inject, n) };
-
-            // Pop the first task to return immediately
-            let ret = tasks.next();
-
-            // Push the rest of the on the run queue
-            self.run_queue.push_back(tasks);
-
-            ret
-        }
-    }
-
     fn next_local_task(&mut self) -> Option<Notified> {
         self.lifo_slot.take().or_else(|| self.run_queue.pop())
-    }
-
-    /// Function responsible for stealing tasks from another worker
-    ///
-    /// Note: Only if less than half the workers are searching for tasks to steal
-    /// a new worker will actually try to steal. The idea is to make sure not all
-    /// workers will be trying to steal at the same time.
-    fn steal_work(&mut self, worker: &Worker) -> Option<Notified> {
-        // Under sched_mt all tasks are in the single shared priority queue;
-        // next_task() already checked it, so there is nothing left to steal.
-        #[cfg(feature = "sched_mt")]
-        {
-            let _ = worker;
-            return None;
-        }
-
-        #[cfg(not(feature = "sched_mt"))]
-        {
-            if !self.transition_to_searching(worker) {
-                return None;
-            }
-
-            let num = worker.handle.shared.remotes.len();
-            // Start from a random worker
-            let start = self.rand.fastrand_n(num as u32) as usize;
-
-            for i in 0..num {
-                let i = (start + i) % num;
-
-                // Don't steal from ourself! We know we don't have work.
-                if i == worker.index {
-                    continue;
-                }
-
-                let target = &worker.handle.shared.remotes[i];
-                if let Some(task) = target
-                    .steal
-                    .steal_into(&mut self.run_queue, &mut self.stats)
-                {
-                    return Some(task);
-                }
-            }
-
-            // Fallback on checking the global queue
-            worker.handle.next_remote_task()
-        }
-    }
-
-    #[cfg_attr(feature = "sched_mt", allow(dead_code))]
-    fn transition_to_searching(&mut self, worker: &Worker) -> bool {
-        if !self.is_searching {
-            self.is_searching = worker.handle.shared.idle.transition_worker_to_searching();
-        }
-
-        self.is_searching
     }
 
     fn transition_from_searching(&mut self, worker: &Worker) {
@@ -888,11 +773,6 @@ impl Core {
 
         self.is_searching = false;
         worker.handle.transition_worker_from_searching();
-    }
-
-    #[cfg_attr(feature = "sched_mt", allow(dead_code))]
-    fn has_tasks(&self) -> bool {
-        self.lifo_slot.is_some() || self.run_queue.has_tasks()
     }
 
     fn should_notify_others(&self) -> bool {
@@ -909,13 +789,7 @@ impl Core {
     /// Returns true if the transition happened, false if there is work to do first.
     fn transition_to_parked(&mut self, worker: &Worker) -> bool {
         // Workers should not park if they have work to do
-        let has_work = {
-            #[cfg(feature = "sched_mt")]
-            { !worker.handle.shared.prio_queue.is_empty() }
-            #[cfg(not(feature = "sched_mt"))]
-            { self.has_tasks() }
-        };
-        if has_work || self.is_traced {
+        if self.has_pending_work(worker) || self.is_traced {
             return false;
         }
 
@@ -942,13 +816,7 @@ impl Core {
     /// Returns `true` if the transition happened.
     fn transition_from_parked(&mut self, worker: &Worker) -> bool {
         // If there is work available, unpark regardless of being notified.
-        let has_work = {
-            #[cfg(feature = "sched_mt")]
-            { !worker.handle.shared.prio_queue.is_empty() }
-            #[cfg(not(feature = "sched_mt"))]
-            { self.has_tasks() }
-        };
-        if has_work {
+        if self.has_pending_work(worker) {
             // When a worker wakes, it should only transition to the "searching"
             // state when the wake originates from another worker *or* a new task
             // is pushed. We do *not* want the worker to transition to "searching"
@@ -1021,7 +889,131 @@ impl Core {
         park.shutdown(&handle.driver);
     }
 
-    #[cfg_attr(feature = "sched_mt", allow(dead_code))]
+}
+
+#[cfg(feature = "sched_mt")]
+impl Core {
+    fn has_pending_work(&self, worker: &Worker) -> bool {
+        !worker.handle.shared.prio_queue.is_empty()
+    }
+
+    fn next_task(&mut self, worker: &Worker) -> Option<Notified> {
+        worker.handle.shared.prio_queue.pop()
+    }
+
+    fn steal_work(&mut self, _worker: &Worker) -> Option<Notified> {
+        None
+    }
+}
+
+#[cfg(not(feature = "sched_mt"))]
+impl Core {
+    fn has_pending_work(&self, _worker: &Worker) -> bool {
+        self.has_tasks()
+    }
+
+    fn has_tasks(&self) -> bool {
+        self.lifo_slot.is_some() || self.run_queue.has_tasks()
+    }
+
+    fn next_task(&mut self, worker: &Worker) -> Option<Notified> {
+        if self.tick % self.global_queue_interval == 0 {
+            // Update the global queue interval, if needed
+            self.tune_global_queue_interval(worker);
+
+            worker
+                .handle
+                .next_remote_task()
+                .or_else(|| self.next_local_task())
+        } else {
+            let maybe_task = self.next_local_task();
+
+            if maybe_task.is_some() {
+                return maybe_task;
+            }
+
+            if worker.inject().is_empty() {
+                return None;
+            }
+
+            // Other threads can only **remove** tasks from the current worker's
+            // `run_queue`. So, we can be confident that by the time we call
+            // `run_queue.push_back` below, there will be *at least* `cap`
+            // available slots in the queue.
+            let cap = usize::min(
+                self.run_queue.remaining_slots(),
+                self.run_queue.max_capacity() / 2,
+            );
+
+            // The worker is currently idle, pull a batch of work from the
+            // injection queue. We don't want to pull *all* the work so other
+            // workers can also get some.
+            let n = usize::min(
+                worker.inject().len() / worker.handle.shared.remotes.len() + 1,
+                cap,
+            );
+
+            // Take at least one task since the first task is returned directly
+            // and not pushed onto the local queue.
+            let n = usize::max(1, n);
+
+            let mut synced = worker.handle.shared.synced.lock();
+            // safety: passing in the correct `inject::Synced`.
+            let mut tasks = unsafe { worker.inject().pop_n(&mut synced.inject, n) };
+
+            // Pop the first task to return immediately
+            let ret = tasks.next();
+
+            // Push the rest of the on the run queue
+            self.run_queue.push_back(tasks);
+
+            ret
+        }
+    }
+
+    /// Function responsible for stealing tasks from another worker
+    ///
+    /// Note: Only if less than half the workers are searching for tasks to steal
+    /// a new worker will actually try to steal. The idea is to make sure not all
+    /// workers will be trying to steal at the same time.
+    fn steal_work(&mut self, worker: &Worker) -> Option<Notified> {
+        if !self.transition_to_searching(worker) {
+            return None;
+        }
+
+        let num = worker.handle.shared.remotes.len();
+        // Start from a random worker
+        let start = self.rand.fastrand_n(num as u32) as usize;
+
+        for i in 0..num {
+            let i = (start + i) % num;
+
+            // Don't steal from ourself! We know we don't have work.
+            if i == worker.index {
+                continue;
+            }
+
+            let target = &worker.handle.shared.remotes[i];
+            if let Some(task) = target
+                .steal
+                .steal_into(&mut self.run_queue, &mut self.stats)
+            {
+                return Some(task);
+            }
+        }
+
+        // Fallback on checking the global queue
+        worker.handle.next_remote_task()
+    }
+
+    fn transition_to_searching(&mut self, worker: &Worker) -> bool {
+        if !self.is_searching {
+            self.is_searching = worker.handle.shared.idle.transition_worker_to_searching();
+        }
+
+        self.is_searching
+    }
+
     fn tune_global_queue_interval(&mut self, worker: &Worker) {
         let next = self
             .stats
@@ -1082,82 +1074,6 @@ impl Handle {
         }
     }
 
-    fn schedule_local(&self, core: &mut Core, task: Notified, _is_yield: bool) {
-        core.stats.inc_local_schedule_count();
-
-        #[cfg(feature = "sched_mt")]
-        {
-            self.shared.prio_queue.push(task);
-            if core.park.is_some() {
-                self.notify_parked_local();
-            }
-            return;
-        }
-
-        // Spawning from the worker thread. If scheduling a "yield" then the
-        // task must always be pushed to the back of the queue, enabling other
-        // tasks to be executed. If **not** a yield, then there is more
-        // flexibility and the task may go to the front of the queue.
-        #[cfg(not(feature = "sched_mt"))]
-        let is_yield = _is_yield;
-        #[cfg(not(feature = "sched_mt"))]
-        let should_notify = if is_yield || !core.lifo_enabled {
-            core.run_queue
-                .push_back_or_overflow(task, self, &mut core.stats);
-            true
-        } else {
-            // Push to the LIFO slot
-            let prev = core.lifo_slot.take();
-            let ret = prev.is_some();
-
-            if let Some(prev) = prev {
-                core.run_queue
-                    .push_back_or_overflow(prev, self, &mut core.stats);
-            }
-
-            core.lifo_slot = Some(task);
-
-            ret
-        };
-
-        // Only notify if not currently parked. If `park` is `None`, then the
-        // scheduling is from a resource driver. As notifications often come in
-        // batches, the notification is delayed until the park is complete.
-        #[cfg(not(feature = "sched_mt"))]
-        if should_notify && core.park.is_some() {
-            self.notify_parked_local();
-        }
-    }
-
-    fn next_remote_task(&self) -> Option<Notified> {
-        if self.shared.inject.is_empty() {
-            return None;
-        }
-
-        let mut synced = self.shared.synced.lock();
-        // safety: passing in correct `idle::Synced`
-        unsafe { self.shared.inject.pop(&mut synced.inject) }
-    }
-
-    fn push_remote_task(&self, task: Notified) {
-        self.shared.scheduler_metrics.inc_remote_schedule_count();
-
-        #[cfg(feature = "sched_mt")]
-        {
-            self.shared.prio_queue.push(task);
-            return;
-        }
-
-        #[cfg(not(feature = "sched_mt"))]
-        {
-            let mut synced = self.shared.synced.lock();
-            // safety: passing in correct `idle::Synced`
-            unsafe {
-                self.shared.inject.push(&mut synced.inject, task);
-            }
-        }
-    }
-
     pub(super) fn close(&self) {
         if self
             .shared
@@ -1186,30 +1102,6 @@ impl Handle {
     pub(super) fn notify_all(&self) {
         for remote in &self.shared.remotes[..] {
             remote.unpark.unpark(&self.driver);
-        }
-    }
-
-    fn notify_if_work_pending(&self) {
-        #[cfg(feature = "sched_mt")]
-        {
-            if !self.shared.prio_queue.is_empty() {
-                self.notify_parked_local();
-            }
-            return;
-        }
-
-        #[cfg(not(feature = "sched_mt"))]
-        {
-            for remote in &self.shared.remotes[..] {
-                if !remote.steal.is_empty() {
-                    self.notify_parked_local();
-                    return;
-                }
-            }
-
-            if !self.shared.inject.is_empty() {
-                self.notify_parked_local();
-            }
         }
     }
 
@@ -1247,8 +1139,99 @@ impl Handle {
         }
     }
 
+    fn next_remote_task(&self) -> Option<Notified> {
+        if self.shared.inject.is_empty() {
+            return None;
+        }
+
+        let mut synced = self.shared.synced.lock();
+        // safety: passing in correct `idle::Synced`
+        unsafe { self.shared.inject.pop(&mut synced.inject) }
+    }
+
     fn ptr_eq(&self, other: &Handle) -> bool {
         std::ptr::eq(self, other)
+    }
+}
+
+#[cfg(feature = "sched_mt")]
+impl Handle {
+    fn schedule_local(&self, core: &mut Core, task: Notified, _is_yield: bool) {
+        core.stats.inc_local_schedule_count();
+        self.shared.prio_queue.push(task);
+        if core.park.is_some() {
+            self.notify_parked_local();
+        }
+    }
+
+    fn push_remote_task(&self, task: Notified) {
+        self.shared.scheduler_metrics.inc_remote_schedule_count();
+        self.shared.prio_queue.push(task);
+    }
+
+    fn notify_if_work_pending(&self) {
+        if !self.shared.prio_queue.is_empty() {
+            self.notify_parked_local();
+        }
+    }
+}
+
+#[cfg(not(feature = "sched_mt"))]
+impl Handle {
+    fn schedule_local(&self, core: &mut Core, task: Notified, is_yield: bool) {
+        core.stats.inc_local_schedule_count();
+
+        // Spawning from the worker thread. If scheduling a "yield" then the
+        // task must always be pushed to the back of the queue, enabling other
+        // tasks to be executed. If **not** a yield, then there is more
+        // flexibility and the task may go to the front of the queue.
+        let should_notify = if is_yield || !core.lifo_enabled {
+            core.run_queue
+                .push_back_or_overflow(task, self, &mut core.stats);
+            true
+        } else {
+            // Push to the LIFO slot
+            let prev = core.lifo_slot.take();
+            let ret = prev.is_some();
+
+            if let Some(prev) = prev {
+                core.run_queue
+                    .push_back_or_overflow(prev, self, &mut core.stats);
+            }
+
+            core.lifo_slot = Some(task);
+
+            ret
+        };
+
+        // Only notify if not currently parked. If `park` is `None`, then the
+        // scheduling is from a resource driver. As notifications often come in
+        // batches, the notification is delayed until the park is complete.
+        if should_notify && core.park.is_some() {
+            self.notify_parked_local();
+        }
+    }
+
+    fn push_remote_task(&self, task: Notified) {
+        self.shared.scheduler_metrics.inc_remote_schedule_count();
+        let mut synced = self.shared.synced.lock();
+        // safety: passing in correct `idle::Synced`
+        unsafe {
+            self.shared.inject.push(&mut synced.inject, task);
+        }
+    }
+
+    fn notify_if_work_pending(&self) {
+        for remote in &self.shared.remotes[..] {
+            if !remote.steal.is_empty() {
+                self.notify_parked_local();
+                return;
+            }
+        }
+
+        if !self.shared.inject.is_empty() {
+            self.notify_parked_local();
+        }
     }
 }
 
