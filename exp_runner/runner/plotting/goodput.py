@@ -1312,7 +1312,16 @@ def _plot_avg_goodput_bars(
     Produces the same visual style as `goodput_<API>.png`: one bar per
     (policy, RPS), x-axis labeled by RPS step, legend listing policies.
     Used for both per-API plots and for the totalled ALL view.
+
+    Bar ordering: any Masa-style policy (prio=slack) is moved to the end
+    of the group so the canonical Masa configuration is the last (and
+    visually rightmost) bar at every RPS, making the comparison against
+    baselines easier to read.
     """
+    masa = [p for p in sorted_policies if Policy.parse(p).prio == "slack"]
+    others = [p for p in sorted_policies if Policy.parse(p).prio != "slack"]
+    sorted_policies = others + masa
+
     index = np.arange(len(rps_values))
     fig, ax = plt.subplots(figsize=(12, 6))
     bar_width = 0.12
