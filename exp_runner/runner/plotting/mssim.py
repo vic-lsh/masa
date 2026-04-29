@@ -37,6 +37,8 @@ from .util import (
     get_policy_display_name,
     get_policy_line_style,
     read_policies,
+    scale_linewidth,
+    scale_markersize,
 )
 
 plt.rcParams["figure.max_open_warning"] = 0
@@ -327,7 +329,6 @@ def _plot_goodput_lines(
 
     ax.set_xlabel("Offered load (RPS)")
     ax.set_ylabel(ylabel)
-    ax.set_title(title)
     _set_line_chart_ylim(
         ax,
         policy_series,
@@ -425,8 +426,8 @@ def _plot_latency_cdf(
             values,
             cdf,
             label=get_policy_display_name(policy),
-            linewidth=2,
-            markersize=5,
+            linewidth=scale_linewidth(2),
+            markersize=scale_markersize(5),
             **style,
         )
         any_data = True
@@ -437,7 +438,6 @@ def _plot_latency_cdf(
 
     ax.set_xlabel("End-to-end latency (ms)")
     ax.set_ylabel("CDF")
-    ax.set_title(f"Latency CDF at {rps:g} RPS")
     ax.grid(True, which="both", linestyle="--", alpha=0.4)
     if slo_ms > 0:
         ax.axvline(
@@ -535,7 +535,7 @@ def _plot_goodput_timeline(
             all_times,
             all_goodput,
             label=get_policy_display_name(policy),
-            linewidth=1.5,
+            linewidth=scale_linewidth(1.5),
             zorder=3,
             **style,
         )
@@ -565,7 +565,7 @@ def _plot_goodput_timeline(
         step_rps,
         where="post",
         color="grey",
-        linewidth=1.5,
+        linewidth=scale_linewidth(1.5),
         linestyle="-",
         alpha=0.5,
         zorder=1,
@@ -573,7 +573,6 @@ def _plot_goodput_timeline(
 
     ax.set_xlabel("Time (s)")
     ax.set_ylabel("RPS")
-    ax.set_title(f"Goodput timeline (SLO={slo_ms:g} ms, {window_sec:g}s window)")
     ax.set_xlim(left=0, right=len(rps_sequence) * duration_sec)
     ax.set_ylim(bottom=0)
     ax.grid(True, which="both", linestyle="--", alpha=0.4)
@@ -659,7 +658,7 @@ def _plot_early_return_timeline(
             all_times,
             all_er_rate,
             label=get_policy_display_name(policy),
-            linewidth=1.5,
+            linewidth=scale_linewidth(1.5),
             **style,
         )
 
@@ -686,14 +685,13 @@ def _plot_early_return_timeline(
         step_rps,
         where="post",
         color="grey",
-        linewidth=1.5,
+        linewidth=scale_linewidth(1.5),
         linestyle="-",
         alpha=0.5,
     )
 
     ax.set_xlabel("Time (s)")
     ax.set_ylabel("RPS")
-    ax.set_title(f"Early-return timeline ({window_sec:g}s window)")
     ax.set_xlim(left=0, right=len(rps_sequence) * duration_sec)
     ax.set_ylim(bottom=0)
     ax.grid(True, which="both", linestyle="--", alpha=0.4)
