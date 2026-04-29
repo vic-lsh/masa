@@ -40,16 +40,18 @@ struct GroupPattern<E> {
     occurrence_count: u64,
 }
 
-/// Server-level fanout pattern table: `parent_method -> known group patterns`.
+/// Server-level fanout pattern table: `(root_api, parent_method) -> known group patterns`.
+/// Indexing on root API keeps observations from different ingress API types
+/// from contaminating each other when they share a downstream parent.
 #[derive(Debug)]
 pub(crate) struct FanoutPatternTable<E: LatencyEstimator + Default + 'static> {
-    by_parent: Mutex<HashMap<MethodId, Vec<GroupPattern<E>>>>,
+    by_root_parent: Mutex<HashMap<(MethodId, MethodId), Vec<GroupPattern<E>>>>,
 }
 
 impl<E: LatencyEstimator + Default + 'static> Default for FanoutPatternTable<E> {
     fn default() -> Self {
         Self {
-            by_parent: Mutex::new(HashMap::new()),
+            by_root_parent: Mutex::new(HashMap::new()),
         }
     }
 }
@@ -64,12 +66,13 @@ impl<E: LatencyEstimator + Default + 'static> FanoutPatternTable<E> {
     /// tie-breaking on occurrence_count. Returns all-zero if no candidates.
     pub(crate) fn lookup_estimate(
         &self,
+        root: MethodId,
         parent: MethodId,
         base_signature: &[MethodId],
         cap: u64,
     ) -> AfterChildEstimates {
-        let by_parent = self.by_parent.lock().unwrap();
-        let groups = match by_parent.get(&parent) {
+        let by_root_parent = self.by_root_parent.lock().unwrap();
+        let groups = match by_root_parent.get(&(root, parent)) {
             Some(g) => g,
             None => {
                 return AfterChildEstimates {
@@ -118,9 +121,15 @@ impl<E: LatencyEstimator + Default + 'static> FanoutPatternTable<E> {
     }
 
     /// Exit-time update for one observed group.
-    pub(crate) fn update(&self, parent: MethodId, signature: Vec<MethodId>, after_child_us: u64) {
-        let mut by_parent = self.by_parent.lock().unwrap();
-        let groups = by_parent.entry(parent).or_default();
+    pub(crate) fn update(
+        &self,
+        root: MethodId,
+        parent: MethodId,
+        signature: Vec<MethodId>,
+        after_child_us: u64,
+    ) {
+        let mut by_root_parent = self.by_root_parent.lock().unwrap();
+        let groups = by_root_parent.entry((root, parent)).or_default();
         if let Some(p) = groups.iter_mut().find(|p| p.signature == signature) {
             p.estimator.track(after_child_us);
             p.occurrence_count += 1;
@@ -136,14 +145,23 @@ impl<E: LatencyEstimator + Default + 'static> FanoutPatternTable<E> {
     }
 
     pub(crate) fn is_empty(&self) -> bool {
-        self.by_parent.lock().unwrap().is_empty()
+        self.by_root_parent.lock().unwrap().is_empty()
     }
 
-    pub(crate) fn for_each_pattern<F: FnMut(MethodId, &[MethodId], &E, u64)>(&self, mut f: F) {
-        let by_parent = self.by_parent.lock().unwrap();
-        for (parent, groups) in by_parent.iter() {
+    pub(crate) fn for_each_pattern<F: FnMut(MethodId, MethodId, &[MethodId], &E, u64)>(
+        &self,
+        mut f: F,
+    ) {
+        let by_root_parent = self.by_root_parent.lock().unwrap();
+        for ((root, parent), groups) in by_root_parent.iter() {
             for p in groups {
-                f(*parent, &p.signature, &p.estimator, p.occurrence_count);
+                f(
+                    *root,
+                    *parent,
+                    &p.signature,
+                    &p.estimator,
+                    p.occurrence_count,
+                );
             }
         }
     }

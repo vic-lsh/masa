@@ -137,7 +137,12 @@ impl Layer for EstimationLayer {
     ) -> Result<(), Status> {
         let child_tracker = self.estimation.begin_child(child_method_name);
         let time_left = ctx.e2e_deadline().saturating_sub(masa_core::time_now());
+        let root = self
+            .estimation
+            .root_method_id
+            .unwrap_or(self.estimation.resolved_method_id);
         let remaining = self.estimation.est.est_after_child_wallclock_for_group(
+            root,
             self.estimation.resolved_method_id,
             &child_tracker.base_signature,
             child_tracker.child_id,

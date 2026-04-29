@@ -14,30 +14,44 @@ use crate::MethodRegistry;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) struct MethodKey(pub(crate) MethodId);
 
-/// Builder intermediate for [`ParentToChildKey`].
-pub(crate) struct ParentToChildKeyBuilder(MethodId);
+/// Builder intermediates for [`ParentToChildKey`].
+pub(crate) struct ParentToChildKeyRootStage(MethodId);
+pub(crate) struct ParentToChildKeyParentStage(MethodId, MethodId);
 
-/// Parent→child RPC method pair key (for remaining-wallclock, child-wallclock estimates).
+/// (root API, parent, child) RPC method triple key (for remaining-wallclock,
+/// child-wallclock estimates). Root API is the primary index so observations
+/// from different ingress API types are not pooled together on a shared
+/// downstream edge.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub(crate) struct ParentToChildKey(MethodId, MethodId);
+pub(crate) struct ParentToChildKey(MethodId, MethodId, MethodId);
 
 impl ParentToChildKey {
-    pub(crate) fn parent_rpc_method(id: MethodId) -> ParentToChildKeyBuilder {
-        ParentToChildKeyBuilder(id)
+    pub(crate) fn root_rpc_method(id: MethodId) -> ParentToChildKeyRootStage {
+        ParentToChildKeyRootStage(id)
     }
 
-    pub(crate) fn parent(&self) -> MethodId {
+    pub(crate) fn root(&self) -> MethodId {
         self.0
     }
 
-    pub(crate) fn child(&self) -> MethodId {
+    pub(crate) fn parent(&self) -> MethodId {
         self.1
+    }
+
+    pub(crate) fn child(&self) -> MethodId {
+        self.2
     }
 }
 
-impl ParentToChildKeyBuilder {
+impl ParentToChildKeyRootStage {
+    pub(crate) fn parent_rpc_method(self, id: MethodId) -> ParentToChildKeyParentStage {
+        ParentToChildKeyParentStage(self.0, id)
+    }
+}
+
+impl ParentToChildKeyParentStage {
     pub(crate) fn child_rpc_method(self, id: MethodId) -> ParentToChildKey {
-        ParentToChildKey(self.0, id)
+        ParentToChildKey(self.0, self.1, id)
     }
 }
 
@@ -45,7 +59,8 @@ impl fmt::Display for ParentToChildKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "{}=>{}",
+            "[{}]{}=>{}",
+            format_method_name(self.root()),
             format_method_name(self.parent()),
             format_method_name(self.child())
         )
