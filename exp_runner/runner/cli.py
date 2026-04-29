@@ -20,7 +20,52 @@ from .experiment import Experiment
 from .optimizer import OptimizerConfig, RajomonOptimizer
 from .pred_optimizer import PredOptimizerConfig, PredOptimizer
 from .plotting import generate_all_plots
+from .plotting.all import PLOT_MODULES
 from .plotting.replicas import generate_replicas_plots
+
+
+def _split_csv(value: str | None) -> list[str]:
+    if not value:
+        return []
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def _add_plot_selector_args(parser: argparse.ArgumentParser) -> None:
+    """Shared --only / --skip / --summary-only / --no-plot-cache flags."""
+    known = ", ".join(PLOT_MODULES)
+    parser.add_argument(
+        "--only",
+        default=None,
+        help=f"Comma-separated subset of plot modules to run ({known}). "
+        "Overrides --skip when both are set.",
+    )
+    parser.add_argument(
+        "--skip",
+        default=None,
+        help=f"Comma-separated plot modules to exclude ({known}).",
+    )
+    parser.add_argument(
+        "--summary-only",
+        action="store_true",
+        help="Skip per-iteration plots; only render the summary/ directory.",
+    )
+    parser.add_argument(
+        "--no-plot-cache",
+        action="store_true",
+        help="Bypass <data_dir>/.plotcache.pkl and re-parse all CSVs.",
+    )
+
+
+def _plot_options(args: argparse.Namespace) -> dict:
+    """Extract the four plot-selector flags into a kwarg dict for
+    `generate_all_plots`. Safe to call on a Namespace that doesn't carry
+    them — defaults match `generate_all_plots`'s defaults."""
+    return {
+        "only": _split_csv(getattr(args, "only", None)),
+        "skip": _split_csv(getattr(args, "skip", None)),
+        "summary_only": bool(getattr(args, "summary_only", False)),
+        "use_cache": not bool(getattr(args, "no_plot_cache", False)),
+    }
 
 # Setup logging
 logging.basicConfig(
@@ -150,6 +195,7 @@ def cmd_run_experiment(args: argparse.Namespace) -> None:
         dry_run=args.dry_run,
         smoke_test=args.smoke_test,
         use_k8s=args.k8s,
+        plot_options=_plot_options(args),
     )
 
     try:
@@ -190,6 +236,10 @@ def cmd_queue_experiments(args: argparse.Namespace) -> None:
             smoke_test=args.smoke_test,
             k8s=args.k8s,
             kind=args.kind,
+            only=getattr(args, "only", None),
+            skip=getattr(args, "skip", None),
+            summary_only=getattr(args, "summary_only", False),
+            no_plot_cache=getattr(args, "no_plot_cache", False),
         )
 
         try:
@@ -351,7 +401,7 @@ def cmd_plot(args: argparse.Namespace) -> None:
     )
 
     try:
-        generate_all_plots(plot_args)
+        generate_all_plots(plot_args, **_plot_options(args))
         logger.info("Plots generated successfully!")
     except Exception as e:
         logger.error(f"Failed to generate plots: {e}")
@@ -530,6 +580,7 @@ Examples:
     run_parser.add_argument(
         "--plot", action="store_true", help="Generate plots after experiment completion"
     )
+    _add_plot_selector_args(run_parser)
     run_parser.add_argument(
         "--no-cache", action="store_true", help="Disable Docker cache during build"
     )
@@ -577,6 +628,7 @@ Examples:
     queue_parser.add_argument(
         "--plot", action="store_true", help="Generate plots after each experiment"
     )
+    _add_plot_selector_args(queue_parser)
     queue_parser.add_argument(
         "--no-cache", action="store_true", help="Disable Docker cache during builds"
     )
@@ -669,6 +721,7 @@ Examples:
         help="Application name (hotel, mssim, or synthetic)",
     )
     plot_parser.add_argument("experiment", help="Name of the experiment to plot")
+    _add_plot_selector_args(plot_parser)
     plot_parser.set_defaults(func=cmd_plot)
 
     # plot-replicas command

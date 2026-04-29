@@ -515,7 +515,9 @@ def plot_goodput_abort_timeline(
     plt.close(fig)
 
 
-def generate_plots(args, plot_data: PlotData | None = None) -> None:
+def generate_plots(
+    args, plot_data: PlotData | None = None, *, summary_only: bool = False
+) -> None:
     prepare_output_dir(args)
 
     if plot_data is None:
@@ -530,6 +532,11 @@ def generate_plots(args, plot_data: PlotData | None = None) -> None:
         results = plot_data.results
 
     futures = []
+
+    # All queueing plots are per-iteration today; summary_only skips them
+    # entirely. (No averaged queueing plot exists yet.)
+    if summary_only:
+        return
 
     for i in range(repeats):
         queueing_dir = os.path.join(args.output_dir, str(i), "queueing")

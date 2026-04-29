@@ -42,6 +42,7 @@ class Experiment:
         dry_run: bool = False,
         smoke_test: bool = False,
         use_k8s: bool = False,
+        plot_options: dict | None = None,
     ):
         """
         Initialize experiment runner.
@@ -60,6 +61,7 @@ class Experiment:
         self.config = config
         self.repo_root = repo_root
         self.plot = plot
+        self.plot_options = plot_options or {}
         self.no_cache = no_cache
         self.rm_data = rm_data
         self.dry_run = dry_run
@@ -285,7 +287,7 @@ class Experiment:
         )
 
         try:
-            generate_all_plots(args)
+            generate_all_plots(args, **self.plot_options)
             logger.info("Plots generated successfully")
         except Exception as e:
             logger.error(f"Failed to generate plots: {e}")
