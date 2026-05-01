@@ -24,7 +24,9 @@ pub struct QueueLatencies {
     pub resume: u64,
     /// Queue length at each service when this request's task was first polled.
     /// Populated only when `trace_queue_latency` feature is enabled.
-    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    // skip_serializing_if is intentionally omitted: bincode is positional and
+    // skipping a field on serialization causes UnexpectedEof on deserialization.
+    #[serde(default)]
     pub queue_lengths: HashMap<String, u64>,
 }
 
