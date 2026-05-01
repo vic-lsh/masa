@@ -1371,7 +1371,6 @@ def _plot_averaged_goodput(
         request_type_color_mapping: Optional dict mapping request type to color for consistency.
     """
     sorted_policies = sort_policies_by_type(policies)
-    index = np.arange(len(rps_values))
 
     if api == "ALL" and policy_goodputs_by_type is not None:
         # Build averaged totals and averaged breakdown dict in the same shape as per-repeat plotter expects.

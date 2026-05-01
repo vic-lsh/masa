@@ -27,8 +27,6 @@ from .goodput import (
     sort_policies_by_type,
 )
 from .queueing import (
-    extract_queue_lengths_long as _extract_queue_lengths_long,
-    plot_queue_latency_cdf as _plot_queue_latency_cdf,
     plot_queue_length_cdf_per_service as _plot_queue_length_cdf_per_service,
     plot_queue_length_timeline as _plot_queue_length_timeline,
 )
@@ -982,11 +980,6 @@ def generate_plots(
                         rps,
                         rps_policy_data,
                     )
-                    _plot_goodput_abort_timeline(
-                        iteration_output / f"goodput_abort_timeline_{rps:g}rps.png",
-                        rps,
-                        rps_policy_data,
-                    )
 
     if per_iteration_goodput:
         avg_goodput: Dict[str, List[float]] = {}
@@ -1099,11 +1092,6 @@ def generate_plots(
                     )
                     _plot_queue_length_timeline(
                         output_dir / f"queue_length_timeline_{rps:g}rps_avg.png",
-                        rps,
-                        avg_rps_policy_data,
-                    )
-                    _plot_goodput_abort_timeline(
-                        output_dir / f"goodput_abort_timeline_{rps:g}rps_avg.png",
                         rps,
                         avg_rps_policy_data,
                     )

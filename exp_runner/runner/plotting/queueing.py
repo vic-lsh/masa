@@ -446,7 +446,6 @@ def plot_queue_latency_cdf(
     # quantity, so including them would double-count.
     global_cols = ["q_lat_init", "q_lat_resume"]
 
-    any_data = False
     for policy_idx, (policy, df) in enumerate(policy_data.items()):
         if df.empty:
             continue
@@ -468,28 +467,18 @@ def plot_queue_latency_cdf(
             style["color"] = cmap(policy_idx % cmap.N)
         style["markevery"] = max(len(values) // 12, 1)
         ax.plot(
-            goodput_rate.index,
-            goodput_rate.values,
-            label="Goodput",
-            color="tab:green",
+            values,
+            cdf,
+            label=get_policy_display_name(policy),
             linewidth=scale_linewidth(2),
+            **style,
         )
-        ax.plot(
-            abort_rate.index,
-            abort_rate.values,
-            label="EarlyReturn (aborted)",
-            color="tab:red",
-            linewidth=scale_linewidth(2),
-            linestyle="--",
-        )
-        ax.set_title(get_policy_display_name(policy))
-        ax.set_xlabel("Time (s)")
-        ax.set_ylabel(f"Req/s ({_TIMELINE_BIN_SEC:.0f}s bins)")
-        ax.legend()
-        ax.grid(True, linestyle="--", alpha=0.4)
 
-    for i in range(n, nrows * ncols):
-        axes[i // ncols][i % ncols].axis("off")
+    ax.set_title(f"Queue latency CDF — {rps:g} RPS")
+    ax.set_xlabel("Total queueing latency (ms)")
+    ax.set_ylabel("CDF")
+    ax.legend()
+    ax.grid(True, linestyle="--", alpha=0.4)
 
     fig.tight_layout()
     output_path.parent.mkdir(parents=True, exist_ok=True)
