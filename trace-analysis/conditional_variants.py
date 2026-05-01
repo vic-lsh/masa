@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
+from tqdm import tqdm
 
 logger = logging.getLogger(__name__)
 
@@ -689,7 +690,14 @@ def analyze_selected_services(
                 executor.submit(analyze_service_worker, arg): arg[0]
                 for arg in process_args
             }
-            for future in as_completed(futures):
+            for future in tqdm(
+                as_completed(futures),
+                total=len(futures),
+                desc="Analyzing services",
+                unit="svc",
+                dynamic_ncols=True,
+                file=sys.stderr,
+            ):
                 service_name, graph_payload, stats = future.result()
                 logger.info(
                     "Finished %s (%s rows, %s traces, %s variants)",
@@ -700,7 +708,14 @@ def analyze_selected_services(
                 )
                 record_result(service_name, graph_payload, stats)
     else:
-        for arg in process_args:
+        for arg in tqdm(
+            process_args,
+            total=len(process_args),
+            desc="Analyzing services",
+            unit="svc",
+            dynamic_ncols=True,
+            file=sys.stderr,
+        ):
             service_name, service_df, _, _ = arg
             logger.info(
                 "Processing %s (%s rows, %s traces)",
