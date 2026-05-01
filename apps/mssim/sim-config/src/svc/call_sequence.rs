@@ -19,7 +19,7 @@ pub struct CallSequenceEntry {
     pub service_name: ServiceName,
     /// The name of the method to invoke on the service
     pub method_name: MethodId,
-    /// The normalized probability (0.0 to 1.0) of executing this call
+    /// The marginal probability (0.0 to 1.0) of executing this call
     pub probability: f64,
 }
 
@@ -54,9 +54,7 @@ impl TryFrom<(&str, f64)> for CallSequenceEntry {
 
         let child_svc_name = ServiceName::from_string(parts[0].to_string());
         let method_name: MethodId = parts[1].to_string().into();
-        // Don't clamp probability here - it will be normalized in parse_call_sequence_step
-        // Only ensure it's non-negative
-        let prob = probability.max(0.0);
+        let prob = probability.clamp(0.0, 1.0);
 
         Ok(CallSequenceEntry {
             service_name: child_svc_name,
@@ -300,10 +298,11 @@ pub fn get_all_graph_ids(config_dir: &PathBuf) -> Result<Vec<GraphId>> {
 }
 
 /// Parse a call sequence step (HashMap<String, f64>) into a Vec<CallSequenceEntry>.
-/// Normalizes probabilities so they sum to 1.0 within the step.
-/// The normalized probability for each entry is: probability_in_file / sum_of_probabilities_in_step
+/// Values in `call_sequence.json` are exported by trace-analysis as per-child
+/// appearance rates, so they are already marginal probabilities. Do not
+/// normalize them across a step: a parallel stage may legitimately have
+/// probabilities summing above 1.0, and a rare stage may sum well below 1.0.
 fn parse_call_sequence_step(raw_step: HashMap<String, f64>) -> CallSequenceStep {
-    // First, parse all entries with their raw probabilities from the file
     let mut parsed_step = Vec::new();
     for (service_method_key, raw_probability) in raw_step {
         match CallSequenceEntry::try_from((service_method_key.as_str(), raw_probability)) {
@@ -313,23 +312,6 @@ fn parse_call_sequence_step(raw_step: HashMap<String, f64>) -> CallSequenceStep 
             }
         }
     }
-
-    // Calculate sum of raw probabilities in this step
-    let sum: f64 = parsed_step.iter().map(|e| e.probability).sum();
-
-    // Normalize probabilities: divide each by the sum
-    if sum > 0.0 {
-        for entry in &mut parsed_step {
-            entry.probability = entry.probability / sum;
-        }
-    } else {
-        // If sum is 0 or negative, set all probabilities to 0
-        warn!("Sum of probabilities in step is {}, setting all to 0", sum);
-        for entry in &mut parsed_step {
-            entry.probability = 0.0;
-        }
-    }
-
     parsed_step
 }
 
@@ -373,21 +355,19 @@ mod tests {
 
     #[test]
     fn test_call_sequence_entry_high_probability() {
-        // High probabilities should be preserved (normalization happens later)
+        // Values above 1.0 are invalid probabilities and are clamped.
         let entry = CallSequenceEntry::try_from(("service_a::method_b", 100.0)).unwrap();
-        assert_eq!(entry.probability, 100.0);
+        assert_eq!(entry.probability, 1.0);
     }
 
     #[test]
     fn test_call_sequence_entry_invalid_format_no_separator() {
         let result = CallSequenceEntry::try_from(("invalid", 0.5));
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Invalid call sequence entry format")
-        );
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Invalid call sequence entry format"));
     }
 
     #[test]
@@ -419,32 +399,31 @@ mod tests {
     // Tests for parse_call_sequence_step
 
     #[test]
-    fn test_parse_call_sequence_step_normalization() {
+    fn test_parse_call_sequence_step_preserves_marginal_probabilities() {
         let mut raw_step = HashMap::new();
-        raw_step.insert("service_a::method_1".to_string(), 2.0);
-        raw_step.insert("service_b::method_2".to_string(), 3.0);
+        raw_step.insert("service_a::method_1".to_string(), 0.2);
+        raw_step.insert("service_b::method_2".to_string(), 0.3);
 
         let parsed = parse_call_sequence_step(raw_step);
         assert_eq!(parsed.len(), 2);
 
-        // Probabilities should be normalized to sum to 1.0
+        // Probabilities are trace-derived appearance rates, not weights.
         let sum: f64 = parsed.iter().map(|e| e.probability).sum();
-        assert!((sum - 1.0).abs() < 1e-10);
+        assert!((sum - 0.5).abs() < 1e-10);
 
-        // Check individual probabilities
         let prob_a = parsed
             .iter()
             .find(|e| e.service_name.as_str() == "service-a")
             .unwrap()
             .probability;
-        assert!((prob_a - 0.4).abs() < 1e-10); // 2.0 / 5.0 = 0.4
+        assert!((prob_a - 0.2).abs() < 1e-10);
 
         let prob_b = parsed
             .iter()
             .find(|e| e.service_name.as_str() == "service-b")
             .unwrap()
             .probability;
-        assert!((prob_b - 0.6).abs() < 1e-10); // 3.0 / 5.0 = 0.6
+        assert!((prob_b - 0.3).abs() < 1e-10);
     }
 
     #[test]
@@ -490,34 +469,32 @@ mod tests {
     #[test]
     fn test_parse_call_sequence_step_with_invalid_entries() {
         let mut raw_step = HashMap::new();
-        raw_step.insert("service_a::method_1".to_string(), 2.0);
-        raw_step.insert("invalid_format".to_string(), 3.0); // Invalid, should be skipped
-        raw_step.insert("service_b::method_2".to_string(), 5.0);
+        raw_step.insert("service_a::method_1".to_string(), 0.2);
+        raw_step.insert("invalid_format".to_string(), 0.3); // Invalid, should be skipped
+        raw_step.insert("service_b::method_2".to_string(), 0.5);
 
         let parsed = parse_call_sequence_step(raw_step);
         // Should only have 2 valid entries
         assert_eq!(parsed.len(), 2);
 
-        // Probabilities should still be normalized
+        // Invalid entries are skipped; valid probabilities are not renormalized.
         let sum: f64 = parsed.iter().map(|e| e.probability).sum();
-        assert!((sum - 1.0).abs() < 1e-10);
+        assert!((sum - 0.7).abs() < 1e-10);
     }
 
     #[test]
-    fn test_parse_call_sequence_step_unequal_probabilities() {
+    fn test_parse_call_sequence_step_allows_parallel_stage_sum_above_one() {
         let mut raw_step = HashMap::new();
-        raw_step.insert("service_a::method_1".to_string(), 1.0);
-        raw_step.insert("service_b::method_2".to_string(), 2.0);
-        raw_step.insert("service_c::method_3".to_string(), 3.0);
+        raw_step.insert("service_a::method_1".to_string(), 0.7);
+        raw_step.insert("service_b::method_2".to_string(), 0.6);
+        raw_step.insert("service_c::method_3".to_string(), 0.5);
 
         let parsed = parse_call_sequence_step(raw_step);
         assert_eq!(parsed.len(), 3);
 
-        // Sum should be 1.0
         let sum: f64 = parsed.iter().map(|e| e.probability).sum();
-        assert!((sum - 1.0).abs() < 1e-10);
+        assert!((sum - 1.8).abs() < 1e-10);
 
-        // Check ratios are preserved
         let prob_a = parsed
             .iter()
             .find(|e| e.service_name.as_str() == "service-a")
@@ -534,10 +511,9 @@ mod tests {
             .unwrap()
             .probability;
 
-        // 1:2:3 ratio should be preserved
-        assert!((prob_a * 6.0 - 1.0).abs() < 1e-10); // 1/6
-        assert!((prob_b * 6.0 - 2.0).abs() < 1e-10); // 2/6
-        assert!((prob_c * 6.0 - 3.0).abs() < 1e-10); // 3/6
+        assert!((prob_a - 0.7).abs() < 1e-10);
+        assert!((prob_b - 0.6).abs() < 1e-10);
+        assert!((prob_c - 0.5).abs() < 1e-10);
     }
 
     // Tests for load_call_sequence
@@ -566,8 +542,8 @@ mod tests {
         "service-a::method-1": 1.0
       },
       {
-        "service-b::method-2": 2.0,
-        "service-c::method-3": 3.0
+        "service-b::method-2": 0.2,
+        "service-c::method-3": 0.3
       }
     ]
   }
@@ -589,10 +565,10 @@ mod tests {
         assert_eq!(sequence[0][0].method_name, "method-1");
         assert!((sequence[0][0].probability - 1.0).abs() < 1e-10);
 
-        // Second step should have 2 entries with normalized probabilities
+        // Second step should have 2 entries with raw marginal probabilities.
         assert_eq!(sequence[1].len(), 2);
         let sum: f64 = sequence[1].iter().map(|e| e.probability).sum();
-        assert!((sum - 1.0).abs() < 1e-10);
+        assert!((sum - 0.5).abs() < 1e-10);
     }
 
     #[test]
@@ -725,11 +701,11 @@ mod tests {
         let sequence = result.unwrap();
         assert_eq!(sequence.len(), 2); // Two steps
 
-        // Second step should have normalized probabilities
+        // Second step should preserve trace-derived marginal probabilities.
         let step2 = &sequence[1];
         assert_eq!(step2.len(), 3);
         let sum: f64 = step2.iter().map(|e| e.probability).sum();
-        assert!((sum - 1.0).abs() < 1e-10);
+        assert!((sum - 0.9929824561403509).abs() < 1e-10);
     }
 
     #[test]
