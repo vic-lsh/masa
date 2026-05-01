@@ -144,6 +144,7 @@ impl Layer for EstimationLayer {
         let remaining = self.estimation.est.est_after_child_wallclock_for_group(
             root,
             self.estimation.resolved_method_id,
+            child_tracker.path_prefix,
             &child_tracker.base_signature,
             child_tracker.child_id,
             time_left,
@@ -153,7 +154,8 @@ impl Layer for EstimationLayer {
             .est
             .log_estimates(&child_tracker.key, &remaining);
 
-        let (deadline, prio_hint) = Self::child_deadline_and_prio(ctx, remaining.full);
+        let (deadline, prio_hint) =
+            Self::child_deadline_and_prio(ctx, remaining.full, remaining.floor);
         child_rpc.deadline = deadline;
         child_rpc.prio_hint = prio_hint;
 
@@ -229,15 +231,23 @@ impl EstimationLayer {
     /// When `sched_pred` is enabled, tightens the deadline by subtracting
     /// `est_remaining`. When disabled, passes through the parent values.
     #[inline]
-    fn child_deadline_and_prio(ctx: &Context, est_remaining: u64) -> (u64, PriorityHint) {
+    fn child_deadline_and_prio(
+        ctx: &Context,
+        priority_est_remaining: u64,
+        deadline_est_remaining: u64,
+    ) -> (u64, PriorityHint) {
         #[cfg(feature = "sched_pred")]
         {
-            let d = ctx.deadline().saturating_sub(est_remaining);
-            (d, PriorityHint::new(d))
+            // Priority is a soft scheduling signal, so use the full estimate.
+            // The propagated deadline is a hard abort threshold; use the floor
+            // estimate to avoid converting estimator variance into false ERs.
+            let deadline = ctx.deadline().saturating_sub(deadline_est_remaining);
+            let priority_deadline = ctx.deadline().saturating_sub(priority_est_remaining);
+            (deadline, PriorityHint::new(priority_deadline))
         }
         #[cfg(not(feature = "sched_pred"))]
         {
-            let d = ctx.deadline().saturating_sub(est_remaining);
+            let d = ctx.deadline().saturating_sub(deadline_est_remaining);
             (d, ctx.prio_hint())
         }
     }
