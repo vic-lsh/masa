@@ -2,6 +2,7 @@
     feature = "sched_fifo",
     feature = "sched_slo",
     feature = "sched_tailclipper",
+    feature = "sched_oracle",
     feature = "sched_pred"
 )))]
 #[test]
@@ -24,6 +25,12 @@ fn test_sched_slo_policy() {
 #[cfg(feature = "sched_tailclipper")]
 #[test]
 fn test_sched_tailclipper_policy() {
+    assert_eq!(tokio::get_sched_flavor(), tokio::SchedFlavor::Prio);
+}
+
+#[cfg(feature = "sched_oracle")]
+#[test]
+fn test_sched_oracle_policy() {
     assert_eq!(tokio::get_sched_flavor(), tokio::SchedFlavor::Prio);
 }
 

@@ -1,12 +1,12 @@
 // Masa hooks implementation.
 //
 // `PolicyHooks` is the single concrete `Hooks` implementation used by all
-// scheduling policies (sched_fifo, sched_slo, sched_tailclipper, sched_pred).
+// scheduling policies (sched_fifo, sched_slo, sched_tailclipper, sched_oracle, sched_pred).
 // The actual scheduling differences are handled by the tokio runtime and,
-// when enabled, the active layers (estimation and/or admission).
+// when enabled, the active layers (estimation, oracle, and/or admission).
 //
 // Layers are called in field order:
-//   e2e_deadline_guard → estimation → admission → queue_latency.
+//   e2e_deadline_guard → estimation → oracle → admission → queue_latency.
 // The first `Err` short-circuits.
 
 use std::sync::Arc;
@@ -15,7 +15,7 @@ use std::task::Poll;
 use crate::context_ext::{read_context, MasaRequestExt, MasaResponseExt, MasaStatusExt};
 use crate::layer::{
     AdmissionLayer, ChildRpcContext, E2eDeadlineGuardLayer, EstimationLayer, Layer, LayerChild,
-    LayerServer, QueueLatencyLayer,
+    LayerServer, OracleLayer, QueueLatencyLayer,
 };
 use masa_core::{Context, ContextBuilder};
 use tonic_core::masa_ext::resolve_method_name_from_http;
@@ -24,7 +24,7 @@ use tonic_core::masa_ext::{ClientHooks, Hooks, ParentHooks, ServerHooks};
 use tonic_core::{CowGrpcMethod, GrpcMethod, Request, Response, Status};
 
 /// Invoke `$body` for each layer in field order
-/// (e2e_deadline_guard → estimation → admission → queue_latency).
+/// (e2e_deadline_guard → estimation → oracle → admission → queue_latency).
 /// The first `Err` short-circuits via `?` if the body uses it.
 ///
 /// Forms:
@@ -39,6 +39,10 @@ macro_rules! for_each_layer {
         }
         {
             let $o = &$self.estimation;
+            $body
+        }
+        {
+            let $o = &$self.oracle;
             $body
         }
         {
@@ -62,6 +66,11 @@ macro_rules! for_each_layer {
             $body
         }
         {
+            let $o = &$self.oracle;
+            let $c = &mut $child.oracle;
+            $body
+        }
+        {
             let $o = &$self.admission;
             let $c = &mut $child.admission;
             $body
@@ -81,6 +90,11 @@ macro_rules! for_each_layer {
         {
             let $o = &$self.estimation;
             let $c = &$child.estimation;
+            $body
+        }
+        {
+            let $o = &$self.oracle;
+            let $c = &$child.oracle;
             $body
         }
         {
@@ -110,6 +124,7 @@ impl Hooks for PolicyHooks {
 pub struct ServerContext {
     e2e_deadline_guard: <E2eDeadlineGuardLayer as Layer>::Server,
     estimation: <EstimationLayer as Layer>::Server,
+    oracle: <OracleLayer as Layer>::Server,
     admission: <AdmissionLayer as Layer>::Server,
     queue_latency: <QueueLatencyLayer as Layer>::Server,
 }
@@ -119,6 +134,7 @@ impl ServerHooks for ServerContext {
         Self {
             e2e_deadline_guard: <<E2eDeadlineGuardLayer as Layer>::Server as LayerServer>::new(),
             estimation: <<EstimationLayer as Layer>::Server as LayerServer>::new(),
+            oracle: <<OracleLayer as Layer>::Server as LayerServer>::new(),
             admission: <<AdmissionLayer as Layer>::Server as LayerServer>::new(),
             queue_latency: <<QueueLatencyLayer as Layer>::Server as LayerServer>::new(),
         }
@@ -132,6 +148,7 @@ pub struct ParentContext {
     resolved_method: CowGrpcMethod,
     pub(crate) e2e_deadline_guard: E2eDeadlineGuardLayer,
     pub(crate) estimation: EstimationLayer,
+    pub(crate) oracle: OracleLayer,
     pub(crate) admission: AdmissionLayer,
     pub(crate) queue_latency: QueueLatencyLayer,
 }
@@ -148,6 +165,7 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         let e2e_deadline_guard =
             E2eDeadlineGuardLayer::new(&resolved_method, &server_ctx.e2e_deadline_guard, &mut ctx);
         let estimation = EstimationLayer::new(&resolved_method, &server_ctx.estimation, &mut ctx);
+        let oracle = OracleLayer::new(&resolved_method, &server_ctx.oracle, &mut ctx);
         let admission = AdmissionLayer::new(&resolved_method, &server_ctx.admission, &mut ctx);
         let queue_latency =
             QueueLatencyLayer::new(&resolved_method, &server_ctx.queue_latency, &mut ctx);
@@ -157,6 +175,7 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
             resolved_method,
             e2e_deadline_guard,
             estimation,
+            oracle,
             admission,
             queue_latency,
         }
@@ -237,6 +256,7 @@ pub struct ChildContext {
     pub child_method_name: Option<CowGrpcMethod>,
     e2e_deadline_guard: <E2eDeadlineGuardLayer as Layer>::Child,
     pub(crate) estimation: <EstimationLayer as Layer>::Child,
+    pub(crate) oracle: <OracleLayer as Layer>::Child,
     pub(crate) admission: <AdmissionLayer as Layer>::Child,
     queue_latency: <QueueLatencyLayer as Layer>::Child,
 }
@@ -247,6 +267,7 @@ impl ClientHooks for ChildContext {
             child_method_name: None,
             e2e_deadline_guard: <<E2eDeadlineGuardLayer as Layer>::Child as LayerChild>::new(),
             estimation: <<EstimationLayer as Layer>::Child as LayerChild>::new(),
+            oracle: <<OracleLayer as Layer>::Child as LayerChild>::new(),
             admission: <<AdmissionLayer as Layer>::Child as LayerChild>::new(),
             queue_latency: <<QueueLatencyLayer as Layer>::Child as LayerChild>::new(),
         }

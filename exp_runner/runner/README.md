@@ -93,7 +93,9 @@ Experiments are configured using files in `exp/<app>/data/in/<experiment_name>/`
    {
      "Repeats": 1,
      "Apis": ["Search", "Reservation"],
+     "ApiWeights": [1, 1],
      "Slos": [50000, 50000],
+     "Timeouts_ms": [1000, 1000],
      "Rps": [100, 200, 400, 600, 800],
      "Gap": "const",
      "WarmupSecs": 20,
@@ -105,6 +107,7 @@ Experiments are configured using files in `exp/<app>/data/in/<experiment_name>/`
    
    **Configuration Fields:**
    - `MaxInFlight`: Maximum number of concurrent in-flight requests (0 = unlimited, default: 0)
+   - `ApiWeights`: Optional relative request mix weights for `Apis`; omitted means uniform.
 
 2. **`policies`** - Whitespace-separated list of scheduling policies to test
    ```

@@ -101,6 +101,30 @@ class TestSmokeTest:
 
         assert verify_standard_workload(mock_config) is True
 
+    def test_verify_standard_workload_success_with_api_weights(
+        self, mock_config, tmp_path
+    ):
+        mock_config.gen_config = {
+            "Rps": [100],
+            "Apis": ["api1", "api2"],
+            "ApiWeights": [3, 7],
+            "Repeats": 1,
+            "DurationSecs": 1,
+        }
+        mock_config.out_dir.mkdir(parents=True)
+        (mock_config.out_dir / "done").touch()
+
+        policy_dir = mock_config.out_dir / "0" / "policy1"
+        policy_dir.mkdir(parents=True)
+        (policy_dir / "loadgen.log").touch()
+
+        for api, rows in (("api1", 30), ("api2", 70)):
+            with open(policy_dir / f"r100_{api}.csv", "w") as f:
+                for _ in range(rows):
+                    f.write("0,0,0,0,0,0,/None\n")
+
+        assert verify_standard_workload(mock_config) is True
+
     def test_verify_standard_workload_failure_missing_done(self, mock_config, tmp_path):
         mock_config.out_dir.mkdir(parents=True)
         # Missing done file
