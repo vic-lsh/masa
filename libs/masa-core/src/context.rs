@@ -188,7 +188,14 @@ impl ContextBuilder {
                 }
                 #[cfg(not(feature = "sched_tailclipper"))]
                 {
-                    PriorityHint::new(self.deadline)
+                    #[cfg(feature = "sched_pred")]
+                    {
+                        PriorityHint::new(self.deadline.saturating_sub(crate::time_now()))
+                    }
+                    #[cfg(not(feature = "sched_pred"))]
+                    {
+                        PriorityHint::new(self.deadline)
+                    }
                 }
             }),
             frontend_elapse: self.frontend_elapse,
