@@ -64,6 +64,7 @@ pub struct ReplayWorkItem {
     pub payload: ProtoReplayRequest,
 }
 
+#[allow(dead_code)]
 fn deserialize_opt_u64<'de, D>(deserializer: D) -> Result<Option<u64>, D::Error>
 where
     D: serde::Deserializer<'de>,
