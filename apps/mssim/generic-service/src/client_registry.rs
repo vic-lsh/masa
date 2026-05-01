@@ -67,9 +67,7 @@ impl ClientRegistry {
         ClientLookup::StartupRace
     }
 
-    /// Read guard for callers that iterate the whole map (fanout_default,
-    /// replay). Iteration pre-bootstrap just yields an empty map, which is a
-    /// no-op fanout — no invariant check needed here.
+    /// Read guard for replay callers that iterate the whole map.
     pub(crate) async fn read(&self) -> RwLockReadGuard<'_, HashMap<ServiceName, RpcClient>> {
         self.clients.read().await
     }

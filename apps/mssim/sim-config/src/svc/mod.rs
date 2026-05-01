@@ -297,8 +297,7 @@ impl CallGraphConfig {
             method_freq::MethodFreqMap::merge_maps(all_freq_maps).ok()
         };
 
-        // Load call sequences from all directories
-        let is_root = svc_name.is_root_service();
+        // Load conditional call sequences from all directories.
         let mut call_sequences: HashMap<GraphId, Option<call_sequence::CallSequence>> =
             HashMap::new();
 
@@ -312,21 +311,8 @@ impl CallGraphConfig {
                     .unwrap_or_else(|| "default".to_string()),
             );
 
-            // Load call sequence based on whether this is a root service
-            if is_root {
-                // For root services, load USER call sequence
-                if let Ok(user_call_sequence) =
-                    call_sequence::load_root_user_call_sequence(callgraph_dir, &graph_id)
-                {
-                    call_sequences.insert(graph_id.clone(), Some(user_call_sequence));
-                }
-            } else {
-                // For regular services, load service-specific call sequence
-                if let Ok(Some(call_sequence)) =
-                    call_sequence::load_call_sequence(callgraph_dir, svc_name, &graph_id)
-                {
-                    call_sequences.insert(graph_id.clone(), Some(call_sequence));
-                }
+            if let Ok(call_sequence) = call_sequence::load_call_sequence(callgraph_dir, &graph_id) {
+                call_sequences.insert(graph_id.clone(), Some(call_sequence));
             }
         }
 
@@ -407,6 +393,55 @@ mod tests {
             .sample_method(&svc_name, &graph_id, &mut rng)
             .expect("service must have methods");
         assert!(["method_x", "method_y", "method_z"].contains(&sampled.method.as_ref()));
+    }
+
+    #[test]
+    fn test_read_conditional_variant_golden_graph() {
+        let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/conditional_variants/S_124848862");
+        let svc_name = ServiceName::from_string("MS_10207".into());
+        let graph_id = GraphId::from_string("S_124848862".to_string());
+
+        let config = CallGraphConfig::from_callgraph_dirs(&[dir], &svc_name)
+            .expect("golden graph should load");
+
+        let user = ServiceName::from_string("USER".into());
+        assert_eq!(
+            config.call_graph.callees_of(&user).get(&svc_name).copied(),
+            Some(2314)
+        );
+
+        let sequence = config
+            .call_sequences
+            .get(&graph_id)
+            .and_then(|seq| seq.as_ref())
+            .expect("call sequence should be loaded");
+        assert!(sequence.get_method(&"USER".into()).is_some());
+        assert!(
+            sequence
+                .get_method(&"ms-10207::0xQx3v-gtz".into())
+                .is_some()
+        );
+
+        let latency = config
+            .method_latency
+            .as_ref()
+            .expect("latency should be loaded");
+        assert!(
+            latency
+                .get_method_dist(&"0xQx3v-gtz".into(), &graph_id)
+                .is_some()
+        );
+
+        let freq_map = config
+            .method_freq_map
+            .as_ref()
+            .expect("method frequencies should be loaded");
+        let mut rng = rand::rng();
+        let sampled = freq_map
+            .sample_method(&svc_name, &graph_id, &mut rng)
+            .expect("service must have a sampled method");
+        assert_eq!(sampled.method, "0xQx3v-gtz");
     }
 
     #[test]

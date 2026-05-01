@@ -8,7 +8,9 @@ use crate::RpcClient;
 use anyhow::Result;
 use masa::MethodId;
 use sim_config::deployment::Deployment;
-use sim_config::svc::call_sequence::CallSequence;
+use sim_config::svc::call_sequence::{
+    CallSequence, CallSequenceVariant, MethodCallSequence, VariantChoice,
+};
 use sim_config::svc::{CallGraphConfig, GraphId, ServiceName};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -95,6 +97,7 @@ impl ServiceCore {
     pub(crate) async fn handle_method(
         &self,
         method_id: MethodId,
+        variant_id: Option<String>,
         req_id: u64,
         start_at: u64,
         parent_chain: Vec<ServiceName>,
@@ -114,8 +117,15 @@ impl ServiceCore {
             self.handle_leaf_service(total_latency_ms).await;
         } else {
             let start_time = std::time::Instant::now();
-            self.fanout(req_id, start_at, parent_chain, graph_name)
-                .await?;
+            self.fanout(
+                req_id,
+                start_at,
+                parent_chain,
+                graph_name,
+                &method_id,
+                variant_id,
+            )
+            .await?;
             let elapsed = start_time.elapsed();
 
             let remaining = total_latency_ms - (elapsed.as_millis() as f64);
@@ -141,37 +151,41 @@ impl ServiceCore {
         start_at: u64,
         parent_chain: Vec<ServiceName>,
         graph_name: &GraphId,
+        method_id: &MethodId,
+        variant_id: Option<String>,
     ) -> Result<(), Status> {
         static CALL_SEQUENCE_MISSING_WARN_ONCE: Once = Once::new();
 
-        let call_sequence_opt = self
+        let call_sequence = self
             .config
             .call_sequences
             .get(graph_name)
-            .and_then(|opt| opt.as_ref());
+            .and_then(|opt| opt.as_ref())
+            .ok_or_else(|| {
+                CALL_SEQUENCE_MISSING_WARN_ONCE.call_once(|| {
+                    warn!(
+                        "Call sequence missing for service {} and graph {}",
+                        self.self_svc_name.as_str(),
+                        graph_name
+                    );
+                });
+                Status::not_found(format!(
+                    "Call sequence missing for service {} and graph {}",
+                    self.self_svc_name.as_str(),
+                    graph_name.as_str()
+                ))
+            })?;
 
-        if let Some(call_sequence) = call_sequence_opt {
-            return self
-                .fanout_with_call_sequence(
-                    req_id,
-                    start_at,
-                    parent_chain,
-                    graph_name,
-                    call_sequence,
-                )
-                .await;
-        }
-
-        CALL_SEQUENCE_MISSING_WARN_ONCE.call_once(|| {
-            warn!(
-                "Call sequence missing for service {} and graph {}; falling back to default fanout logic",
-                self.self_svc_name.as_str(),
-                graph_name
-            );
-        });
-
-        self.fanout_default(req_id, start_at, parent_chain, graph_name)
-            .await
+        self.fanout_with_call_sequence(
+            req_id,
+            start_at,
+            parent_chain,
+            graph_name,
+            method_id,
+            variant_id.as_deref(),
+            call_sequence,
+        )
+        .await
     }
 
     async fn fanout_with_call_sequence(
@@ -180,14 +194,25 @@ impl ServiceCore {
         start_at: u64,
         parent_chain: Vec<ServiceName>,
         graph_name: &GraphId,
+        method_id: &MethodId,
+        variant_id: Option<&str>,
         call_sequence: &CallSequence,
     ) -> Result<(), Status> {
+        let lookup_method_id = self.call_sequence_method_id(method_id);
+        let method_sequence = call_sequence.get_method(&lookup_method_id).ok_or_else(|| {
+            Status::not_found(format!(
+                "Call sequence method '{}' not found for graph '{}'",
+                lookup_method_id,
+                graph_name.as_str()
+            ))
+        })?;
+        let selected_variant = select_call_sequence_variant(method_sequence, variant_id)?;
         let mut parent_chain_for_children = parent_chain.clone();
         parent_chain_for_children.push(self.self_svc_name.clone());
         let parent_chain_metadata = encode_parent_chain(&parent_chain_for_children)?;
 
         // Execute each step sequentially
-        for step in call_sequence {
+        for step in &selected_variant.sequence {
             let mut tasks = JoinSet::new();
 
             // Process each child in this step
@@ -203,15 +228,6 @@ impl ServiceCore {
                     continue;
                 }
 
-                // Check probability
-                if entry.probability <= 0.0 {
-                    continue;
-                }
-
-                if entry.probability < 1.0 && rand::random::<f64>() >= entry.probability {
-                    continue;
-                }
-
                 let client = match self.clients.get_expect_ready(child_svc_name).await {
                     ClientLookup::Found(c) => c,
                     ClientLookup::StartupRace => {
@@ -223,6 +239,8 @@ impl ServiceCore {
                     }
                 };
 
+                let child_variant_id = sample_variant_choice(&entry.callee_variants);
+
                 // Create request
                 let mut client_clone = client.clone();
                 let mut request = Request::new(InvokeRequest {
@@ -230,6 +248,7 @@ impl ServiceCore {
                     start_at,
                     method_name: entry.method_name.to_string(),
                     graph_name: graph_name.as_str().to_string(),
+                    variant_id: child_variant_id.unwrap_or_default(),
                 });
 
                 // Set method name override for latency tracking
@@ -270,108 +289,6 @@ impl ServiceCore {
         }
 
         Ok(())
-    }
-
-    async fn fanout_default(
-        &self,
-        req_id: u64,
-        start_at: u64,
-        parent_chain: Vec<ServiceName>,
-        graph_name: &GraphId,
-    ) -> Result<(), Status> {
-        let mut tasks = JoinSet::new();
-        let mut parent_chain_for_children = parent_chain.clone();
-        parent_chain_for_children.push(self.self_svc_name.clone());
-
-        let parent_chain_metadata = encode_parent_chain(&parent_chain_for_children)?;
-
-        let clients_guard = self.clients.read().await;
-        for (child_svc_name, client) in clients_guard.iter() {
-            // Iterating an empty map pre-bootstrap is a no-op fanout; the
-            // invariant check lives in `get_expect_ready` for by-name lookups.
-            if child_svc_name == &self.self_svc_name {
-                continue;
-            }
-
-            if parent_chain.iter().any(|svc| svc == child_svc_name) {
-                continue;
-            }
-
-            let probability = self
-                .child_call_probabilities
-                .get(child_svc_name)
-                .copied()
-                .unwrap_or(0.0)
-                .clamp(0.0, 1.0);
-
-            if probability <= 0.0 {
-                continue;
-            }
-
-            if probability < 1.0 && rand::random::<f64>() >= probability {
-                continue;
-            }
-
-            let (method_to_call, _method_graph) = self
-                .sample_method_for_child(child_svc_name, graph_name)
-                .ok_or_else(|| {
-                    Status::not_found(format!(
-                        "Configuration error: Service {} has no method to call",
-                        child_svc_name
-                    ))
-                })?;
-
-            let mut client = client.clone();
-            let mut request = Request::new(InvokeRequest {
-                req_id,
-                start_at,
-                method_name: method_to_call.to_string(),
-                graph_name: graph_name.into(),
-            });
-
-            // Set method name override for latency tracking
-            request
-                .set_method_name_override(&method_to_call)
-                .map_err(|e| {
-                    Status::internal(format!("Failed to set method name override: {:?}", e))
-                })?;
-            request
-                .set_service_name_override(child_svc_name.as_str())
-                .map_err(|e| {
-                    Status::internal(format!("Failed to set service name override: {:?}", e))
-                })?;
-
-            if let Some(ref metadata_value) = parent_chain_metadata {
-                request
-                    .metadata_mut()
-                    .insert(PARENT_CHAIN_METADATA_KEY, metadata_value.clone());
-            }
-
-            tasks.spawn(async move { client.invoke(request).await });
-        }
-        drop(clients_guard);
-
-        while let Some(task_result) = tasks.join_next().await {
-            let rpc_result =
-                task_result.map_err(|e| Status::internal(format!("Task join error: {:?}", e)))?;
-            rpc_result?;
-        }
-        Ok(())
-    }
-
-    fn sample_method_for_child(
-        &self,
-        child_svc_name: &ServiceName,
-        graph_name: &GraphId,
-    ) -> Option<(MethodId, Option<GraphId>)> {
-        if let Some(freq_map) = self.config.method_freq_map.as_ref() {
-            let mut rng = rand::rng();
-            if let Some(sampled) = freq_map.sample_method(child_svc_name, graph_name, &mut rng) {
-                return Some((sampled.method, sampled.graph));
-            }
-        }
-
-        None
     }
 
     pub(crate) async fn execute_replay(&self, request: &ReplayRequest) -> Result<(), Status> {
@@ -436,10 +353,77 @@ impl ServiceCore {
             start_at,
             parent_chain,
             graph_name,
+            &MethodId::from("USER"),
+            None,
             user_call_sequence,
         )
         .await
     }
+
+    fn call_sequence_method_id(&self, method_id: &MethodId) -> MethodId {
+        if method_id == &MethodId::from("USER") {
+            return MethodId::from("USER");
+        }
+
+        format!("{}::{}", self.self_svc_name.as_str(), method_id).into()
+    }
+}
+
+fn select_call_sequence_variant<'a>(
+    method_sequence: &'a MethodCallSequence,
+    requested_variant: Option<&str>,
+) -> Result<&'a CallSequenceVariant, Status> {
+    if let Some(variant_id) = requested_variant.filter(|id| !id.is_empty()) {
+        return method_sequence.get_variant(variant_id).ok_or_else(|| {
+            Status::not_found(format!("Call sequence variant '{}' not found", variant_id))
+        });
+    }
+
+    sample_weighted_variant(method_sequence.variants.values()).ok_or_else(|| {
+        Status::not_found("Call sequence method has no variant with positive probability")
+    })
+}
+
+fn sample_weighted_variant<'a, I>(variants: I) -> Option<&'a CallSequenceVariant>
+where
+    I: IntoIterator<Item = &'a CallSequenceVariant>,
+{
+    let variants: Vec<_> = variants.into_iter().collect();
+    let total: f64 = variants
+        .iter()
+        .map(|variant| variant.probability.max(0.0))
+        .sum();
+    if total <= 0.0 {
+        return None;
+    }
+
+    let mut threshold = rand::random::<f64>() * total;
+    for variant in variants {
+        threshold -= variant.probability.max(0.0);
+        if threshold <= 0.0 {
+            return Some(variant);
+        }
+    }
+    None
+}
+
+fn sample_variant_choice(choices: &[VariantChoice]) -> Option<String> {
+    let total: f64 = choices
+        .iter()
+        .map(|choice| choice.probability.max(0.0))
+        .sum();
+    if total <= 0.0 {
+        return None;
+    }
+
+    let mut threshold = rand::random::<f64>() * total;
+    for choice in choices {
+        threshold -= choice.probability.max(0.0);
+        if threshold <= 0.0 {
+            return Some(choice.variant_id.clone());
+        }
+    }
+    None
 }
 
 fn compute_child_probabilities(
@@ -474,7 +458,10 @@ mod tests {
     use crate::service_stubs::{self, InvokeRequest, InvokeResponse};
     use masa::MethodId;
     use sim_config::svc::{
-        call_sequence::CallSequenceEntry, CallGraphConfig, GraphId, ServiceName,
+        call_sequence::{
+            CallSequence, CallSequenceEntry, CallSequenceVariant, MethodCallSequence, VariantChoice,
+        },
+        CallGraphConfig, GraphId, ServiceName,
     };
     use std::collections::HashMap;
     use tonic::async_trait;
@@ -510,7 +497,7 @@ mod tests {
     // --- Helpers ---
 
     struct MockSvc {
-        tx: tokio::sync::mpsc::Sender<(String, String)>,
+        tx: tokio::sync::mpsc::Sender<(String, String, String)>,
     }
 
     #[async_trait]
@@ -530,8 +517,12 @@ mod tests {
                 .and_then(|v| v.to_str().ok())
                 .unwrap_or_default()
                 .to_string();
+            let variant_id = request.into_inner().variant_id;
 
-            let _ = self.tx.send((svc_override, method_override)).await;
+            let _ = self
+                .tx
+                .send((svc_override, method_override, variant_id))
+                .await;
             Ok(tonic::Response::new(InvokeResponse::default()))
         }
         async fn ping(
@@ -556,7 +547,7 @@ mod tests {
         }
     }
 
-    async fn spawn_mock_server() -> (u16, tokio::sync::mpsc::Receiver<(String, String)>) {
+    async fn spawn_mock_server() -> (u16, tokio::sync::mpsc::Receiver<(String, String, String)>) {
         let (tx, rx) = tokio::sync::mpsc::channel(1);
 
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -599,6 +590,29 @@ mod tests {
 
     // --- Tests ---
 
+    fn single_variant_sequence(child_svc: &ServiceName, method: &str) -> CallSequence {
+        let mut variants = HashMap::new();
+        variants.insert(
+            "v001".to_string(),
+            CallSequenceVariant {
+                variant_id: "v001".to_string(),
+                probability: 1.0,
+                sequence: vec![vec![CallSequenceEntry {
+                    service_name: child_svc.clone(),
+                    method_name: method.to_string().into(),
+                    callee_variants: Vec::new(),
+                }]],
+            },
+        );
+
+        let mut methods = HashMap::new();
+        methods.insert(
+            MethodId::from("sender::parent-method"),
+            MethodCallSequence { variants },
+        );
+        CallSequence { methods }
+    }
+
     #[tokio::test]
     async fn test_overrides_integration() {
         // 1. Setup Mock Server
@@ -608,11 +622,7 @@ mod tests {
         let graph_id = GraphId::from_string("test-graph".to_string());
         let child_svc = ServiceName::from_string("receiver".to_string());
 
-        let call_seq = vec![vec![CallSequenceEntry {
-            service_name: child_svc.clone(),
-            method_name: MethodId::from("test-method"),
-            probability: 1.0,
-        }]];
+        let call_seq = single_variant_sequence(&child_svc, "test-method");
 
         let mut call_sequences = HashMap::new();
         call_sequences.insert(graph_id.clone(), Some(call_seq));
@@ -627,28 +637,55 @@ mod tests {
         let core = setup_core_with_config(config, port, "sender", "receiver").await;
 
         // 3. Execute
-        core.fanout(1, 0, vec![], &graph_id).await.unwrap();
+        core.fanout(
+            1,
+            0,
+            vec![],
+            &graph_id,
+            &MethodId::from("parent-method"),
+            Some("v001".to_string()),
+        )
+        .await
+        .unwrap();
 
         // 4. Assert
-        let (svc_over, meth_over) = rx.recv().await.unwrap();
+        let (svc_over, meth_over, variant_id) = rx.recv().await.unwrap();
         assert_eq!(svc_over, "receiver");
         assert_eq!(meth_over, "test-method");
+        assert_eq!(variant_id, "");
     }
 
     #[tokio::test]
-    async fn test_fanout_probability() {
+    async fn test_fanout_propagates_child_variant() {
         // 1. Setup Mock Server
         let (port, mut rx) = spawn_mock_server().await;
 
-        // 2. Setup Config with 0.0 probability
-        let graph_id = GraphId::from_string("prob-graph".to_string());
+        // 2. Setup Config with a deterministic child variant mapping.
+        let graph_id = GraphId::from_string("variant-graph".to_string());
         let child_svc = ServiceName::from_string("receiver".to_string());
 
-        let call_seq = vec![vec![CallSequenceEntry {
-            service_name: child_svc.clone(),
-            method_name: MethodId::from("prob-method"),
-            probability: 0.0,
-        }]];
+        let mut variants = HashMap::new();
+        variants.insert(
+            "v001".to_string(),
+            CallSequenceVariant {
+                variant_id: "v001".to_string(),
+                probability: 1.0,
+                sequence: vec![vec![CallSequenceEntry {
+                    service_name: child_svc.clone(),
+                    method_name: MethodId::from("variant-method"),
+                    callee_variants: vec![VariantChoice {
+                        variant_id: "v007".to_string(),
+                        probability: 1.0,
+                    }],
+                }]],
+            },
+        );
+        let mut methods = HashMap::new();
+        methods.insert(
+            MethodId::from("sender::parent-method"),
+            MethodCallSequence { variants },
+        );
+        let call_seq = CallSequence { methods };
 
         let mut call_sequences = HashMap::new();
         call_sequences.insert(graph_id.clone(), Some(call_seq));
@@ -663,13 +700,89 @@ mod tests {
         let core = setup_core_with_config(config, port, "sender", "receiver").await;
 
         // 3. Execute
-        core.fanout(1, 0, vec![], &graph_id).await.unwrap();
+        core.fanout(
+            1,
+            0,
+            vec![],
+            &graph_id,
+            &MethodId::from("parent-method"),
+            Some("v001".to_string()),
+        )
+        .await
+        .unwrap();
 
-        // 4. Assert - Should timeout because probability is 0
-        let result = tokio::time::timeout(std::time::Duration::from_millis(100), rx.recv()).await;
-        assert!(
-            result.is_err(),
-            "Should not have received a call with probability 0.0"
+        // 4. Assert
+        let (svc_over, meth_over, variant_id) = rx.recv().await.unwrap();
+        assert_eq!(svc_over, "receiver");
+        assert_eq!(meth_over, "variant-method");
+        assert_eq!(variant_id, "v007");
+    }
+
+    #[tokio::test]
+    async fn test_fanout_uses_requested_parent_variant() {
+        let (port, mut rx) = spawn_mock_server().await;
+        let graph_id = GraphId::from_string("requested-variant-graph".to_string());
+        let child_svc = ServiceName::from_string("receiver".to_string());
+
+        let mut variants = HashMap::new();
+        variants.insert(
+            "v001".to_string(),
+            CallSequenceVariant {
+                variant_id: "v001".to_string(),
+                probability: 0.99,
+                sequence: vec![vec![CallSequenceEntry {
+                    service_name: child_svc.clone(),
+                    method_name: MethodId::from("wrong-method"),
+                    callee_variants: Vec::new(),
+                }]],
+            },
         );
+        variants.insert(
+            "v002".to_string(),
+            CallSequenceVariant {
+                variant_id: "v002".to_string(),
+                probability: 0.01,
+                sequence: vec![vec![CallSequenceEntry {
+                    service_name: child_svc.clone(),
+                    method_name: MethodId::from("requested-method"),
+                    callee_variants: vec![VariantChoice {
+                        variant_id: "child-v002".to_string(),
+                        probability: 1.0,
+                    }],
+                }]],
+            },
+        );
+
+        let mut methods = HashMap::new();
+        methods.insert(
+            MethodId::from("sender::parent-method"),
+            MethodCallSequence { variants },
+        );
+        let mut call_sequences = HashMap::new();
+        call_sequences.insert(graph_id.clone(), Some(CallSequence { methods }));
+
+        let config = CallGraphConfig {
+            call_sequences,
+            method_latency: None,
+            method_freq_map: None,
+            call_graph: sim_config::svc::call_graph::CallGraph::default(),
+        };
+
+        let core = setup_core_with_config(config, port, "sender", "receiver").await;
+        core.fanout(
+            1,
+            0,
+            vec![],
+            &graph_id,
+            &MethodId::from("parent-method"),
+            Some("v002".to_string()),
+        )
+        .await
+        .unwrap();
+
+        let (svc_over, meth_over, variant_id) = rx.recv().await.unwrap();
+        assert_eq!(svc_over, "receiver");
+        assert_eq!(meth_over, "requested-method");
+        assert_eq!(variant_id, "child-v002");
     }
 }

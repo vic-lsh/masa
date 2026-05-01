@@ -146,6 +146,8 @@ impl Layer for EstimationLayer {
             self.estimation.resolved_method_id,
             child_tracker.path_prefix,
             &child_tracker.base_signature,
+            child_tracker.service_path_prefix,
+            &child_tracker.base_service_signature,
             child_tracker.child_id,
             time_left,
         );
