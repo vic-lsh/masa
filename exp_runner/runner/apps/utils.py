@@ -134,6 +134,33 @@ def get_docker_progress_flag() -> str:
     return "--progress=tty"
 
 
+def _api_weight_fractions(gen_config: dict, num_apis: int) -> Optional[list[float]]:
+    weights = gen_config.get("ApiWeights")
+    if weights is None:
+        return [1.0 / num_apis for _ in range(num_apis)]
+
+    if len(weights) != num_apis:
+        logger.error("ApiWeights length must match Apis length")
+        return None
+
+    try:
+        weights = [float(weight) for weight in weights]
+    except (TypeError, ValueError):
+        logger.error("ApiWeights entries must be numeric")
+        return None
+
+    if any(weight < 0 for weight in weights):
+        logger.error("ApiWeights entries must be non-negative")
+        return None
+
+    total_weight = sum(weights)
+    if total_weight <= 0:
+        logger.error("ApiWeights must contain at least one positive value")
+        return None
+
+    return [weight / total_weight for weight in weights]
+
+
 def verify_standard_workload(config: "ExperimentConfig") -> bool:
     """
     Shared verification logic for standard workloads (hotel, socialnet, synthetic).
@@ -167,6 +194,9 @@ def verify_standard_workload(config: "ExperimentConfig") -> bool:
     if num_apis == 0:
         logger.error("No APIs defined in gen_config.json")
         return False
+    api_weight_fractions = _api_weight_fractions(gen_config, num_apis)
+    if api_weight_fractions is None:
+        return False
 
     policies = config.policies
 
@@ -192,7 +222,7 @@ def verify_standard_workload(config: "ExperimentConfig") -> bool:
                 all_passed = False
 
             for rps in rps_list:
-                for api in apis:
+                for api, api_fraction in zip(apis, api_weight_fractions):
                     expected_file = policy_dir / f"r{rps}_{api}.csv"
                     if not expected_file.exists():
                         logger.error(f"Expected output file missing: {expected_file}")
@@ -214,7 +244,7 @@ def verify_standard_workload(config: "ExperimentConfig") -> bool:
                         continue
 
                     expected_total = rps * duration
-                    expected_per_api = expected_total / num_apis
+                    expected_per_api = expected_total * api_fraction
 
                     lower = expected_per_api * 0.8
                     upper = expected_per_api * 1.2

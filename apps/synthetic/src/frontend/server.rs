@@ -1,24 +1,34 @@
-use std::collections::HashMap;
 use std::time::Instant;
 
 use crate::bootstrap::{ConnectionBootstrap, ConnectionBootstrapTask};
-use crate::config::{parse_call_sequences, CallTarget, SyntheticConfig};
+use crate::config::{parse_call_sequences, SyntheticConfig};
+use crate::hop_trace::encode_hop_traces;
 use crate::service_registry::ServiceRegistry;
-use crate::util::execute_call_sequence;
+#[cfg(not(feature = "sched_oracle"))]
+use crate::{config::ParsedCall, util::execute_call_sequence};
+#[cfg(feature = "sched_oracle")]
+use crate::{oracle::OraclePlanner, util::execute_oracle_call_sequence};
+#[cfg(not(feature = "sched_oracle"))]
+use std::collections::HashMap;
 
 use tonic::{Request, Response, Status};
 
 use crate::tonic::{frontend, frontend::frontend_server::Frontend};
 
 pub struct FrontendImpl {
-    parsed_entry_points: HashMap<String, Vec<Vec<(CallTarget, f64)>>>,
+    #[cfg(not(feature = "sched_oracle"))]
+    parsed_entry_points: HashMap<String, Vec<Vec<ParsedCall>>>,
+    #[cfg(feature = "sched_oracle")]
+    oracle_planner: OraclePlanner,
     service_registry: ServiceRegistry,
     _bootstrap_task: Option<ConnectionBootstrapTask>,
 }
 
 impl FrontendImpl {
     pub async fn new(config: SyntheticConfig) -> Self {
-        let SyntheticConfig { mut call_graph, .. } = config;
+        let mut call_graph = config.call_graph;
+        #[cfg(feature = "sched_oracle")]
+        let oracle_work_estimate = config.oracle_work_estimate;
 
         // Read project name from environment variable (set by exp_runner.runner)
         let project_name = std::env::var("DOCKER_COMPOSE_PROJECT_NAME")
@@ -29,6 +39,12 @@ impl FrontendImpl {
         if let Err(e) = parse_call_sequences(&mut call_graph) {
             panic!("Failed to parse call graph: {}", e);
         }
+
+        #[cfg(feature = "sched_oracle")]
+        let oracle_planner =
+            OraclePlanner::new(&call_graph, oracle_work_estimate).unwrap_or_else(|e| {
+                panic!("Failed to initialize oracle planner: {}", e);
+            });
 
         // Build connection info for all services in call graph
         // Docker Compose creates containers with names like: {project}-{service}-{replica_number}
@@ -62,7 +78,10 @@ impl FrontendImpl {
         };
 
         FrontendImpl {
+            #[cfg(not(feature = "sched_oracle"))]
             parsed_entry_points: call_graph.parsed_entry_points,
+            #[cfg(feature = "sched_oracle")]
+            oracle_planner,
             service_registry: registry,
             _bootstrap_task: bootstrap_task,
         }
@@ -89,14 +108,32 @@ impl Frontend for FrontendImpl {
         let start = Instant::now();
 
         // Call the entry point sequence for "a"
-        if let Some(sequence) = self.parsed_entry_points.get("a") {
-            execute_call_sequence(&self.service_registry, sequence).await?;
+        #[cfg(feature = "sched_oracle")]
+        let oracle_plan = self
+            .oracle_planner
+            .plan_entry_point("a")
+            .map_err(Status::internal)?;
+
+        #[cfg(feature = "sched_oracle")]
+        let hop_traces =
+            execute_oracle_call_sequence(&self.service_registry, &oracle_plan.child_steps).await?;
+
+        #[cfg(not(feature = "sched_oracle"))]
+        let hop_traces = if let Some(sequence) = self.parsed_entry_points.get("a") {
+            execute_call_sequence(&self.service_registry, sequence).await?
         } else {
             // warn!("No entry point defined for 'a'");
-        }
+            Vec::new()
+        };
+
+        let handler_latency = Instant::now().duration_since(start).as_micros() as u64;
+        #[cfg(feature = "sched_oracle")]
+        self.oracle_planner
+            .record_entry_point_latency("a", handler_latency, &oracle_plan);
 
         Ok(Response::new(frontend::AResponse {
-            handler_latency: Instant::now().duration_since(start).as_micros() as u64,
+            handler_latency,
+            hop_trace_json: encode_hop_traces(&hop_traces)?,
         }))
     }
 
@@ -104,13 +141,37 @@ impl Frontend for FrontendImpl {
         &self,
         _request: Request<frontend::BRequest>,
     ) -> Result<Response<frontend::BResponse>, Status> {
+        #[cfg(feature = "sched_oracle")]
+        let start = Instant::now();
+
         // Call the entry point sequence for "b"
-        if let Some(sequence) = self.parsed_entry_points.get("b") {
-            execute_call_sequence(&self.service_registry, sequence).await?;
+        #[cfg(feature = "sched_oracle")]
+        let oracle_plan = self
+            .oracle_planner
+            .plan_entry_point("b")
+            .map_err(Status::internal)?;
+
+        #[cfg(feature = "sched_oracle")]
+        let hop_traces =
+            execute_oracle_call_sequence(&self.service_registry, &oracle_plan.child_steps).await?;
+
+        #[cfg(not(feature = "sched_oracle"))]
+        let hop_traces = if let Some(sequence) = self.parsed_entry_points.get("b") {
+            execute_call_sequence(&self.service_registry, sequence).await?
         } else {
             // warn!("No entry point defined for 'b'");
-        }
+            Vec::new()
+        };
 
-        Ok(Response::new(frontend::BResponse {}))
+        #[cfg(feature = "sched_oracle")]
+        self.oracle_planner.record_entry_point_latency(
+            "b",
+            Instant::now().duration_since(start).as_micros() as u64,
+            &oracle_plan,
+        );
+
+        Ok(Response::new(frontend::BResponse {
+            hop_trace_json: encode_hop_traces(&hop_traces)?,
+        }))
     }
 }

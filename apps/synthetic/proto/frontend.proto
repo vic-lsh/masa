@@ -16,9 +16,11 @@ message AResponse {
 
 
   uint64 handler_latency = 7;
+  string hop_trace_json = 8;
 }
 
 
 message BRequest {}
 message BResponse {
+  string hop_trace_json = 1;
 }

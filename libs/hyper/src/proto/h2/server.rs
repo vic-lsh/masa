@@ -347,11 +347,13 @@ where
                         }
 
                         if let Some(ctx) = req.headers().get(masa_core::MASA_CONTEXT_HEADER) {
-                            // [NOTE] Get priority from context.
+                            // The policy computes the priority before serializing the Masa context.
+                            // Hyper must preserve that value rather than deriving a new one from
+                            // the deadline; policies such as TailClipper and oracle do not use the
+                            // deadline itself as the priority key.
                             let ctx_str = ctx.to_str().unwrap();
                             let ctx = MasaContext::from_header_string(ctx_str);
-                            let remaining = ctx.deadline().saturating_sub(masa_core::time_now());
-                            let prio = masa_core::PriorityHint::new(remaining);
+                            let prio = ctx.prio_hint();
                             // [NOTE] Into executor.
                             let fut = H2Stream::new(service.call(req), connect_parts, respond);
                             // [TODO:Weixin] Skip if the deadline is already passed.

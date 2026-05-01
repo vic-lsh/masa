@@ -7,6 +7,7 @@ edition = "2021"
 sched_fifo = []
 sched_slo = []
 sched_tailclipper = []
+sched_oracle = []
 sched_pred = ["estimator", "sched_slo"]
 abort_slo = []
 abort_slack = ["estimator"]
