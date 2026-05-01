@@ -14,10 +14,12 @@ does not change the existing call_sequence.json format.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import logging
 import re
 import sys
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from pathlib import Path
@@ -134,25 +136,124 @@ def parse_dataset_ids(raw_ids: str | None, num_datasets: int) -> list[int]:
     return list(range(num_datasets))
 
 
+def keep_trace_by_hash(dataset_id: str, traceid: object, fraction: float, seed: int) -> bool:
+    if fraction >= 1.0:
+        return True
+    key = f"{seed}:{dataset_id}:{traceid}".encode("utf-8", errors="replace")
+    digest = hashlib.blake2b(key, digest_size=8).digest()
+    value = int.from_bytes(digest, byteorder="big", signed=False)
+    return (value / 2**64) < fraction
+
+
+def add_trace_keys(frame: pd.DataFrame, dataset_id: int) -> pd.DataFrame:
+    frame = frame.copy()
+    frame["_dataset_id"] = str(dataset_id)
+    frame["traceid"] = frame["traceid"].astype(str).str.strip()
+    frame["_trace_key"] = frame["_dataset_id"] + ":" + frame["traceid"]
+    return frame
+
+
+def hash_sample_frame(frame: pd.DataFrame, fraction: float, random_state: int) -> pd.DataFrame:
+    if fraction >= 1.0 or frame.empty:
+        return frame
+
+    keep_keys = set()
+    for trace_key in frame["_trace_key"].dropna().unique():
+        dataset_id, traceid = str(trace_key).split(":", 1)
+        if keep_trace_by_hash(dataset_id, traceid, fraction, random_state):
+            keep_keys.add(trace_key)
+    if not keep_keys:
+        return frame.iloc[0:0].copy()
+    return frame[frame["_trace_key"].isin(keep_keys)].copy()
+
+
+def read_one_callgraph_csv(
+    dataset_id: int,
+    trace_dir: Path,
+    max_rows: int | None,
+    sample_trace_frac: float,
+    random_state: int,
+    chunk_rows: int | None,
+) -> pd.DataFrame:
+    path = trace_dir / f"CallGraph_{dataset_id}.csv"
+    if not path.exists():
+        raise FileNotFoundError(path)
+
+    read_kwargs: dict[str, Any] = {
+        "usecols": lambda col: col in TRACE_COLUMNS,
+        "on_bad_lines": "skip",
+    }
+    if max_rows is not None:
+        read_kwargs["nrows"] = max_rows
+
+    use_chunks = chunk_rows is not None and chunk_rows > 0
+    if use_chunks:
+        frames: list[pd.DataFrame] = []
+        for chunk in pd.read_csv(path, chunksize=chunk_rows, **read_kwargs):
+            chunk = add_trace_keys(chunk, dataset_id)
+            chunk = hash_sample_frame(chunk, sample_trace_frac, random_state)
+            if not chunk.empty:
+                frames.append(chunk)
+        if not frames:
+            return pd.DataFrame(columns=TRACE_COLUMNS + ["_dataset_id", "_trace_key"])
+        return pd.concat(frames, ignore_index=True, sort=False)
+
+    frame = pd.read_csv(path, **read_kwargs)
+    frame = add_trace_keys(frame, dataset_id)
+    return hash_sample_frame(frame, sample_trace_frac, random_state)
+
+
 def read_callgraph_csvs(
     trace_dir: Path,
     dataset_ids: list[int],
     max_rows: int | None,
+    sample_trace_frac: float,
+    random_state: int,
+    workers: int | None,
+    chunk_rows: int | None,
 ) -> pd.DataFrame:
     frames: list[pd.DataFrame] = []
-    for dataset_id in dataset_ids:
-        path = trace_dir / f"CallGraph_{dataset_id}.csv"
-        if not path.exists():
-            raise FileNotFoundError(path)
-        logger.info("Reading %s", path)
-        frame = pd.read_csv(
-            path,
-            usecols=lambda col: col in TRACE_COLUMNS,
-            nrows=max_rows,
-            on_bad_lines="skip",
-        )
-        frame["_dataset_id"] = str(dataset_id)
-        frames.append(frame)
+
+    if workers and workers > 1 and len(dataset_ids) > 1:
+        logger.info("Reading %s CSVs with %s workers", len(dataset_ids), workers)
+        frames_by_dataset: dict[int, pd.DataFrame] = {}
+        with ProcessPoolExecutor(max_workers=workers) as executor:
+            futures = {
+                executor.submit(
+                    read_one_callgraph_csv,
+                    dataset_id,
+                    trace_dir,
+                    max_rows,
+                    sample_trace_frac,
+                    random_state,
+                    chunk_rows,
+                ): dataset_id
+                for dataset_id in dataset_ids
+            }
+            for future in as_completed(futures):
+                dataset_id = futures[future]
+                frame = future.result()
+                logger.info(
+                    "Loaded dataset %s: %s sampled rows",
+                    dataset_id,
+                    f"{len(frame):,}",
+                )
+                frames_by_dataset[dataset_id] = frame
+        frames = [frames_by_dataset[dataset_id] for dataset_id in dataset_ids]
+    else:
+        for dataset_id in dataset_ids:
+            logger.info("Reading %s", trace_dir / f"CallGraph_{dataset_id}.csv")
+            frames.append(
+                read_one_callgraph_csv(
+                    dataset_id,
+                    trace_dir,
+                    max_rows,
+                    sample_trace_frac,
+                    random_state,
+                    chunk_rows,
+                )
+            )
+
     if not frames:
         return pd.DataFrame(columns=TRACE_COLUMNS + ["_dataset_id", "_trace_key"])
 
@@ -166,7 +267,6 @@ def read_callgraph_csvs(
     df["rpc_id"] = df["rpc_id"].astype(str).str.strip()
     df["um"] = df["um"].astype(str).str.strip()
     df["dm"] = df["dm"].astype(str).str.strip()
-    df["_trace_key"] = df["_dataset_id"] + ":" + df["traceid"]
     df["timestamp"] = pd.to_numeric(df["timestamp"], errors="coerce")
     df["rt"] = pd.to_numeric(df["rt"], errors="coerce")
     return df
@@ -527,9 +627,93 @@ def select_services(
     counts = (
         df.groupby("service")["_trace_key"]
         .nunique()
-        .sort_values(ascending=False)
+        .reset_index(name="trace_count")
+        .sort_values(["trace_count", "service"], ascending=[False, True])
     )
-    return counts.head(top_services).index.tolist()
+    return counts.head(top_services)["service"].tolist()
+
+
+def analyze_service_worker(args: tuple[str, pd.DataFrame, float, bool]) -> tuple[str, dict[str, Any], dict[str, Any]]:
+    service_name, service_df, overlap_threshold, missing_parent_as_root = args
+    graph_payload, stats = analyze_service(
+        service_name,
+        service_df,
+        overlap_threshold,
+        missing_parent_as_root,
+    )
+    return service_name, graph_payload, stats
+
+
+def analyze_selected_services(
+    df: pd.DataFrame,
+    services: list[str],
+    overlap_threshold: float,
+    missing_parent_as_root: bool,
+    workers: int | None,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    graphs: dict[str, Any] = {}
+    summary_rows: list[dict[str, Any]] = []
+
+    def record_result(
+        service_name: str,
+        graph_payload: dict[str, Any],
+        stats: dict[str, Any],
+    ) -> None:
+        graphs[service_name] = graph_payload
+        summary_row = {
+            "service": service_name,
+            "trace_count": graph_payload["trace_count"],
+            "row_count": graph_payload["row_count"],
+            "span_count": graph_payload["span_count"],
+            "root_span_count": graph_payload["root_span_count"],
+            "method_count": graph_payload["method_count"],
+            "variant_count": graph_payload["variant_count"],
+        }
+        summary_row.update({f"stat_{key}": value for key, value in stats.items()})
+        summary_rows.append(summary_row)
+
+    process_args = [
+        (
+            service_name,
+            df[df["service"] == service_name].copy(),
+            overlap_threshold,
+            missing_parent_as_root,
+        )
+        for service_name in services
+    ]
+
+    if workers and workers > 1 and len(process_args) > 1:
+        logger.info("Analyzing %s services with %s workers", len(process_args), workers)
+        with ProcessPoolExecutor(max_workers=workers) as executor:
+            futures = {
+                executor.submit(analyze_service_worker, arg): arg[0]
+                for arg in process_args
+            }
+            for future in as_completed(futures):
+                service_name, graph_payload, stats = future.result()
+                logger.info(
+                    "Finished %s (%s rows, %s traces, %s variants)",
+                    service_name,
+                    f"{graph_payload['row_count']:,}",
+                    f"{graph_payload['trace_count']:,}",
+                    f"{graph_payload['variant_count']:,}",
+                )
+                record_result(service_name, graph_payload, stats)
+    else:
+        for arg in process_args:
+            service_name, service_df, _, _ = arg
+            logger.info(
+                "Processing %s (%s rows, %s traces)",
+                service_name,
+                f"{len(service_df):,}",
+                f"{service_df['_trace_key'].nunique():,}",
+            )
+            result_service, graph_payload, stats = analyze_service_worker(arg)
+            record_result(result_service, graph_payload, stats)
+
+    summary_rows.sort(key=lambda row: services.index(row["service"]))
+    graphs = {service: graphs[service] for service in sorted(graphs)}
+    return graphs, summary_rows
 
 
 def write_outputs(
@@ -572,9 +756,24 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--sample-trace-frac",
         type=float,
         default=1.0,
-        help="Sample this fraction of loaded trace IDs after row loading.",
+        help="Sample this fraction of trace IDs. Hash mode samples during CSV loading.",
+    )
+    parser.add_argument(
+        "--sample-mode",
+        choices=["hash", "random-after-load"],
+        default="hash",
+        help=(
+            "hash keeps/drops each (dataset_id, traceid) deterministically during CSV loading; "
+            "random-after-load preserves the original load-then-sample behavior."
+        ),
     )
     parser.add_argument("--random-state", type=int, default=42)
+    parser.add_argument(
+        "--chunk-rows",
+        type=int,
+        default=1_000_000,
+        help="Rows per CSV chunk while loading. Set 0 to read each selected CSV in one dataframe.",
+    )
     parser.add_argument(
         "--top-services",
         type=int,
@@ -586,6 +785,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
         action="append",
         default=[],
         help="Analyze one service ID. Can be repeated.",
+    )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=1,
+        help="Worker processes for per-file loading and per-service analysis.",
     )
     parser.add_argument(
         "--overlap-threshold",
@@ -634,10 +839,21 @@ def main() -> None:
 
     dataset_ids = parse_dataset_ids(args.dataset_ids, args.num_datasets)
     excluded = {item.strip() for item in args.exclude_rpctype.split(",") if item.strip()}
+    chunk_rows = args.chunk_rows if args.chunk_rows and args.chunk_rows > 0 else None
+    load_sample_fraction = args.sample_trace_frac if args.sample_mode == "hash" else 1.0
 
-    df = read_callgraph_csvs(args.trace_dir, dataset_ids, args.max_rows)
+    df = read_callgraph_csvs(
+        args.trace_dir,
+        dataset_ids,
+        args.max_rows,
+        load_sample_fraction,
+        args.random_state,
+        args.workers,
+        chunk_rows,
+    )
     df = clean_data(df, excluded)
-    df = sample_trace_keys(df, args.sample_trace_frac, args.random_state)
+    if args.sample_mode == "random-after-load":
+        df = sample_trace_keys(df, args.sample_trace_frac, args.random_state)
 
     services = select_services(df, args.service, args.top_services)
     if not services:
@@ -651,7 +867,10 @@ def main() -> None:
             "dataset_ids": dataset_ids,
             "max_rows_per_csv": args.max_rows,
             "sample_trace_frac": args.sample_trace_frac,
+            "sample_mode": args.sample_mode,
             "random_state": args.random_state,
+            "chunk_rows": chunk_rows,
+            "workers": args.workers,
             "overlap_threshold": args.overlap_threshold,
             "excluded_rpctypes": sorted(excluded),
             "selected_services": services,
@@ -659,35 +878,15 @@ def main() -> None:
         },
         "graphs": {},
     }
-    summary_rows: list[dict[str, Any]] = []
 
-    for service_name in services:
-        service_df = df[df["service"] == service_name].copy()
-        logger.info(
-            "Processing %s (%s rows, %s traces)",
-            service_name,
-            f"{len(service_df):,}",
-            f"{service_df['_trace_key'].nunique():,}",
-        )
-        graph_payload, stats = analyze_service(
-            service_name,
-            service_df,
-            args.overlap_threshold,
-            args.missing_parent_as_root,
-        )
-        payload["graphs"][service_name] = graph_payload
-
-        summary_row = {
-            "service": service_name,
-            "trace_count": graph_payload["trace_count"],
-            "row_count": graph_payload["row_count"],
-            "span_count": graph_payload["span_count"],
-            "root_span_count": graph_payload["root_span_count"],
-            "method_count": graph_payload["method_count"],
-            "variant_count": graph_payload["variant_count"],
-        }
-        summary_row.update({f"stat_{key}": value for key, value in stats.items()})
-        summary_rows.append(summary_row)
+    graphs, summary_rows = analyze_selected_services(
+        df,
+        services,
+        args.overlap_threshold,
+        args.missing_parent_as_root,
+        args.workers,
+    )
+    payload["graphs"] = graphs
 
     write_outputs(args.output_dir, payload, summary_rows)
 
