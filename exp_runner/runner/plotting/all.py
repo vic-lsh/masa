@@ -27,9 +27,7 @@ logger = logging.getLogger(__name__)
 PLOT_MODULES: tuple[str, ...] = ("goodput", "latency", "queueing", "cpu")
 
 
-def _resolve_modules(
-    only: list[str] | None, skip: list[str] | None
-) -> set[str]:
+def _resolve_modules(only: list[str] | None, skip: list[str] | None) -> set[str]:
     """Resolve --only / --skip into the set of module names to run.
 
     `only` wins over `skip` (selector vs. filter): if `only` is given, the
@@ -53,9 +51,7 @@ def _resolve_modules(
             if not m:
                 continue
             if m not in known:
-                raise ValueError(
-                    f"unknown plot module {m!r}; known: {sorted(known)}"
-                )
+                raise ValueError(f"unknown plot module {m!r}; known: {sorted(known)}")
             enabled.discard(m)
     return enabled
 

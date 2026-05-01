@@ -313,9 +313,6 @@ fn format_queue_lengths(ql: &std::collections::HashMap<String, u64>) -> String {
     if ql.is_empty() {
         return String::new();
     }
-    let pairs: Vec<String> = ql
-        .iter()
-        .map(|(k, v)| format!("\"{}\":{}", k, v))
-        .collect();
+    let pairs: Vec<String> = ql.iter().map(|(k, v)| format!("\"{}\":{}", k, v)).collect();
     format!("{{{}}}", pairs.join(","))
 }

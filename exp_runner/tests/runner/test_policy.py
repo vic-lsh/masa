@@ -104,10 +104,7 @@ class TestDisplayName:
         assert Policy.parse("sched_fifo,abort_slo").display_name == "FIFO (drop@SLO)"
 
     def test_fifo_rajomon(self):
-        assert (
-            Policy.parse("sched_fifo,ac_rajomon").display_name
-            == "Rajomon (FIFO)"
-        )
+        assert Policy.parse("sched_fifo,ac_rajomon").display_name == "Rajomon (FIFO)"
 
     def test_fifo_rajomon_with_drop(self):
         assert (
@@ -258,9 +255,9 @@ class TestColor:
     def test_signal_slack_distinct_from_abort_slack(self):
         c_abort = Policy.parse("sched_pred,abort_slack,ac_pred,est_mean_var").color
         c_signal = Policy.parse("sched_pred,signal_slack,ac_pred,est_mean_var").color
-        assert (
-            c_abort != c_signal
-        ), f"abort_slack and signal_slack must have different colors: {c_abort}"
+        assert c_abort != c_signal, (
+            f"abort_slack and signal_slack must have different colors: {c_abort}"
+        )
 
     # Key invariant: the problematic pair must have different colors
     def test_fifo_abort_slo_vs_abort_slack_differ(self):
