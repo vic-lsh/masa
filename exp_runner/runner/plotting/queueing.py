@@ -1,8 +1,12 @@
+import json
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
+from typing import Dict
 
 import matplotlib
 import numpy as np
+import pandas as pd
 
 from .util import (
     configure_plot_font_sizes,
@@ -15,6 +19,8 @@ from .util import (
     prepare_output_dir,
     read_data,
     scale_fontsize,
+    scale_linewidth,
+    scale_markersize,
 )
 
 matplotlib.use("Agg")  # Use non-interactive backend for thread safety
@@ -26,6 +32,7 @@ plt.rcParams["figure.max_open_warning"] = 0
 configure_plot_font_sizes()
 
 MS_TO_US = 10**3
+_TIMELINE_BIN_SEC = 2.0
 
 
 def _get_queueing_columns(df):
@@ -184,7 +191,6 @@ def _plot_queueing_breakdown(
         ncols=min(5, len(component_names)),
     )
 
-    fig.suptitle(title, fontsize=scale_fontsize(14), y=0.98)
     fig.tight_layout(rect=[0, 0, 1, 0.90])
     fig.savefig(output_path, dpi=300, bbox_inches="tight")
     plt.close(fig)
@@ -232,14 +238,13 @@ def _plot_total_queueing_latency(
             rps_values,
             totals,
             label=get_policy_display_name(policy),
-            linewidth=2,
-            markersize=6,
+            linewidth=scale_linewidth(2),
+            markersize=scale_markersize(6),
             **get_policy_line_style(policy),
         )
 
     ax.set_ylabel("Avg Total Queueing Latency (ms)")
     ax.set_xlabel("Load (requests per second)")
-    ax.set_title(title)
     ax.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
     ax.grid(True, alpha=0.3)
 
@@ -248,7 +253,242 @@ def _plot_total_queueing_latency(
     plt.close(fig)
 
 
-def generate_plots(args, plot_data: PlotData | None = None) -> None:
+def extract_queue_lengths_long(df: pd.DataFrame) -> pd.DataFrame:
+    """Parse the queue_lengths JSON column into long-form (service, queue_len) rows."""
+    if "queue_lengths" not in df.columns:
+        return pd.DataFrame(columns=["service", "queue_len"])
+
+    rows = []
+    for val in df["queue_lengths"].dropna():
+        if not val or val == "":
+            continue
+        try:
+            mapping = json.loads(val)
+            for svc, length in mapping.items():
+                rows.append({"service": svc, "queue_len": int(length)})
+        except (json.JSONDecodeError, ValueError):
+            continue
+
+    return pd.DataFrame(rows, columns=["service", "queue_len"])
+
+
+def _expand_queue_lengths_with_time(df: pd.DataFrame) -> pd.DataFrame:
+    """Parse queue_lengths JSON column into (start_at, service, queue_len) rows."""
+    if "queue_lengths" not in df.columns or "start_at" not in df.columns:
+        return pd.DataFrame(columns=["start_at", "service", "queue_len"])
+
+    rows = []
+    for t, val in zip(df["start_at"], df["queue_lengths"]):
+        if not val or not isinstance(val, str):
+            continue
+        try:
+            for svc, length in json.loads(val).items():
+                rows.append({"start_at": t, "service": svc, "queue_len": int(length)})
+        except (json.JSONDecodeError, ValueError, TypeError):
+            continue
+
+    return (
+        pd.DataFrame(rows, columns=["start_at", "service", "queue_len"])
+        if rows
+        else pd.DataFrame(columns=["start_at", "service", "queue_len"])
+    )
+
+
+def plot_queue_length_cdf_per_service(
+    output_path: Path,
+    rps: float,
+    policy_data: Dict[str, pd.DataFrame],
+) -> None:
+    """Plot CDF of queue length per service for all policies at a specific RPS."""
+    cmap = plt.get_cmap("tab10")
+
+    all_services: set = set()
+    for df in policy_data.values():
+        long = extract_queue_lengths_long(df)
+        all_services.update(long["service"].unique())
+
+    if not all_services:
+        return
+
+    services = sorted(all_services)
+    ncols = min(2, len(services))
+    nrows = int(np.ceil(len(services) / ncols))
+    fig, axes = plt.subplots(nrows, ncols, figsize=(10, 4 * nrows), squeeze=False)
+
+    for svc_idx, service in enumerate(services):
+        ax = axes[svc_idx // ncols][svc_idx % ncols]
+        any_data = False
+
+        for policy_idx, (policy, df) in enumerate(policy_data.items()):
+            long = extract_queue_lengths_long(df)
+            svc_data = long[long["service"] == service]["queue_len"].dropna()
+            if svc_data.empty:
+                continue
+
+            values = np.sort(svc_data.to_numpy())
+            cdf = (np.arange(1, len(values) + 1) / len(values)).astype(float)
+            style = get_policy_line_style(policy)
+            if style["color"] is None:
+                style["color"] = cmap(policy_idx % cmap.N)
+            ax.plot(
+                values,
+                cdf,
+                label=get_policy_display_name(policy),
+                linewidth=scale_linewidth(2),
+                **style,
+            )
+            any_data = True
+
+        ax.set_title(f"Queue length CDF — {service}")
+        ax.set_xlabel("Queue length at first poll (tasks)")
+        ax.set_ylabel("CDF")
+        ax.grid(True, which="both", linestyle="--", alpha=0.4)
+        if any_data:
+            ax.legend()
+
+    for i in range(len(services), nrows * ncols):
+        axes[i // ncols][i % ncols].axis("off")
+
+    # Each data point is the max queue length observed at that service across
+    # all calls within one root request. Repeated calls to the same service
+    # are collapsed to a single max per root request.
+    fig.tight_layout()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_path, dpi=300)
+    plt.close(fig)
+
+
+def plot_queue_length_timeline(
+    output_path: Path,
+    rps: float,
+    policy_data: Dict[str, pd.DataFrame],
+) -> None:
+    """Plot mean queue length per service over time, one subplot per service, one line per policy.
+
+    Helps distinguish transient queue spikes (burst absorption) from a persistent
+    backlog (chronic over-admission).
+    """
+    # Expand all policy data once so each CSV is parsed only once.
+    policy_long: Dict[str, pd.DataFrame] = {}
+    all_services: set = set()
+    for policy, df in policy_data.items():
+        long = _expand_queue_lengths_with_time(df)
+        policy_long[policy] = long
+        all_services.update(long["service"].unique())
+
+    if not all_services:
+        return
+
+    services = sorted(all_services)
+    cmap = plt.get_cmap("tab10")
+    ncols = min(2, len(services))
+    nrows = int(np.ceil(len(services) / ncols))
+    fig, axes = plt.subplots(nrows, ncols, figsize=(10, 4 * nrows), squeeze=False)
+
+    for svc_idx, service in enumerate(services):
+        ax = axes[svc_idx // ncols][svc_idx % ncols]
+        any_data = False
+
+        for policy_idx, (policy, _) in enumerate(policy_data.items()):
+            long = policy_long[policy]
+            svc = long[long["service"] == service].copy()
+            if svc.empty:
+                continue
+
+            t_min = svc["start_at"].min()
+            svc["t_sec"] = (svc["start_at"] - t_min) / 1e6
+            bin_idx = (svc["t_sec"] // _TIMELINE_BIN_SEC) * _TIMELINE_BIN_SEC
+            binned = svc.groupby(bin_idx)["queue_len"].mean()
+
+            style = get_policy_line_style(policy)
+            if style["color"] is None:
+                style["color"] = cmap(policy_idx % cmap.N)
+            ax.plot(
+                binned.index,
+                binned.values,
+                label=get_policy_display_name(policy),
+                linewidth=scale_linewidth(2),
+                **style,
+            )
+            any_data = True
+
+        ax.set_title(f"Queue length — {service}")
+        ax.set_xlabel("Time (s)")
+        ax.set_ylabel(f"Mean queue length ({_TIMELINE_BIN_SEC:.0f}s bins)")
+        ax.grid(True, linestyle="--", alpha=0.4)
+        if any_data:
+            ax.legend()
+
+    for i in range(len(services), nrows * ncols):
+        axes[i // ncols][i % ncols].axis("off")
+
+    fig.tight_layout()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_path, dpi=300)
+    plt.close(fig)
+
+
+def plot_queue_latency_cdf(
+    output_path: Path,
+    rps: float,
+    policy_data: Dict[str, pd.DataFrame],
+) -> None:
+    """Plot CDF of per-request total queueing latency, one line per policy.
+
+    Side-by-side CDFs make it easy to compare how much time requests spend
+    waiting in queues under each policy at a given RPS.
+    """
+    cmap = plt.get_cmap("tab10")
+    fig, ax = plt.subplots(figsize=(10, 6))
+
+    # Per-API total queueing latency = q_lat_init + q_lat_resume. The
+    # per-service `*_queueing_latency` columns are a breakdown of the same
+    # quantity, so including them would double-count.
+    global_cols = ["q_lat_init", "q_lat_resume"]
+
+    for policy_idx, (policy, df) in enumerate(policy_data.items()):
+        if df.empty:
+            continue
+        present = [c for c in global_cols if c in df.columns]
+        if not present:
+            continue
+
+        total_ms = (
+            df[present].apply(pd.to_numeric, errors="coerce").sum(axis=1) / MS_TO_US
+        )
+        total_ms = total_ms.dropna()
+        if total_ms.empty:
+            continue
+
+        values = np.sort(total_ms.to_numpy())
+        cdf = (np.arange(1, len(values) + 1) / len(values)).astype(float)
+        style = get_policy_line_style(policy)
+        if style["color"] is None:
+            style["color"] = cmap(policy_idx % cmap.N)
+        style["markevery"] = max(len(values) // 12, 1)
+        ax.plot(
+            values,
+            cdf,
+            label=get_policy_display_name(policy),
+            linewidth=scale_linewidth(2),
+            **style,
+        )
+
+    ax.set_title(f"Queue latency CDF — {rps:g} RPS")
+    ax.set_xlabel("Total queueing latency (ms)")
+    ax.set_ylabel("CDF")
+    ax.legend()
+    ax.grid(True, linestyle="--", alpha=0.4)
+
+    fig.tight_layout()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_path, dpi=300)
+    plt.close(fig)
+
+
+def generate_plots(
+    args, plot_data: PlotData | None = None, *, summary_only: bool = False
+) -> None:
     prepare_output_dir(args)
 
     if plot_data is None:
@@ -263,6 +503,11 @@ def generate_plots(args, plot_data: PlotData | None = None) -> None:
         results = plot_data.results
 
     futures = []
+
+    # All queueing plots are per-iteration today; summary_only skips them
+    # entirely. (No averaged queueing plot exists yet.)
+    if summary_only:
+        return
 
     for i in range(repeats):
         queueing_dir = os.path.join(args.output_dir, str(i), "queueing")
@@ -307,6 +552,58 @@ def generate_plots(args, plot_data: PlotData | None = None) -> None:
                         ),
                     )
                 )
+
+            # Queue length plots (one per RPS, only when data present)
+            for rps in rps_values:
+                policy_data = {p: results[i][api][p][rps] for p in policies}
+                has_queue_lengths = any(
+                    "queue_lengths" in df.columns and df["queue_lengths"].notna().any()
+                    for df in policy_data.values()
+                )
+                has_start_at = any(
+                    "start_at" in df.columns and not df.empty
+                    for df in policy_data.values()
+                )
+                if has_queue_lengths:
+                    futures.append(
+                        (
+                            plot_queue_length_cdf_per_service,
+                            (
+                                Path(queueing_dir)
+                                / f"queue_length_cdf_{api}_{rps:g}rps.png",
+                                rps,
+                                policy_data,
+                            ),
+                        )
+                    )
+                    if has_start_at:
+                        futures.append(
+                            (
+                                plot_queue_length_timeline,
+                                (
+                                    Path(queueing_dir)
+                                    / f"queue_length_timeline_{api}_{rps:g}rps.png",
+                                    rps,
+                                    policy_data,
+                                ),
+                            )
+                        )
+                has_global_queue_cols = any(
+                    ("q_lat_init" in df.columns or "q_lat_resume" in df.columns)
+                    for df in policy_data.values()
+                )
+                if has_global_queue_cols:
+                    futures.append(
+                        (
+                            plot_queue_latency_cdf,
+                            (
+                                Path(queueing_dir)
+                                / f"queue_latency_cdf_{api}_{rps:g}rps.png",
+                                rps,
+                                policy_data,
+                            ),
+                        )
+                    )
 
     with ThreadPoolExecutor(
         max_workers=get_plot_worker_count(len(futures), max_workers=6)

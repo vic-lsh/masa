@@ -22,6 +22,8 @@ from .util import (
     PlotData,
     prepare_output_dir,
     scale_fontsize,
+    scale_linewidth,
+    scale_markersize,
 )
 
 matplotlib.use("Agg")  # Use non-interactive backend for thread safety
@@ -577,7 +579,6 @@ def _plot_early_return_breakdown(
             fontsize=scale_fontsize(12),
         )
 
-    fig.suptitle(title, fontsize=scale_fontsize(18), y=1.13)
     fig.tight_layout(rect=[0, 0, 1, 0.88])
     fig.savefig(breakdown_path, dpi=300, bbox_inches="tight")
     plt.close(fig)
@@ -900,7 +901,6 @@ def _plot_slo_miss_breakdown(
         ncols=len(request_types),
     )
 
-    fig.suptitle(title, fontsize=scale_fontsize(14), y=0.98)
     fig.tight_layout(rect=[0, 0, 1, 0.90])
     fig.savefig(breakdown_path, dpi=300, bbox_inches="tight")
     plt.close(fig)
@@ -963,13 +963,12 @@ def _plot_all_api_goodput_clean(
             rps_values,
             y,
             label=get_policy_display_name(policy),
-            linewidth=2,
-            markersize=6,
+            linewidth=scale_linewidth(2),
+            markersize=scale_markersize(6),
             **get_policy_line_style(policy),
         )
-    ax1.set_ylabel("Goodput (req/s meeting SLO)")
-    ax1.set_xlabel("Load (requests per second)")
-    ax1.set_title(_simplify_all_api_line_title(title))
+    ax1.set_ylabel("Goodput (req/s)")
+    ax1.set_xlabel("Load (req/s)")
     _set_line_chart_ylim(ax1, policy_total_goodputs)
 
     _place_line_chart_legend(fig1, ax1, max_cols=3, top_margin=0.91)
@@ -994,8 +993,8 @@ def _plot_all_api_goodput_clean(
             rps_values,
             fraction_values,
             label=get_policy_display_name(policy),
-            linewidth=2,
-            markersize=6,
+            linewidth=scale_linewidth(2),
+            markersize=scale_markersize(6),
             **get_policy_line_style(policy),
         )
     fraction_series = {
@@ -1006,8 +1005,7 @@ def _plot_all_api_goodput_clean(
         for policy in sorted_policies
     }
     ax3.set_ylabel("Goodput / Offered Load")
-    ax3.set_xlabel("Load (requests per second)")
-    ax3.set_title(_simplify_all_api_line_title(title, fraction=True))
+    ax3.set_xlabel("Load (req/s)")
     _set_line_chart_ylim(ax3, fraction_series, minimum_top=0.1)
 
     _place_line_chart_legend(fig3, ax3, max_cols=3, top_margin=0.91)
@@ -1221,9 +1219,6 @@ def plot_goodput_time_series(
         ax.set_xlabel("Time since first request (seconds)")
         ax.set_ylabel("Goodput (requests / second)")
 
-    if title:
-        ax.set_title(title)
-
     ax.grid(axis="y", linestyle="--", alpha=0.7)
     fig.tight_layout()
     fig.savefig(output_path, dpi=300)
@@ -1275,9 +1270,8 @@ def _plot_policy_goodput_comparison(
             **get_policy_bar_style(policy),
         )
 
-    ax.set_xlabel("Requests Per Second (RPS)")
-    ax.set_ylabel("Goodput (requests meeting SLO per second)")
-    ax.set_title(f"Goodput Comparison by Policy and RPS for {api} API")
+    ax.set_xlabel("Load (req/s)")
+    ax.set_ylabel("Goodput (req/s)")
     ax.set_xticks(index)
     ax.set_xticklabels([str(rps) for rps in rps_values])
     ax.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
@@ -1307,6 +1301,57 @@ def _plot_goodput_time_series_task(
     )
 
 
+def _plot_avg_goodput_bars(
+    output_path: str,
+    sorted_policies: list,
+    rps_values: list,
+    avg_totals_by_policy: dict,
+) -> None:
+    """Render the canonical per-policy averaged-goodput bar chart.
+
+    Produces the same visual style as `goodput_<API>.png`: one bar per
+    (policy, RPS), x-axis labeled by RPS step, legend listing policies.
+    Used for both per-API plots and for the totalled ALL view.
+
+    Bar ordering: any Masa-style policy (prio=slack) is moved to the end
+    of the group so the canonical Masa configuration is the last (and
+    visually rightmost) bar at every RPS, making the comparison against
+    baselines easier to read.
+    """
+    masa = [p for p in sorted_policies if Policy.parse(p).prio == "slack"]
+    others = [p for p in sorted_policies if Policy.parse(p).prio != "slack"]
+    sorted_policies = others + masa
+
+    index = np.arange(len(rps_values))
+    fig, ax = plt.subplots(figsize=(12, 6))
+    bar_width = 0.2
+
+    for j, policy in enumerate(sorted_policies):
+        offset = (j - len(sorted_policies) / 2 + 0.5) * bar_width
+        ax.bar(
+            index + offset,
+            avg_totals_by_policy.get(policy, []),
+            bar_width,
+            label=get_policy_display_name(policy),
+            **get_policy_bar_style(policy),
+        )
+
+    ax.set_xlabel("Load (req/s)")
+    ax.set_ylabel("Goodput (req/s)")
+    ax.set_xticks(index)
+    ax.set_xticklabels([str(rps) for rps in rps_values])
+    ax.legend(
+        loc="lower center",
+        bbox_to_anchor=(0.5, 1.02),
+        ncols=min(len(sorted_policies), 3),
+        frameon=False,
+    )
+    _style_axes(ax)
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+
+
 def _plot_averaged_goodput(
     output_dir: str,
     api: str,
@@ -1326,7 +1371,6 @@ def _plot_averaged_goodput(
         request_type_color_mapping: Optional dict mapping request type to color for consistency.
     """
     sorted_policies = sort_policies_by_type(policies)
-    index = np.arange(len(rps_values))
 
     if api == "ALL" and policy_goodputs_by_type is not None:
         # Build averaged totals and averaged breakdown dict in the same shape as per-repeat plotter expects.
@@ -1378,41 +1422,29 @@ def _plot_averaged_goodput(
             subtitle=f"Averaged over {repeats} run(s). Panel A: total; Panel B: per-policy stacked bars.",
             request_type_color_mapping=request_type_color_mapping,
         )
+        # Also emit a canonical bar chart of the totals so the ALL view has
+        # the same per-policy bars as goodput_<API>.png plots.
+        _plot_avg_goodput_bars(
+            os.path.join(output_dir, f"goodput_{api}_aggregated_bar.png"),
+            sorted_policies,
+            rps_values,
+            avg_totals,
+        )
         return
 
-    fig, ax = plt.subplots(figsize=(12, 6))
-    bar_width = 0.12
-
-    for j, policy in enumerate(sorted_policies):
-        average_goodput = (
+    avg_totals = {
+        policy: (
             sum(np.array(policy_goodputs[i][api][policy]) for i in range(repeats))
             / repeats
-        )
-        offset = (j - len(sorted_policies) / 2 + 0.5) * bar_width
-        ax.bar(
-            index + offset,
-            average_goodput,
-            bar_width,
-            label=get_policy_display_name(policy),
-            **get_policy_bar_style(policy),
-        )
-
-    ax.set_xlabel("Requests Per Second (RPS)")
-    ax.set_ylabel("average goodput (requests meeting SLO per second)")
-    ax.set_title(
-        f"average goodput comparison by policy and RPS for {api} API over {repeats} runs"
-    )
-    ax.set_xticks(index)
-    ax.set_xticklabels([str(rps) for rps in rps_values])
-    ax.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
-    _style_axes(ax)
-    fig.tight_layout()
-    fig.savefig(
+        ).tolist()
+        for policy in sorted_policies
+    }
+    _plot_avg_goodput_bars(
         os.path.join(output_dir, f"goodput_{api}.png"),
-        dpi=300,
-        bbox_inches="tight",
+        sorted_policies,
+        rps_values,
+        avg_totals,
     )
-    plt.close(fig)
 
 
 def plot_goodput_timeline(
@@ -1422,7 +1454,7 @@ def plot_goodput_timeline(
     policy_data_by_rps: dict[str, dict[int, pd.DataFrame]],
     *,
     duration_sec: float,
-    window_sec: float = 2.0,
+    window_sec: float = 5.0,
 ) -> None:
     """Plot per-second goodput over time for real apps (hotel, socialnet, synthetic).
 
@@ -1502,7 +1534,7 @@ def plot_goodput_timeline(
             label=get_policy_display_name(policy),
             color=color,
             linestyle=get_policy_linestyle(policy),
-            linewidth=1.5,
+            linewidth=scale_linewidth(1.5),
         )
 
     # Save timeline data to CSV
@@ -1529,14 +1561,13 @@ def plot_goodput_timeline(
         step_rps,
         where="post",
         color="grey",
-        linewidth=1.5,
+        linewidth=scale_linewidth(1.5),
         linestyle="-",
         alpha=0.5,
     )
 
     ax.set_xlabel("Time (s)")
     ax.set_ylabel("RPS")
-    ax.set_title(f"Goodput timeline ({window_sec:g}s window)")
     ax.set_xlim(left=0, right=len(rps_sequence) * effective_duration)
     ax.set_ylim(bottom=0)
     ax.grid(True, which="both", linestyle="--", alpha=0.4)
@@ -1552,7 +1583,7 @@ def plot_early_return_timeline(
     policy_data_by_rps: dict[str, dict[int, pd.DataFrame]],
     *,
     duration_sec: float,
-    window_sec: float = 2.0,
+    window_sec: float = 5.0,
 ) -> None:
     """Plot per-second early-return rate over time for real apps.
 
@@ -1626,7 +1657,7 @@ def plot_early_return_timeline(
             label=get_policy_display_name(policy),
             color=color,
             linestyle=get_policy_linestyle(policy),
-            linewidth=1.5,
+            linewidth=scale_linewidth(1.5),
         )
 
     if csv_rows:
@@ -1652,14 +1683,13 @@ def plot_early_return_timeline(
         step_rps,
         where="post",
         color="grey",
-        linewidth=1.5,
+        linewidth=scale_linewidth(1.5),
         linestyle="-",
         alpha=0.5,
     )
 
     ax.set_xlabel("Time (s)")
     ax.set_ylabel("RPS")
-    ax.set_title(f"Early-return timeline ({window_sec:g}s window)")
     ax.set_xlim(left=0, right=len(rps_sequence) * effective_duration)
     ax.set_ylim(bottom=0)
     ax.grid(True, which="both", linestyle="--", alpha=0.4)
@@ -1679,7 +1709,6 @@ _REASON_COLORS = {
     "E2EDeadline": "#999999",  # grey
     "LocalDeadlineExceeded": "#D55E00",  # vermillion
     "BeforePollFeasibility": "#E69F00",  # orange
-    "BeforeChildFeasibility": "#F0E442",  # yellow
     "PredAdmissionRej": "#56B4E9",  # sky blue
     "RajomonAdmissionRej": "#0072B2",  # blue
     "RajomonChildBudgetRej": "#009E73",  # bluish green
@@ -1692,7 +1721,6 @@ _KNOWN_REASON_ORDER = [
     "E2EDeadline",
     "LocalDeadlineExceeded",
     "BeforePollFeasibility",
-    "BeforeChildFeasibility",
     "PredAdmissionRej",
     "RajomonAdmissionRej",
     "RajomonChildBudgetRej",
@@ -1784,7 +1812,7 @@ def plot_abort_reason_timeline(
     policy_data_by_rps: dict[str, dict[int, pd.DataFrame]],
     *,
     duration_sec: float,
-    window_sec: float = 2.0,
+    window_sec: float = 5.0,
     data_dir: str | None = None,
     iteration: int = 0,
     warmup_sec: float = 0.0,
@@ -1888,7 +1916,7 @@ def plot_abort_reason_timeline(
                 reason_rates[reason],
                 label=reason,
                 color=color,
-                linewidth=1.5,
+                linewidth=scale_linewidth(1.5),
             )
             for t, rate in zip(reason_times[reason], reason_rates[reason]):
                 csv_rows.append(
@@ -1908,7 +1936,7 @@ def plot_abort_reason_timeline(
                     shed_rates,
                     label="ClientShed",
                     color=color,
-                    linewidth=1.5,
+                    linewidth=scale_linewidth(1.5),
                     linestyle="--",
                 )
                 for t, rate in zip(shed_times, shed_rates):
@@ -1942,7 +1970,7 @@ def plot_abort_reason_timeline(
             step_rps,
             where="post",
             color="grey",
-            linewidth=1.5,
+            linewidth=scale_linewidth(1.5),
             linestyle="-",
             alpha=0.5,
         )
@@ -1955,11 +1983,6 @@ def plot_abort_reason_timeline(
 
     axes[-1, 0].set_xlabel("Time (s)")
     axes[-1, 0].set_xlim(left=0, right=len(rps_sequence) * effective_duration)
-    fig.suptitle(
-        f"Abort-reason timeline ({window_sec:g}s window)",
-        fontsize=scale_fontsize(14),
-        y=1.0,
-    )
     fig.tight_layout()
     fig.savefig(output_path, dpi=300)
     plt.close(fig)
@@ -1969,7 +1992,9 @@ def plot_abort_reason_timeline(
         pd.DataFrame(csv_rows).to_csv(csv_path, index=False)
 
 
-def generate_plots(args, plot_data: PlotData | None = None) -> None:
+def generate_plots(
+    args, plot_data: PlotData | None = None, *, summary_only: bool = False
+) -> None:
     prepare_output_dir(args)
 
     if plot_data is None:
@@ -2104,7 +2129,11 @@ def generate_plots(args, plot_data: PlotData | None = None) -> None:
     # Generate plots in parallel
     future_specs = []
 
-    for i in range(repeats):
+    # Skip per-iteration plots when summary_only — leaves only the averaged
+    # summary plots / CSVs below.
+    per_iter_repeats = 0 if summary_only else repeats
+
+    for i in range(per_iter_repeats):
         goodput_dir = os.path.join(args.output_dir, str(i), "goodput")
         os.makedirs(goodput_dir, exist_ok=True)
         for api in apis:
@@ -2129,7 +2158,7 @@ def generate_plots(args, plot_data: PlotData | None = None) -> None:
             )
 
     # Add goodput timeline plots (per iteration, ALL api only)
-    for i in range(repeats):
+    for i in range(per_iter_repeats):
         goodput_dir = os.path.join(args.output_dir, str(i), "goodput")
         policy_data_by_rps = {policy: results[i]["ALL"][policy] for policy in policies}
         future_specs.append(
@@ -2148,7 +2177,7 @@ def generate_plots(args, plot_data: PlotData | None = None) -> None:
         )
 
     # Add early-return timeline plots (per iteration, ALL api only)
-    for i in range(repeats):
+    for i in range(per_iter_repeats):
         er_dir = os.path.join(args.output_dir, str(i), "early_return")
         os.makedirs(er_dir, exist_ok=True)
         policy_data_by_rps = {policy: results[i]["ALL"][policy] for policy in policies}
@@ -2168,7 +2197,7 @@ def generate_plots(args, plot_data: PlotData | None = None) -> None:
         )
 
     # Add abort-reason timeline plots (per iteration, ALL api only)
-    for i in range(repeats):
+    for i in range(per_iter_repeats):
         er_dir = os.path.join(args.output_dir, str(i), "early_return")
         os.makedirs(er_dir, exist_ok=True)
         policy_data_by_rps = {policy: results[i]["ALL"][policy] for policy in policies}
@@ -2216,7 +2245,7 @@ def generate_plots(args, plot_data: PlotData | None = None) -> None:
             )
         )
 
-    for i in range(repeats):
+    for i in range(per_iter_repeats):
         er_dir = os.path.join(args.output_dir, str(i), "early_return")
         os.makedirs(er_dir, exist_ok=True)
         for api in apis:
@@ -2263,7 +2292,7 @@ def generate_plots(args, plot_data: PlotData | None = None) -> None:
                     )
                 )
 
-    for i in range(repeats):
+    for i in range(per_iter_repeats):
         er_dir = os.path.join(args.output_dir, str(i), "early_return")
         os.makedirs(er_dir, exist_ok=True)
         for api in apis:
