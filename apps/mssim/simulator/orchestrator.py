@@ -399,6 +399,7 @@ def _make_environment_def(
     }
 
     environment.update(_collect_optional_env("FEATURE"))
+    environment.update(_collect_mssim_service_extra_env())
     # If the parent experiment runner wrote a policy_param.json and exported
     # its host path as POLICY_PARAMS_PATH, set MASA_POLICY_PARAMS_PATH to the
     # in-container mount path so libs/masa-policy can load it. mssim's
@@ -463,3 +464,10 @@ def _make_load_generator_config_yaml(
 def _collect_optional_env(*names: str) -> dict[str, str]:
     """Return environment variables that are set from the current process."""
     return {name: value for name in names if (value := os.environ.get(name))}
+
+
+def _collect_mssim_service_extra_env() -> dict[str, str]:
+    """Forward mssim.json extra_env values to generic-service containers."""
+    raw_keys = os.environ.get("MSSIM_SERVICE_EXTRA_ENV_KEYS", "")
+    keys = [key.strip() for key in raw_keys.split(",") if key.strip()]
+    return _collect_optional_env(*keys)
