@@ -302,6 +302,17 @@ impl<E: LatencyEstimator + Default + 'static> EstimationTracker<E> {
     ) {
         if is_early_return_response(response) {
             self.est.track_er_feedback(tracker.key);
+        } else if is_signaled_response(response) {
+            // Child returned Ok but signaled at some hop in its subtree under
+            // signal_slack — its wallclock includes signal-but-continue
+            // runtime. Skip child_wallclock track so the estimator doesn't
+            // over-tighten this parent->child key in subsequent requests.
+            // Still record the child end-time so this parent's
+            // after_child_wallclock can be measured normally.
+            self.child_end_times
+                .lock()
+                .unwrap()
+                .push((tracker.key, Instant::now()));
         } else {
             self.est
                 .track_child_wallclock(tracker.key, tracker.elapsed_us());
@@ -428,6 +439,12 @@ pub(crate) struct RequestMetadataTracker {
     accumulated_child_compute_us: AtomicU64,
     accumulated_child_early_returns: AtomicU32,
     local_early_return: AtomicBool,
+    // A single user-facing request that signals at multiple hops should still
+    // count as one event; otherwise a 5-hop request that signals at every hop
+    // looks like 5 separate failures. We track presence (AtomicBool), not a
+    // running tally, so the ingress sees deadline_signal_count in {0, 1}.
+    child_deadline_signal: AtomicBool,
+    local_deadline_signal: AtomicBool,
 }
 
 impl RequestMetadataTracker {
@@ -438,6 +455,8 @@ impl RequestMetadataTracker {
             accumulated_child_compute_us: AtomicU64::new(0),
             accumulated_child_early_returns: AtomicU32::new(0),
             local_early_return: AtomicBool::new(false),
+            child_deadline_signal: AtomicBool::new(false),
+            local_deadline_signal: AtomicBool::new(false),
         }
     }
 
@@ -478,6 +497,9 @@ impl RequestMetadataTracker {
                         .fetch_add(meta.accumulated_compute_us, Ordering::Relaxed);
                     self.accumulated_child_early_returns
                         .fetch_add(meta.early_return_count, Ordering::Relaxed);
+                    if meta.deadline_signal_count > 0 {
+                        self.child_deadline_signal.store(true, Ordering::Relaxed);
+                    }
                     accumulated_compute_us = Some(meta.accumulated_compute_us);
                 }
             }
@@ -492,6 +514,22 @@ impl RequestMetadataTracker {
     /// Mark this request as having triggered a local early return.
     pub(crate) fn mark_early_return(&self) {
         self.local_early_return.store(true, Ordering::Relaxed);
+    }
+
+    /// Mark this request as having tripped a soft deadline signal
+    /// (`signal_slack`) - request continues, but the ingress AC sees the
+    /// signal via `ResponseMeta.deadline_signal_count`.
+    pub(crate) fn mark_deadline_signal(&self) {
+        self.local_deadline_signal.store(true, Ordering::Relaxed);
+    }
+
+    /// True when this hop or any descendant tripped its local deadline under
+    /// `signal_slack`. Used to gate latency-estimator updates so a
+    /// signal-but-continue request's inflated wallclock doesn't poison the
+    /// estimator.
+    pub(crate) fn is_subtree_signaled(&self) -> bool {
+        self.local_deadline_signal.load(Ordering::Relaxed)
+            || self.child_deadline_signal.load(Ordering::Relaxed)
     }
 
     /// Build and set `ResponseMeta` on the outgoing context.
@@ -511,12 +549,20 @@ impl RequestMetadataTracker {
         let early_return_count =
             local_er + self.accumulated_child_early_returns.load(Ordering::Relaxed);
 
+        // Saturate at 1: a single ingress request signals at most once,
+        // regardless of how many hops in its subtree tripped their local
+        // deadline. The AC reads this as a boolean (`> 0`) anyway.
+        let signaled = self.local_deadline_signal.load(Ordering::Relaxed)
+            || self.child_deadline_signal.load(Ordering::Relaxed);
+        let deadline_signal_count = if signaled { 1 } else { 0 };
+
         ctx.set_response_meta(ResponseMeta {
             compute_time_us,
             accumulated_compute_us,
             utilization,
             max_downstream_util,
             early_return_count,
+            deadline_signal_count,
         });
     }
 }
@@ -530,6 +576,22 @@ pub(crate) fn is_early_return_response<T>(response: &Result<Response<T>, Status>
         Ok(_) => false,
         Err(status) => status.code() == Code::DeadlineExceeded,
     }
+}
+
+/// True when an Ok response carries a non-zero `deadline_signal_count` —
+/// i.e., the request returned successfully but tripped its local deadline at
+/// some hop under `signal_slack`. The wallclock for such a request is
+/// inflated by signal-but-continue runtime, so the latency estimator should
+/// skip these observations the same way it skips Err early-returns.
+pub(crate) fn is_signaled_response<T>(response: &Result<Response<T>, Status>) -> bool {
+    if let Ok(resp) = response {
+        if let Some(ctx) = resp.get_masa_context() {
+            if let Some(meta) = ctx.response_meta() {
+                return meta.deadline_signal_count > 0;
+            }
+        }
+    }
+    false
 }
 
 #[cfg(test)]
@@ -560,5 +622,71 @@ mod tests {
         let tracker = ComputeTracker::new();
         tracker.stop();
         assert_eq!(tracker.compute_us(), 0);
+    }
+
+    #[test]
+    fn deadline_signal_propagates_to_response_meta() {
+        let tracker = RequestMetadataTracker::new();
+        tracker.mark_deadline_signal();
+
+        let mut ctx = Context::default();
+        tracker.inject_response_meta(&mut ctx);
+
+        let meta = ctx.response_meta().expect("response_meta set");
+        assert_eq!(meta.deadline_signal_count, 1);
+        assert_eq!(meta.early_return_count, 0);
+    }
+
+    #[test]
+    fn deadline_signal_default_is_zero_when_not_marked() {
+        let tracker = RequestMetadataTracker::new();
+        let mut ctx = Context::default();
+        tracker.inject_response_meta(&mut ctx);
+
+        let meta = ctx.response_meta().expect("response_meta set");
+        assert_eq!(meta.deadline_signal_count, 0);
+    }
+
+    #[test]
+    fn mark_deadline_signal_is_idempotent() {
+        let tracker = RequestMetadataTracker::new();
+        tracker.mark_deadline_signal();
+        tracker.mark_deadline_signal();
+        tracker.mark_deadline_signal();
+
+        let mut ctx = Context::default();
+        tracker.inject_response_meta(&mut ctx);
+
+        assert_eq!(ctx.response_meta().unwrap().deadline_signal_count, 1);
+    }
+
+    #[test]
+    fn deadline_signal_saturates_across_children() {
+        // A request whose local deadline trips AND whose children also signal
+        // should still count as one event (not 1 + N children).
+        let tracker = RequestMetadataTracker::new();
+        tracker.mark_deadline_signal();
+        // Simulate absorbing several children that each reported a signal.
+        for _ in 0..5 {
+            tracker.child_deadline_signal.store(true, Ordering::Relaxed);
+        }
+
+        let mut ctx = Context::default();
+        tracker.inject_response_meta(&mut ctx);
+
+        assert_eq!(ctx.response_meta().unwrap().deadline_signal_count, 1);
+    }
+
+    #[test]
+    fn deadline_signal_propagates_from_child_only() {
+        // Even if the local hop did not signal, a single descendant signal
+        // should still surface as 1 at this hop's response_meta.
+        let tracker = RequestMetadataTracker::new();
+        tracker.child_deadline_signal.store(true, Ordering::Relaxed);
+
+        let mut ctx = Context::default();
+        tracker.inject_response_meta(&mut ctx);
+
+        assert_eq!(ctx.response_meta().unwrap().deadline_signal_count, 1);
     }
 }

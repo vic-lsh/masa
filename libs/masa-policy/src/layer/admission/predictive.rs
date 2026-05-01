@@ -13,9 +13,9 @@ use std::time::Instant;
 use masa_core::Context;
 use tonic_core::{Code, CowGrpcMethod, Response, Status};
 
-use super::super::{ChildRpcContext, Layer, LayerChild, LayerServer};
+use super::super::{Layer, LayerChild, LayerServer};
 use crate::layer::est::estimator::DefaultLatencyEstimator;
-use crate::layer::est::latency_map::{MethodKey, ParentToChildKey};
+use crate::layer::est::latency_map::MethodKey;
 use crate::layer::est::state::{is_early_return_response, LatencyEstimators};
 use crate::policy_params::PolicyParams;
 use crate::registry::MethodId;
@@ -98,44 +98,6 @@ impl Layer for PredAdmissionLayer {
         Ok(())
     }
 
-    /// Floor-based deadline feasibility check before each child RPC.
-    #[inline]
-    fn before_child_rpc<T>(
-        &self,
-        ctx: &Context,
-        child_method_name: &CowGrpcMethod,
-        _child_ctx: &mut PredAdmissionChild,
-        _request: &mut tonic_core::Request<T>,
-        _child_rpc: &mut ChildRpcContext,
-    ) -> Result<(), Status> {
-        use masa_core::time_now;
-
-        let child_id = crate::MethodRegistry::global().get_or_register(child_method_name.clone());
-        let key = ParentToChildKey::parent_rpc_method(
-            crate::MethodRegistry::global().get_or_register(self.rpc.clone()),
-        )
-        .child_rpc_method(child_id);
-
-        let time_left = ctx.e2e_deadline().saturating_sub(time_now());
-
-        let remaining = self.est.est_after_child_wallclock(key, time_left);
-        let est_child = self.est.est_child_wallclock(key).unwrap_or(0);
-        if time_now() + est_child + remaining.floor > ctx.e2e_deadline() {
-            return Err(Status::new(
-                Code::DeadlineExceeded,
-                format!(
-                    "/EarlyReturn?src={}::{}?last_rpc={}::{}&reason=BeforeChildFeasibility",
-                    self.rpc.service(),
-                    self.rpc.method(),
-                    child_method_name.service(),
-                    child_method_name.method(),
-                ),
-            ));
-        }
-
-        Ok(())
-    }
-
     /// Track subtree compute from child metadata.
     ///
     /// Predictive admission feedback is recorded once per ingress request in
@@ -180,11 +142,13 @@ impl Layer for PredAdmissionLayer {
         }
 
         // Learn from the final ingress outcome so local early returns such as
-        // `LocalDeadlineExceeded` are visible to predictive admission.
+        // `LocalDeadlineExceeded` are visible to predictive admission. The
+        // `signal_slack` feature emits a parallel soft-deadline signal that
+        // also feeds the AIMD controller without requiring an actual abort.
         let is_er = is_early_return_response(result)
             || ctx
                 .response_meta()
-                .map(|meta| meta.early_return_count > 0)
+                .map(|meta| meta.early_return_count > 0 || meta.deadline_signal_count > 0)
                 .unwrap_or(false);
 
         self.pred_admission.record_outcome(is_er);
@@ -403,6 +367,31 @@ mod tests {
         let ac = PredictiveAdmission::new();
         let state = ac.state.lock().unwrap();
         assert_eq!(state.admit_p, 1.0, "admit_p should start at 1.0");
+    }
+
+    #[test]
+    fn test_deadline_signal_records_single_ac_outcome() {
+        let ac = Arc::new(PredictiveAdmission::new());
+        let layer = PredAdmissionLayer {
+            pred_admission: ac.clone(),
+            est: LatencyEstimators::new(),
+            root_method_id: None,
+            rpc: CowGrpcMethod::new("svc", "method"),
+            self_rejected: AtomicBool::new(false),
+            admission_checked: AtomicBool::new(false),
+        };
+        let mut ctx = Context::default();
+        ctx.set_response_meta(masa_core::ResponseMeta {
+            deadline_signal_count: 1,
+            ..Default::default()
+        });
+        let mut result = Ok(Response::new(()));
+
+        layer.finalize(&mut ctx, &mut result);
+
+        let state = ac.state.lock().unwrap();
+        assert_eq!(state.window_total, 1);
+        assert_eq!(state.er_count, 1);
     }
 
     /// Verify idle decay reopens admission when no outcomes arrive.

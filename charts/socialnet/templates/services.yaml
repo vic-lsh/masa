@@ -1,21 +1,25 @@
 {{/*
-  Socialnet microservice Services. Every Service gets a literal `-1` suffix
-  because the Rust `LoadBalancedChannel::new(base, port, replicas)` always
-  expands to `{base}-1`..`{base}-N` endpoints — matching the docker-compose
-  container naming `{project}-{svc}-N`. exp_runner sets every `*_REPLICAS=1`
-  env var in k8s mode so a single `-1` Service suffices and k8s does pod-level
-  load balancing across the Deployment's replicas.
+  Socialnet microservice Services. Each `services[]` entry produces `replicas`
+  Services named `{fullname}-{name}-1`..`{fullname}-{name}-N`, one per
+  Deployment from deployments.yaml. The Rust `LoadBalancedChannel::new(base,
+  port, replicas)` opens N independent gRPC channels to `{base}-1..{base}-N`
+  — matching the docker-compose container naming `{project}-{svc}-N`. Each
+  Service selects exactly one pod via the unique component label.
 */}}
 {{- range $service := .Values.services }}
 {{- if not $service.noListen }}
+{{- $replicas := int ($service.replicas | default 1) }}
+{{- range $i := until $replicas }}
+{{- $idx := add $i 1 }}
+{{- $component := printf "%s-%d" $service.name $idx }}
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "socialnet.fullname" $ }}-{{ $service.name }}-1
+  name: {{ include "socialnet.fullname" $ }}-{{ $component }}
   labels:
     {{- include "socialnet.labels" $ | nindent 4 }}
-    app.kubernetes.io/component: {{ $service.name }}
+    app.kubernetes.io/component: {{ $component }}
 spec:
   type: {{ $.Values.service.type }}
   ports:
@@ -25,7 +29,8 @@ spec:
       name: grpc
   selector:
     {{- include "socialnet.selectorLabels" $ | nindent 4 }}
-    app.kubernetes.io/component: {{ $service.name }}
+    app.kubernetes.io/component: {{ $component }}
+{{- end }}
 {{- end }}
 {{- end }}
 
