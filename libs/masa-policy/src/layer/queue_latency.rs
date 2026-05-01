@@ -39,9 +39,8 @@ mod inner {
     static SERVICE_NAME: OnceLock<String> = OnceLock::new();
 
     fn service_name() -> &'static str {
-        SERVICE_NAME.get_or_init(|| {
-            std::env::var("SERVICE_NAME").unwrap_or_else(|_| "unknown".to_string())
-        })
+        SERVICE_NAME
+            .get_or_init(|| std::env::var("SERVICE_NAME").unwrap_or_else(|_| "unknown".to_string()))
     }
 
     #[derive(Debug)]

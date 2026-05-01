@@ -67,6 +67,7 @@ def _plot_options(args: argparse.Namespace) -> dict:
         "use_cache": not bool(getattr(args, "no_plot_cache", False)),
     }
 
+
 # Setup logging
 logging.basicConfig(
     level=logging.INFO,

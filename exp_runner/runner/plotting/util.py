@@ -447,7 +447,9 @@ def load_plot_data(
             tmp_path = cache_path.with_suffix(cache_path.suffix + ".tmp")
             with open(tmp_path, "wb") as f:
                 pickle.dump(
-                    {"key": cache_key, "data": plot_data}, f, protocol=pickle.HIGHEST_PROTOCOL
+                    {"key": cache_key, "data": plot_data},
+                    f,
+                    protocol=pickle.HIGHEST_PROTOCOL,
                 )
             tmp_path.replace(cache_path)
         except Exception as exc:
