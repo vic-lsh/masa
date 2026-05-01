@@ -32,6 +32,7 @@ use super::state::AfterChildEstimates;
 #[derive(Debug, Clone)]
 pub(crate) struct ChildRecord {
     pub child_id: MethodId,
+    pub child_service_id: MethodId,
     pub start: Instant,
     pub end: Option<Instant>,
     /// True once the RPC has returned, including early returns that leave
@@ -178,6 +179,7 @@ impl<E: LatencyEstimator + Default + 'static> FanoutPatternTable<E> {
         parent: MethodId,
         path_prefix: PathPrefix,
         base_signature: &[MethodId],
+        min_samples: u64,
         cap: u64,
     ) -> AfterChildEstimates {
         let by_root_parent = self.by_root_parent.lock().unwrap();
@@ -192,11 +194,23 @@ impl<E: LatencyEstimator + Default + 'static> FanoutPatternTable<E> {
             }
         };
 
-        closest_compatible_lookup(groups, PatternScope::Path(path_prefix), base_signature, cap)
-            .or_else(|| {
-                closest_compatible_lookup(groups, PatternScope::Aggregate, base_signature, cap)
-            })
-            .unwrap_or_default()
+        closest_compatible_lookup(
+            groups,
+            PatternScope::Path(path_prefix),
+            base_signature,
+            min_samples,
+            cap,
+        )
+        .or_else(|| {
+            closest_compatible_lookup(
+                groups,
+                PatternScope::Aggregate,
+                base_signature,
+                min_samples,
+                cap,
+            )
+        })
+        .unwrap_or_default()
     }
 
     /// Exit-time update for one observed group under a path prefix.
@@ -257,6 +271,7 @@ fn closest_compatible_lookup<E: LatencyEstimator + Default + 'static>(
     groups: &HashMap<GroupPatternKey, GroupPattern<E>>,
     scope: PatternScope,
     base_signature: &[MethodId],
+    min_samples: u64,
     cap: u64,
 ) -> Option<AfterChildEstimates> {
     let exact_key = GroupPatternKey {
@@ -264,7 +279,7 @@ fn closest_compatible_lookup<E: LatencyEstimator + Default + 'static>(
         signature: base_signature.to_vec(),
     };
     if let Some(p) = groups.get(&exact_key) {
-        if p.estimator.can_estimate() {
+        if p.occurrence_count >= min_samples && p.estimator.can_estimate() {
             return Some(pattern_estimates(p, cap));
         }
     }
@@ -274,6 +289,7 @@ fn closest_compatible_lookup<E: LatencyEstimator + Default + 'static>(
         .filter(|(key, p)| {
             key.scope == scope
                 && is_multiset_subset(base_signature, &key.signature)
+                && p.occurrence_count >= min_samples
                 && p.estimator.can_estimate()
         })
         .map(|(key, _)| key.signature.len())
@@ -288,6 +304,7 @@ fn closest_compatible_lookup<E: LatencyEstimator + Default + 'static>(
         if key.scope != scope
             || key.signature.len() != closest_signature_len
             || !is_multiset_subset(base_signature, &key.signature)
+            || p.occurrence_count < min_samples
             || !p.estimator.can_estimate()
         {
             continue;
@@ -355,7 +372,9 @@ pub(crate) struct FanoutGroupObservation {
 #[derive(Debug, Clone)]
 pub(crate) struct PathFanoutObservation {
     pub path_prefix: PathPrefix,
+    pub service_path_prefix: PathPrefix,
     pub signature: Vec<MethodId>,
+    pub service_signature: Vec<MethodId>,
     pub post_join_us: u64,
 }
 
@@ -438,18 +457,81 @@ pub(crate) fn recover_path_groups(
     children: &[ChildRecord],
     parent_end: Instant,
 ) -> Vec<PathFanoutObservation> {
-    let groups = recover_group_observations(children, parent_end);
-    let mut prefix = PathPrefix::root();
-    let mut out = Vec::with_capacity(groups.len());
-    for group in groups {
-        out.push(PathFanoutObservation {
-            path_prefix: prefix,
-            signature: group.signature.clone(),
-            post_join_us: group.post_join_us,
-        });
-        prefix = prefix.append_signature(&group.signature);
+    if children.is_empty() {
+        return Vec::new();
     }
+
+    let mut completed: Vec<&ChildRecord> = children.iter().filter(|c| c.end.is_some()).collect();
+    if completed.is_empty() {
+        return Vec::new();
+    }
+    completed.sort_by_key(|c| c.start);
+
+    let mut prefix = PathPrefix::root();
+    let mut service_prefix = PathPrefix::root();
+    let mut out = Vec::new();
+    let mut group_max_end = completed[0].end.unwrap();
+    let mut exact_signature = vec![completed[0].child_id];
+    let mut service_signature = vec![completed[0].child_service_id];
+
+    for c in completed.into_iter().skip(1) {
+        let end = c.end.unwrap();
+        if c.start <= group_max_end {
+            exact_signature.push(c.child_id);
+            service_signature.push(c.child_service_id);
+            group_max_end = group_max_end.max(end);
+            continue;
+        }
+
+        push_path_group_observation(
+            &mut out,
+            &mut prefix,
+            &mut service_prefix,
+            std::mem::take(&mut exact_signature),
+            std::mem::take(&mut service_signature),
+            group_max_end,
+            parent_end,
+        );
+        group_max_end = end;
+        exact_signature.push(c.child_id);
+        service_signature.push(c.child_service_id);
+    }
+
+    push_path_group_observation(
+        &mut out,
+        &mut prefix,
+        &mut service_prefix,
+        exact_signature,
+        service_signature,
+        group_max_end,
+        parent_end,
+    );
     out
+}
+
+fn push_path_group_observation(
+    out: &mut Vec<PathFanoutObservation>,
+    prefix: &mut PathPrefix,
+    service_prefix: &mut PathPrefix,
+    mut signature: Vec<MethodId>,
+    mut service_signature: Vec<MethodId>,
+    group_max_end: Instant,
+    parent_end: Instant,
+) {
+    signature.sort();
+    service_signature.sort();
+    let post_join = parent_end
+        .saturating_duration_since(group_max_end)
+        .as_micros() as u64;
+    out.push(PathFanoutObservation {
+        path_prefix: *prefix,
+        service_path_prefix: *service_prefix,
+        signature: signature.clone(),
+        service_signature: service_signature.clone(),
+        post_join_us: post_join,
+    });
+    *prefix = prefix.append_signature(&signature);
+    *service_prefix = service_prefix.append_signature(&service_signature);
 }
 
 #[cfg(test)]
@@ -491,6 +573,7 @@ mod tests {
     fn child(child_id: MethodId, start: Instant, end: Instant) -> ChildRecord {
         ChildRecord {
             child_id,
+            child_service_id: child_id,
             start,
             end: Some(end),
             terminal: true,
@@ -636,8 +719,8 @@ mod tests {
             7_000,
         );
 
-        let first = table.lookup_estimate(root, parent, first_prefix, &sig_ab, u64::MAX);
-        let second = table.lookup_estimate(root, parent, second_prefix, &sig_ab, u64::MAX);
+        let first = table.lookup_estimate(root, parent, first_prefix, &sig_ab, 1, u64::MAX);
+        let second = table.lookup_estimate(root, parent, second_prefix, &sig_ab, 1, u64::MAX);
 
         assert_eq!(first.full, 67_000);
         assert_eq!(second.full, 7_000);
@@ -660,7 +743,7 @@ mod tests {
         }
         table.update(root, parent, PatternScope::Path(prefix), sig_ab, 200);
 
-        let estimate = table.lookup_estimate(root, parent, prefix, &sig_a, u64::MAX);
+        let estimate = table.lookup_estimate(root, parent, prefix, &sig_a, 1, u64::MAX);
 
         assert_eq!(estimate.full, 100);
     }
@@ -688,7 +771,7 @@ mod tests {
         );
         table.update(root, parent, PatternScope::Path(prefix), sig_abc, 900);
 
-        let estimate = table.lookup_estimate(root, parent, prefix, &[a], u64::MAX);
+        let estimate = table.lookup_estimate(root, parent, prefix, &[a], 1, u64::MAX);
 
         assert_eq!(estimate.full, 200);
     }
@@ -713,8 +796,30 @@ mod tests {
             42_000,
         );
 
-        let estimate = table.lookup_estimate(root, parent, cold_prefix, &sig_ab, u64::MAX);
+        let estimate = table.lookup_estimate(root, parent, cold_prefix, &sig_ab, 1, u64::MAX);
 
         assert_eq!(estimate.full, 42_000);
+    }
+
+    #[test]
+    fn lookup_skips_cold_patterns_below_min_samples() {
+        let root = mid(701);
+        let parent = mid(702);
+        let a = mid(703);
+        let b = mid(704);
+        let mut sig_ab = vec![a, b];
+        sig_ab.sort();
+        let prefix = PathPrefix::root();
+
+        let table = FanoutPatternTable::<LastValueEstimator>::new();
+        table.update(root, parent, PatternScope::Path(prefix), sig_ab.clone(), 10);
+        table.update(root, parent, PatternScope::Path(prefix), sig_ab.clone(), 20);
+
+        let cold = table.lookup_estimate(root, parent, prefix, &sig_ab, 3, u64::MAX);
+        assert_eq!(cold.full, 0);
+
+        table.update(root, parent, PatternScope::Path(prefix), sig_ab.clone(), 30);
+        let warm = table.lookup_estimate(root, parent, prefix, &sig_ab, 3, u64::MAX);
+        assert_eq!(warm.full, 30);
     }
 }

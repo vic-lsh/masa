@@ -163,6 +163,11 @@ pub struct PredParams {
     /// sibling-wait noise, while internal services keep the legacy low-overhead
     /// per-edge estimator.
     pub fanout_root_only: bool,
+    /// Minimum observations required before a fanout group pattern can drive
+    /// online estimates. Cold exact signatures are common in trace-driven
+    /// workloads with many interface names; gating them lets lookup fall back
+    /// to coarser patterns or legacy per-edge estimates.
+    pub fanout_min_samples: u64,
 }
 
 impl Default for PredParams {
@@ -175,6 +180,7 @@ impl Default for PredParams {
             aimd_er_threshold: 0.10,
             fanout_deadline_legacy_fraction: 0.0,
             fanout_root_only: false,
+            fanout_min_samples: 3,
         }
     }
 }

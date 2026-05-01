@@ -21,8 +21,7 @@ use masa_core::{Context, LatencyEstimator, ResponseMeta};
 use tonic_core::{Code, CowGrpcMethod, Response, Status};
 
 use super::fanout::{
-    recover_group_observations, recover_path_groups, ChildRecord, FanoutPatternTable, PathPrefix,
-    PatternScope,
+    recover_path_groups, ChildRecord, FanoutPatternTable, PathPrefix, PatternScope,
 };
 use super::latency_map::{LatencyMap, MethodKey, ParentToChildKey, RootToLocalKey};
 use crate::context_ext::MasaResponseExt;
@@ -168,6 +167,10 @@ pub(crate) struct LatencyEstimatorsInner<E: LatencyEstimator + Default + 'static
     /// multiset of sibling child_methods). Read at child-issue time for
     /// deadline tightening.
     fanout_patterns: FanoutPatternTable<E>,
+    /// Coarser fanout-group estimates keyed on child service multisets.
+    /// This is a low-cardinality fallback for traces whose exact child method
+    /// signatures are too sparse to estimate reliably.
+    service_fanout_patterns: FanoutPatternTable<E>,
     /// Counter for periodic logging.
     print_counter: AtomicUsize,
 }
@@ -208,6 +211,7 @@ impl<E: LatencyEstimator + Default + 'static> LatencyEstimators<E> {
             subtree_compute: LatencyMap::new(),
             method_wallclock: LatencyMap::new(),
             fanout_patterns: FanoutPatternTable::new(),
+            service_fanout_patterns: FanoutPatternTable::new(),
             print_counter: AtomicUsize::new(0),
         });
 
@@ -258,6 +262,8 @@ impl<E: LatencyEstimator + Default + 'static> LatencyEstimators<E> {
         parent: MethodId,
         path_prefix: PathPrefix,
         base_signature: &[MethodId],
+        service_path_prefix: PathPrefix,
+        base_service_signature: &[MethodId],
         new_child_id: MethodId,
         cap: u64,
     ) -> AfterChildEstimates {
@@ -269,12 +275,32 @@ impl<E: LatencyEstimator + Default + 'static> LatencyEstimators<E> {
             return legacy;
         }
 
-        self.fanout_patterns
-            .lookup_estimate(root, parent, path_prefix, base_signature, cap)
-            .merge_with_legacy_priority(
-                legacy,
-                PolicyParams::global().pred.fanout_deadline_legacy_fraction,
+        let min_samples = PolicyParams::global().pred.fanout_min_samples;
+        let fanout = self.fanout_patterns.lookup_estimate(
+            root,
+            parent,
+            path_prefix,
+            base_signature,
+            min_samples,
+            cap,
+        );
+        let fanout = if fanout.is_empty() {
+            self.service_fanout_patterns.lookup_estimate(
+                root,
+                parent,
+                service_path_prefix,
+                base_service_signature,
+                min_samples,
+                cap,
             )
+        } else {
+            fanout
+        };
+
+        fanout.merge_with_legacy_priority(
+            legacy,
+            PolicyParams::global().pred.fanout_deadline_legacy_fraction,
+        )
     }
 
     /// Estimated wall-clock duration of a child RPC call.
@@ -303,6 +329,8 @@ impl<E: LatencyEstimator + Default + 'static> LatencyEstimators<E> {
         parent: MethodId,
         path_prefix: PathPrefix,
         signature: Vec<MethodId>,
+        service_path_prefix: PathPrefix,
+        service_signature: Vec<MethodId>,
         post_join_us: u64,
     ) {
         self.fanout_patterns.update(
@@ -317,6 +345,20 @@ impl<E: LatencyEstimator + Default + 'static> LatencyEstimators<E> {
             parent,
             PatternScope::Aggregate,
             signature,
+            post_join_us,
+        );
+        self.service_fanout_patterns.update(
+            root,
+            parent,
+            PatternScope::Path(service_path_prefix),
+            service_signature.clone(),
+            post_join_us,
+        );
+        self.service_fanout_patterns.update(
+            root,
+            parent,
+            PatternScope::Aggregate,
+            service_signature,
             post_join_us,
         );
     }
@@ -387,7 +429,11 @@ where
                 log_pair_map_if_non_empty("Est Child Wallclock", &shared.child_wallclock);
                 log_method_map_if_non_empty("Est Subtree Compute", &shared.subtree_compute);
                 log_pair_map_if_non_empty("Est Method Wallclock", &shared.method_wallclock);
-                log_fanout_patterns_if_non_empty(&shared.fanout_patterns);
+                log_fanout_patterns_if_non_empty("Est Fanout Groups", &shared.fanout_patterns);
+                log_fanout_patterns_if_non_empty(
+                    "Est Service Fanout Groups",
+                    &shared.service_fanout_patterns,
+                );
             }
         });
     }
@@ -413,6 +459,7 @@ where
 }
 
 fn log_fanout_patterns_if_non_empty<E: LatencyEstimator + Default + 'static>(
+    label: &'static str,
     table: &FanoutPatternTable<E>,
 ) {
     if table.is_empty() {
@@ -441,7 +488,7 @@ fn log_fanout_patterns_if_non_empty<E: LatencyEstimator + Default + 'static>(
             root_name, parent_name, scope_name, sig_str, count, est_str
         ));
     });
-    log::info!("Est Fanout Groups: {}", parts.join(" ;; "));
+    log::info!("{}: {}", label, parts.join(" ;; "));
 }
 
 fn log_method_map_if_non_empty<E: LatencyEstimator + Default + 'static>(
@@ -474,6 +521,8 @@ struct FanoutInvocationState {
     children: Vec<ChildRecord>,
     /// Prefix formed by completed fanout groups before the current open group.
     path_prefix: PathPrefix,
+    /// Service-shape version of `path_prefix`.
+    service_path_prefix: PathPrefix,
     /// Number of leading child records already folded into `path_prefix`.
     incorporated_child_count: usize,
 }
@@ -493,8 +542,11 @@ impl FanoutInvocationState {
             return;
         }
 
-        for group in recover_group_observations(&pending[..terminal_prefix_len], now) {
+        for group in recover_path_groups(&pending[..terminal_prefix_len], now) {
             self.path_prefix = self.path_prefix.append_signature(&group.signature);
+            self.service_path_prefix = self
+                .service_path_prefix
+                .append_signature(&group.service_signature);
         }
         self.incorporated_child_count += terminal_prefix_len;
     }
@@ -534,20 +586,22 @@ impl<E: LatencyEstimator + Default + 'static> EstimationTracker<E> {
     /// guaranteed to be a multiset-subset of the eventual fanout group, so
     /// it is the issue-time lower bound used to look up a group estimate.
     pub(crate) fn begin_child(&self, child_method: &CowGrpcMethod) -> ChildRPCTracker {
-        let child_id = MethodRegistry::global().get_or_register(child_method.clone());
+        let (child_id, child_service_id) =
+            MethodRegistry::global().get_or_register_with_service(child_method.clone());
         let root = self.root_or_self();
         let key = ParentToChildKey::root_rpc_method(root)
             .parent_rpc_method(self.resolved_method_id)
             .child_rpc_method(child_id);
         let now = Instant::now();
         let mut fanout = self.fanout.lock().unwrap();
-        let (path_prefix, base_signature) =
+        let (path_prefix, base_signature, service_path_prefix, base_service_signature) =
             if fanout_enabled_for_parent(root, self.resolved_method_id) {
                 let has_open_siblings = fanout.children.iter().any(|c| !c.terminal);
                 if has_open_siblings {
                     fanout.refresh_path_prefix_before_open_group(now);
                 }
                 let path_prefix = fanout.path_prefix;
+                let service_path_prefix = fanout.service_path_prefix;
                 let mut base_signature: Vec<MethodId> = fanout
                     .children
                     .iter()
@@ -556,18 +610,46 @@ impl<E: LatencyEstimator + Default + 'static> EstimationTracker<E> {
                     .collect();
                 base_signature.push(child_id);
                 base_signature.sort();
-                (path_prefix, base_signature)
+                let mut base_service_signature: Vec<MethodId> = fanout
+                    .children
+                    .iter()
+                    .filter(|c| !c.terminal)
+                    .map(|c| c.child_service_id)
+                    .collect();
+                base_service_signature.push(child_service_id);
+                base_service_signature.sort();
+                (
+                    path_prefix,
+                    base_signature,
+                    service_path_prefix,
+                    base_service_signature,
+                )
             } else {
-                (PathPrefix::root(), vec![child_id])
+                (
+                    PathPrefix::root(),
+                    vec![child_id],
+                    PathPrefix::root(),
+                    vec![child_service_id],
+                )
             };
         let index = fanout.children.len();
         fanout.children.push(ChildRecord {
             child_id,
+            child_service_id,
             start: now,
             end: None,
             terminal: false,
         });
-        ChildRPCTracker::new(key, child_id, index, path_prefix, base_signature, now)
+        ChildRPCTracker::new(
+            key,
+            child_id,
+            index,
+            path_prefix,
+            base_signature,
+            service_path_prefix,
+            base_service_signature,
+            now,
+        )
     }
 
     /// Record a completed child RPC: track child wallclock on success, or inject
@@ -634,6 +716,8 @@ impl<E: LatencyEstimator + Default + 'static> EstimationTracker<E> {
                     self.resolved_method_id,
                     group.path_prefix,
                     group.signature.clone(),
+                    group.service_path_prefix,
+                    group.service_signature.clone(),
                     group.post_join_us,
                 );
             }
@@ -677,6 +761,8 @@ pub(crate) struct ChildRPCTracker {
     /// time. Lower bound on the eventual fanout-group signature; used by
     /// the estimation layer to look up the matching group's EMA.
     pub(crate) base_signature: Vec<MethodId>,
+    pub(crate) service_path_prefix: PathPrefix,
+    pub(crate) base_service_signature: Vec<MethodId>,
     #[allow(dead_code)]
     pub(crate) child_id: MethodId,
     start_time: Instant,
@@ -689,6 +775,8 @@ impl ChildRPCTracker {
         child_index: usize,
         path_prefix: PathPrefix,
         base_signature: Vec<MethodId>,
+        service_path_prefix: PathPrefix,
+        base_service_signature: Vec<MethodId>,
         start_time: Instant,
     ) -> Self {
         Self {
@@ -696,6 +784,8 @@ impl ChildRPCTracker {
             child_index,
             path_prefix,
             base_signature,
+            service_path_prefix,
+            base_service_signature,
             child_id,
             start_time,
         }
@@ -882,6 +972,10 @@ mod tests {
             .get_or_register(CowGrpcMethod::new(service.to_string(), method.to_string()))
     }
 
+    fn sid(service: &str) -> MethodId {
+        MethodRegistry::global().get_or_register_service(service.to_string())
+    }
+
     #[test]
     fn compute_tracker_accumulates_across_polls() {
         let tracker = ComputeTracker::new();
@@ -925,18 +1019,21 @@ mod tests {
         let mut state = FanoutInvocationState::default();
         state.children.push(ChildRecord {
             child_id: a,
+            child_service_id: sid("StateFanout"),
             start: t0,
             end: Some(t0 + Duration::from_millis(10)),
             terminal: true,
         });
         state.children.push(ChildRecord {
             child_id: b,
+            child_service_id: sid("StateFanout"),
             start: t0 + Duration::from_millis(1),
             end: Some(t0 + Duration::from_millis(20)),
             terminal: true,
         });
         state.children.push(ChildRecord {
             child_id: c,
+            child_service_id: sid("StateFanout"),
             start: t0 + Duration::from_millis(30),
             end: None,
             terminal: false,
@@ -959,6 +1056,7 @@ mod tests {
         let child_c = CowGrpcMethod::new("StateTracker", "child_c");
         let child_a_id = MethodRegistry::global().get_or_register(child_a.clone());
         let child_b_id = MethodRegistry::global().get_or_register(child_b.clone());
+        let child_service_id = MethodRegistry::global().get_or_register_service("StateTracker");
         let est = LatencyEstimators::<LatencyEwma>::new();
         let tracker = EstimationTracker::new(parent, Some(root), est);
 
@@ -979,6 +1077,11 @@ mod tests {
             sig.sort();
             sig
         });
+        assert_eq!(third.base_service_signature, {
+            let mut sig = vec![child_service_id, child_service_id];
+            sig.sort();
+            sig
+        });
     }
 
     #[test]
@@ -987,21 +1090,36 @@ mod tests {
         let parent = mid("StateLookupClamp", "parent");
         let child = mid("StateLookupClamp", "child");
         let sibling = mid("StateLookupClamp", "sibling");
+        let service = sid("StateLookupClamp");
         let est = LatencyEstimators::<LatencyEwma>::new();
         let mut signature = vec![child, sibling];
         signature.sort();
+        let mut service_signature = vec![service, service];
+        service_signature.sort();
         let key = ParentToChildKey::root_rpc_method(root)
             .parent_rpc_method(parent)
             .child_rpc_method(child);
 
         est.track_after_child_wallclock(key, 1_000);
-        est.track_fanout_group(root, parent, PathPrefix::root(), signature.clone(), 5_000);
+        for _ in 0..3 {
+            est.track_fanout_group(
+                root,
+                parent,
+                PathPrefix::root(),
+                signature.clone(),
+                PathPrefix::root(),
+                service_signature.clone(),
+                5_000,
+            );
+        }
 
         let estimate = est.est_after_child_wallclock_for_group(
             root,
             parent,
             PathPrefix::root(),
             &signature,
+            PathPrefix::root(),
+            &service_signature,
             child,
             u64::MAX,
         );
@@ -1017,22 +1135,89 @@ mod tests {
         let parent = mid("StateLookupMin", "parent");
         let child = mid("StateLookupMin", "child");
         let sibling = mid("StateLookupMin", "sibling");
+        let service = sid("StateLookupMin");
         let est = LatencyEstimators::<LatencyEwma>::new();
         let mut signature = vec![child, sibling];
         signature.sort();
+        let mut service_signature = vec![service, service];
+        service_signature.sort();
         let key = ParentToChildKey::root_rpc_method(root)
             .parent_rpc_method(parent)
             .child_rpc_method(child);
 
         est.track_after_child_wallclock(key, 5_000);
-        est.track_fanout_group(root, parent, PathPrefix::root(), signature.clone(), 1_000);
+        for _ in 0..3 {
+            est.track_fanout_group(
+                root,
+                parent,
+                PathPrefix::root(),
+                signature.clone(),
+                PathPrefix::root(),
+                service_signature.clone(),
+                1_000,
+            );
+        }
 
         let estimate = est.est_after_child_wallclock_for_group(
             root,
             parent,
             PathPrefix::root(),
             &signature,
+            PathPrefix::root(),
+            &service_signature,
             child,
+            u64::MAX,
+        );
+
+        assert_eq!(estimate.full, 5_000);
+        assert_eq!(estimate.mean, 1_000);
+        assert_eq!(estimate.floor, 1_000);
+    }
+
+    #[test]
+    fn fanout_lookup_falls_back_to_service_shape_when_exact_is_sparse() {
+        let root = mid("StateLookupCoarseRoot", "root");
+        let parent = mid("StateLookupCoarseParent", "parent");
+        let a1 = mid("StateLookupCoarseA", "a1");
+        let a2 = mid("StateLookupCoarseA", "a2");
+        let a3 = mid("StateLookupCoarseA", "a3");
+        let b1 = mid("StateLookupCoarseB", "b1");
+        let b2 = mid("StateLookupCoarseB", "b2");
+        let b3 = mid("StateLookupCoarseB", "b3");
+        let service_a = sid("StateLookupCoarseA");
+        let service_b = sid("StateLookupCoarseB");
+        let est = LatencyEstimators::<LatencyEwma>::new();
+        let mut service_signature = vec![service_a, service_b];
+        service_signature.sort();
+        let key = ParentToChildKey::root_rpc_method(root)
+            .parent_rpc_method(parent)
+            .child_rpc_method(a1);
+
+        est.track_after_child_wallclock(key, 5_000);
+        for (left, right) in [(a1, b1), (a2, b2), (a3, b3)] {
+            let mut exact_signature = vec![left, right];
+            exact_signature.sort();
+            est.track_fanout_group(
+                root,
+                parent,
+                PathPrefix::root(),
+                exact_signature,
+                PathPrefix::root(),
+                service_signature.clone(),
+                1_000,
+            );
+        }
+
+        let mut cold_exact = vec![a1, b1];
+        cold_exact.sort();
+        let estimate = est.est_after_child_wallclock_for_group(
+            root,
+            parent,
+            PathPrefix::root(),
+            &cold_exact,
+            PathPrefix::root(),
+            &service_signature,
+            a1,
             u64::MAX,
         );
 
@@ -1046,19 +1231,30 @@ mod tests {
         let root = mid("StateLookupSingle", "root");
         let parent = mid("StateLookupSingle", "parent");
         let child = mid("StateLookupSingle", "child");
+        let service = sid("StateLookupSingle");
         let est = LatencyEstimators::<LatencyEwma>::new();
         let key = ParentToChildKey::root_rpc_method(root)
             .parent_rpc_method(parent)
             .child_rpc_method(child);
 
         est.track_after_child_wallclock(key, 5_000);
-        est.track_fanout_group(root, parent, PathPrefix::root(), vec![child], 1_000);
+        est.track_fanout_group(
+            root,
+            parent,
+            PathPrefix::root(),
+            vec![child],
+            PathPrefix::root(),
+            vec![service],
+            1_000,
+        );
 
         let estimate = est.est_after_child_wallclock_for_group(
             root,
             parent,
             PathPrefix::root(),
             &[child],
+            PathPrefix::root(),
+            &[service],
             child,
             u64::MAX,
         );

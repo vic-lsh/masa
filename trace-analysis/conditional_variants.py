@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
+import numpy as np
 from tqdm import tqdm
 
 logger = logging.getLogger(__name__)
@@ -745,6 +746,134 @@ def write_outputs(
     logger.info("Wrote %s", summary_path)
 
 
+def compute_edge_reports(
+    service_name: str,
+    service_df: pd.DataFrame,
+    missing_parent_as_root: bool,
+) -> tuple[pd.DataFrame, dict[str, dict[str, int]], dict[str, dict[str, dict[str, float]]]]:
+    edge_counter: Counter[tuple[str, str]] = Counter()
+    edge_interface_counts: dict[tuple[str, str], Counter[str]] = defaultdict(Counter)
+
+    for _trace_key, trace_df in service_df.groupby("_trace_key", sort=False):
+        spans, _span_stats = build_spans(trace_df)
+        if not spans:
+            continue
+
+        for span in spans.values():
+            parent_id = span.parent_rpc_id
+            if parent_id is None:
+                source = "USER"
+            elif parent_id in spans:
+                source = spans[parent_id].dm
+            elif missing_parent_as_root:
+                source = "USER"
+            else:
+                continue
+
+            edge = (source, span.dm)
+            edge_counter[edge] += 1
+            edge_interface_counts[edge][span.interface] += 1
+
+    edge_rows = [
+        (service_name, caller, callee, int(weight))
+        for (caller, callee), weight in sorted(edge_counter.items())
+    ]
+    edges_df = pd.DataFrame(edge_rows, columns=["service", "caller", "callee", "weight"])
+
+    interface_distribution: dict[str, dict[str, int]] = {}
+    seen_callee_ifaces: set[tuple[str, str]] = set()
+    for (_caller, callee), counts in edge_interface_counts.items():
+        callee_counts = interface_distribution.setdefault(callee, {})
+        for interface, count in counts.items():
+            callee_counts[interface] = callee_counts.get(interface, 0) + int(count)
+            seen_callee_ifaces.add((callee, interface))
+
+    latency_percentiles = compute_latency_percentiles(service_df, seen_callee_ifaces)
+    return edges_df, interface_distribution, latency_percentiles
+
+
+def compute_latency_percentiles(
+    service_df: pd.DataFrame,
+    seen_callee_ifaces: set[tuple[str, str]],
+) -> dict[str, dict[str, dict[str, float]]]:
+    if not seen_callee_ifaces:
+        return {}
+
+    percentiles = sorted(set(list(range(1, 101)) + [99.5, 99.9, 99.95, 99.99]))
+    latency_df = service_df.copy()
+    latency_df["interface_norm"] = latency_df["interface"].apply(normalize_interface)
+    latency_df["rt"] = pd.to_numeric(latency_df["rt"], errors="coerce")
+
+    latency_percentiles: dict[str, dict[str, dict[str, float]]] = {}
+    for callee, interface in sorted(seen_callee_ifaces):
+        values = latency_df[
+            (latency_df["dm"] == callee) & (latency_df["interface_norm"] == interface)
+        ]["rt"].dropna()
+        if values.empty:
+            continue
+        percentile_values = np.percentile(values.to_numpy(dtype=float), percentiles)
+        latency_percentiles.setdefault(callee, {})[interface] = {
+            str(percentile): float(value)
+            for percentile, value in zip(percentiles, percentile_values)
+        }
+    return latency_percentiles
+
+
+def write_service_dir_outputs(
+    output_dir: Path,
+    payload: dict[str, Any],
+    summary_rows: list[dict[str, Any]],
+    df: pd.DataFrame,
+    services: list[str],
+    missing_parent_as_root: bool,
+) -> None:
+    summary_by_service = {row["service"]: row for row in summary_rows}
+
+    for service_name in tqdm(
+        services,
+        total=len(services),
+        desc="Writing service dirs",
+        unit="svc",
+        dynamic_ncols=True,
+        file=sys.stderr,
+    ):
+        graph_payload = payload["graphs"][service_name]
+        service_df = df[df["service"] == service_name].copy()
+        service_dir = output_dir / slugify(service_name)
+        service_dir.mkdir(parents=True, exist_ok=True)
+
+        call_sequence_payload = {
+            service_name: {
+                "schema_version": payload["schema_version"],
+                "format": "conditional_variants",
+                "metadata": payload["metadata"],
+                "summary": summary_by_service.get(service_name, {}),
+                **graph_payload,
+            }
+        }
+        (service_dir / "call_sequence.json").write_text(
+            json.dumps(call_sequence_payload, indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
+
+        edges_df, interface_distribution, latency_percentiles = compute_edge_reports(
+            service_name,
+            service_df,
+            missing_parent_as_root,
+        )
+        edges_df.to_csv(service_dir / "edges.csv", index=False)
+        (service_dir / "interface_distribution.json").write_text(
+            json.dumps(interface_distribution, indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
+        (service_dir / "latency_percentiles.json").write_text(
+            json.dumps(latency_percentiles, indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
+
+    logger.info("Wrote per-service directories under %s", output_dir)
+
+
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Extract conditional fanout sequence variants from Alibaba MSCallGraph CSVs."
@@ -833,6 +962,16 @@ def build_arg_parser() -> argparse.ArgumentParser:
         type=Path,
         default=Path(__file__).resolve().parent / "conditional_variants",
     )
+    parser.add_argument(
+        "--service-dir-layout",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help=(
+            "Also write trace-analysis-style per-service directories containing "
+            "call_sequence.json, edges.csv, interface_distribution.json, and "
+            "latency_percentiles.json. No plot files are generated."
+        ),
+    )
     return parser
 
 
@@ -904,6 +1043,15 @@ def main() -> None:
     payload["graphs"] = graphs
 
     write_outputs(args.output_dir, payload, summary_rows)
+    if args.service_dir_layout:
+        write_service_dir_outputs(
+            args.output_dir,
+            payload,
+            summary_rows,
+            df,
+            services,
+            args.missing_parent_as_root,
+        )
 
 
 if __name__ == "__main__":
