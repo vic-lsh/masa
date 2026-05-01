@@ -6,6 +6,7 @@
 // observed ER fraction exceeds a threshold and recovers additively when healthy.
 // Exponential idle decay opens admission naturally when traffic drops.
 
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
@@ -84,7 +85,10 @@ impl Layer for PredAdmissionLayer {
         if ctx.hop_count() != 0 || self.admission_checked.swap(true, Ordering::Relaxed) {
             return Ok(());
         }
-        if !self.pred_admission.should_admit() {
+        let root_id = self
+            .root_method_id
+            .unwrap_or_else(|| crate::MethodRegistry::global().get_or_register(self.rpc.clone()));
+        if !self.pred_admission.should_admit(root_id) {
             self.self_rejected.store(true, Ordering::Relaxed);
             return Err(Err(Status::new(
                 Code::DeadlineExceeded,
@@ -188,7 +192,10 @@ impl Layer for PredAdmissionLayer {
                 .map(|meta| meta.early_return_count > 0)
                 .unwrap_or(false);
 
-        self.pred_admission.record_outcome(is_er);
+        let root_id = self
+            .root_method_id
+            .unwrap_or_else(|| crate::MethodRegistry::global().get_or_register(self.rpc.clone()));
+        self.pred_admission.record_outcome(root_id, is_er);
     }
 }
 
@@ -224,6 +231,19 @@ struct AdmissionState {
     admit_p: f64,
 }
 
+impl AdmissionState {
+    fn new(now: Instant) -> Self {
+        Self {
+            last_update: now,
+            er_last_update: now,
+            er_count: 0,
+            window_total: 0,
+            log_counter: 0,
+            admit_p: 1.0,
+        }
+    }
+}
+
 impl std::fmt::Debug for AdmissionState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("AdmissionState")
@@ -234,36 +254,105 @@ impl std::fmt::Debug for AdmissionState {
 
 /// AIMD admission controller.
 ///
-/// `admit_p` is updated per 50 ms window: multiplicative decrease (`admit_p *= beta`)
-/// when the window's ER fraction exceeds `aimd_er_threshold`; additive increase
-/// (`admit_p += alpha`) when healthy. Rejection probability is
-/// `(1 - admit_p) * exp(-idle_elapsed / tau_er)` — the exponential term provides
-/// natural phase reset when no outcomes arrive (idle traffic → admission opens).
+/// Maintains both a global AIMD state and per-root-method AIMD states. The
+/// global state preserves a shared overload cap across APIs, while the per-root
+/// state lets APIs with different SLOs and ER behavior become more protective
+/// independently.
 #[derive(Debug)]
 pub(crate) struct PredictiveAdmission {
-    state: Mutex<AdmissionState>,
+    global_state: Mutex<AdmissionState>,
+    states_by_root: Mutex<HashMap<MethodId, AdmissionState>>,
 }
 
 impl PredictiveAdmission {
+    /// How much root-specific pressure can raise rejection probability above
+    /// the global controller. A full max overreacts at moderate overload; a
+    /// partial lift keeps root feedback useful without letting one API fully
+    /// veto admission on its own.
+    const ROOT_REJECT_EXTRA_FRACTION: f64 = 0.75;
+
     pub(crate) fn new() -> Self {
+        let now = Instant::now();
         Self {
-            state: Mutex::new(AdmissionState {
-                last_update: Instant::now(),
-                er_last_update: Instant::now(),
-                er_count: 0,
-                window_total: 0,
-                log_counter: 0,
-                admit_p: 1.0,
-            }),
+            global_state: Mutex::new(AdmissionState::new(now)),
+            states_by_root: Mutex::new(HashMap::new()),
         }
     }
 
     /// Record whether an admitted request ended in an early return or a success.
-    pub(crate) fn record_outcome(&self, is_early_return: bool) {
+    pub(crate) fn record_outcome(&self, root_id: MethodId, is_early_return: bool) {
         let p = &PolicyParams::global().pred;
-        let mut state = self.state.lock().unwrap();
         let now = Instant::now();
 
+        {
+            let mut state = self.global_state.lock().unwrap();
+            Self::record_outcome_for_state(&mut state, p, now, is_early_return);
+            if state.log_counter % 1000 == 0 {
+                log::info!(
+                    "[ac_pred] scope=global outcomes={} admit_p={:.4}",
+                    state.log_counter,
+                    state.admit_p,
+                );
+            }
+        }
+
+        let mut states = self.states_by_root.lock().unwrap();
+        let state = states
+            .entry(root_id)
+            .or_insert_with(|| AdmissionState::new(now));
+        Self::record_outcome_for_state(state, p, now, is_early_return);
+        if state.log_counter % 1000 == 0 {
+            log::info!(
+                "[ac_pred] scope=root root={:?} outcomes={} admit_p={:.4}",
+                root_id,
+                state.log_counter,
+                state.admit_p,
+            );
+        }
+    }
+
+    /// Returns true if the request should be admitted.
+    pub(crate) fn should_admit(&self, root_id: MethodId) -> bool {
+        let p = &PolicyParams::global().pred;
+        let now = Instant::now();
+
+        let (global_reject_prob, global_admit_p) = {
+            let state = self.global_state.lock().unwrap();
+            (Self::reject_prob_for_state(&state, p, now), state.admit_p)
+        };
+
+        let mut states = self.states_by_root.lock().unwrap();
+        let state = states
+            .entry(root_id)
+            .or_insert_with(|| AdmissionState::new(now));
+        let root_reject_prob = Self::reject_prob_for_state(state, p, now);
+        let root_admit_p = state.admit_p;
+        drop(states);
+
+        let root_extra = (root_reject_prob - global_reject_prob).max(0.0);
+        let reject_prob =
+            (global_reject_prob + Self::ROOT_REJECT_EXTRA_FRACTION * root_extra).min(1.0);
+
+        let coin = rand::random::<f64>();
+        let admitted = coin > reject_prob;
+        if !admitted {
+            log::debug!(
+                "[ac_pred] REJECTED reject_prob={:.4} global_admit_p={:.4} root={:?} root_admit_p={:.4}",
+                reject_prob,
+                global_admit_p,
+                root_id,
+                root_admit_p
+            );
+        }
+        admitted
+    }
+
+    fn record_outcome_for_state(
+        state: &mut AdmissionState,
+        p: &crate::policy_params::PredParams,
+        now: Instant,
+        is_early_return: bool,
+    ) {
         // Accumulate into the current 50 ms observation window.
         state.window_total += 1;
         if is_early_return {
@@ -295,40 +384,18 @@ impl PredictiveAdmission {
         }
 
         state.log_counter += 1;
-        if state.log_counter % 1000 == 0 {
-            log::info!(
-                "[ac_pred] outcomes={} admit_p={:.4}",
-                state.log_counter,
-                state.admit_p,
-            );
-        }
     }
 
-    /// Returns true if the request should be admitted.
-    pub(crate) fn should_admit(&self) -> bool {
-        let p = &PolicyParams::global().pred;
-        let state = self.state.lock().unwrap();
-
+    fn reject_prob_for_state(
+        state: &AdmissionState,
+        p: &crate::policy_params::PredParams,
+        now: Instant,
+    ) -> f64 {
         // idle_decay decays reject_prob to 0 as time passes since the last window
         // close. This reopens admission automatically when traffic is sparse.
-        let er_elapsed = Instant::now()
-            .duration_since(state.er_last_update)
-            .as_secs_f64();
+        let er_elapsed = now.duration_since(state.er_last_update).as_secs_f64();
         let idle_decay = (-er_elapsed / p.tau_er).exp();
-        let reject_prob = ((1.0 - state.admit_p) * idle_decay).min(1.0);
-        let admit_p = state.admit_p;
-        drop(state);
-
-        let coin = rand::random::<f64>();
-        let admitted = coin > reject_prob;
-        if !admitted {
-            log::debug!(
-                "[ac_pred] REJECTED reject_prob={:.4} admit_p={:.4}",
-                reject_prob,
-                admit_p
-            );
-        }
-        admitted
+        ((1.0 - state.admit_p) * idle_decay).min(1.0)
     }
 }
 
@@ -336,20 +403,26 @@ impl PredictiveAdmission {
 mod tests {
     use super::*;
 
+    fn test_root(service: &'static str) -> MethodId {
+        crate::MethodRegistry::global().get_or_register(CowGrpcMethod::new(service, "Root"))
+    }
+
     #[test]
     fn test_admits_when_no_early_returns() {
         let ac = PredictiveAdmission::new();
+        let root = test_root("test_admits_when_no_early_returns");
         // admit_p=1.0, idle_decay=1.0 → reject_prob=0 → always admit.
         for _ in 0..100 {
-            assert!(ac.should_admit());
+            assert!(ac.should_admit(root));
         }
     }
 
     #[test]
     fn test_admits_fully_when_no_overload() {
         let ac = PredictiveAdmission::new();
+        let root = test_root("test_admits_fully_when_no_overload");
         // No outcomes recorded → admit_p stays 1.0 → should admit >95%.
-        let admitted = (0..1000).filter(|_| ac.should_admit()).count();
+        let admitted = (0..1000).filter(|_| ac.should_admit(root)).count();
         assert!(
             admitted > 950,
             "zero ER should admit >95%, got {admitted}/1000"
@@ -358,52 +431,88 @@ mod tests {
 
     /// Helper: backdate the window clock so the next `record_outcome` call
     /// crosses the 50 ms boundary and fires the AIMD step.
-    fn backdate_window(ac: &PredictiveAdmission) {
-        let mut state = ac.state.lock().unwrap();
+    fn backdate_window(ac: &PredictiveAdmission, root_id: MethodId) {
+        let mut states = ac.states_by_root.lock().unwrap();
+        let state = states
+            .entry(root_id)
+            .or_insert_with(|| AdmissionState::new(Instant::now()));
         state.last_update = Instant::now() - std::time::Duration::from_millis(60);
+    }
+
+    fn admit_p(ac: &PredictiveAdmission, root_id: MethodId) -> f64 {
+        ac.states_by_root
+            .lock()
+            .unwrap()
+            .get(&root_id)
+            .map(|state| state.admit_p)
+            .unwrap_or(1.0)
     }
 
     #[test]
     fn test_aimd_decreases_admit_p_on_overloaded_window() {
         let ac = PredictiveAdmission::new();
+        let root = test_root("test_aimd_decreases_admit_p_on_overloaded_window");
         // Drive 10 all-ER windows (100% ER fraction > any reasonable threshold).
         for _ in 0..10 {
-            backdate_window(&ac);
-            ac.record_outcome(true);
+            backdate_window(&ac, root);
+            ac.record_outcome(root, true);
         }
-        let state = ac.state.lock().unwrap();
         assert!(
-            state.admit_p < 1.0,
+            admit_p(&ac, root) < 1.0,
             "admit_p should decrease after overloaded windows, got {}",
-            state.admit_p
+            admit_p(&ac, root)
         );
     }
 
     #[test]
     fn test_aimd_increases_admit_p_on_healthy_window() {
         let ac = PredictiveAdmission::new();
+        let root = test_root("test_aimd_increases_admit_p_on_healthy_window");
         // Set admit_p low, then drive all-success windows.
         {
-            let mut state = ac.state.lock().unwrap();
+            let mut states = ac.states_by_root.lock().unwrap();
+            let state = states
+                .entry(root)
+                .or_insert_with(|| AdmissionState::new(Instant::now()));
             state.admit_p = 0.5;
         }
         for _ in 0..5 {
-            backdate_window(&ac);
-            ac.record_outcome(false);
+            backdate_window(&ac, root);
+            ac.record_outcome(root, false);
         }
-        let state = ac.state.lock().unwrap();
         assert!(
-            state.admit_p > 0.5,
+            admit_p(&ac, root) > 0.5,
             "admit_p should increase after healthy windows, got {}",
-            state.admit_p
+            admit_p(&ac, root)
         );
     }
 
     #[test]
     fn test_admit_p_starts_fully_open() {
         let ac = PredictiveAdmission::new();
-        let state = ac.state.lock().unwrap();
-        assert_eq!(state.admit_p, 1.0, "admit_p should start at 1.0");
+        let root = test_root("test_admit_p_starts_fully_open");
+        assert_eq!(admit_p(&ac, root), 1.0, "admit_p should start at 1.0");
+    }
+
+    #[test]
+    fn test_admission_state_is_per_root() {
+        let ac = PredictiveAdmission::new();
+        let root_a = test_root("test_admission_state_is_per_root_a");
+        let root_b = test_root("test_admission_state_is_per_root_b");
+        for _ in 0..5 {
+            backdate_window(&ac, root_a);
+            ac.record_outcome(root_a, true);
+        }
+
+        assert!(
+            admit_p(&ac, root_a) < 1.0,
+            "overloaded root should reduce admit_p"
+        );
+        assert_eq!(
+            admit_p(&ac, root_b),
+            1.0,
+            "unseen root should remain fully open"
+        );
     }
 
     /// Verify idle decay reopens admission when no outcomes arrive.
@@ -414,15 +523,24 @@ mod tests {
     #[test]
     fn test_idle_decay_reopens_admission() {
         let ac = PredictiveAdmission::new();
+        let root = test_root("test_idle_decay_reopens_admission");
 
         // Set admit_p very low to force near-total rejection.
         {
-            let mut state = ac.state.lock().unwrap();
+            let mut global_state = ac.global_state.lock().unwrap();
+            global_state.admit_p = 0.01;
+            global_state.er_last_update = Instant::now();
+        }
+        {
+            let mut states = ac.states_by_root.lock().unwrap();
+            let state = states
+                .entry(root)
+                .or_insert_with(|| AdmissionState::new(Instant::now()));
             state.admit_p = 0.01;
             state.er_last_update = Instant::now();
         }
 
-        let admitted_before = (0..1000).filter(|_| ac.should_admit()).count();
+        let admitted_before = (0..1000).filter(|_| ac.should_admit(root)).count();
         assert!(
             admitted_before < 100,
             "low admit_p should cause frequent rejection, got {admitted_before}/1000"
@@ -431,11 +549,18 @@ mod tests {
         // Simulate 3 × tau_er (= 6 s at default tau_er=2 s) of idle.
         // idle_decay = exp(-3) ≈ 0.05 → reject_prob ≈ 0.99 × 0.05 ≈ 0.05.
         {
-            let mut state = ac.state.lock().unwrap();
+            let mut global_state = ac.global_state.lock().unwrap();
+            global_state.er_last_update = Instant::now() - std::time::Duration::from_secs(6);
+        }
+        {
+            let mut states = ac.states_by_root.lock().unwrap();
+            let state = states
+                .entry(root)
+                .or_insert_with(|| AdmissionState::new(Instant::now()));
             state.er_last_update = Instant::now() - std::time::Duration::from_secs(6);
         }
 
-        let admitted_after = (0..1000).filter(|_| ac.should_admit()).count();
+        let admitted_after = (0..1000).filter(|_| ac.should_admit(root)).count();
         assert!(
             admitted_after > 900,
             "idle decay should open admission after 3×tau_er, got {admitted_after}/1000"
