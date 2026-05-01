@@ -58,3 +58,27 @@ def test_experiment_config_load_mssim_minimal() -> None:
         assert cfg.policies == ["sched_fifo"]
         assert cfg.gen_config["Rps"] == [200]
         assert isinstance(cfg.app_config, dict)
+
+
+def test_mssim_extra_env_records_service_forwarding_keys() -> None:
+    app = get_app_plugin("mssim")
+
+    env = app.generate_env_vars(
+        {"DurationSecs": 1, "WarmupSecs": 0, "Rps": [200]},
+        {
+            "slo_ms": 100,
+            "orchestrator": "localhost:50051",
+            "extra_env": {
+                "MASA_FANOUT_AWARE": "0",
+                "MASA_ESTIMATOR_STATS_LOG": "1",
+            },
+        },
+        Path("/unused"),
+    )
+
+    assert env["MASA_FANOUT_AWARE"] == "0"
+    assert env["MASA_ESTIMATOR_STATS_LOG"] == "1"
+    assert (
+        env["MSSIM_SERVICE_EXTRA_ENV_KEYS"]
+        == "MASA_ESTIMATOR_STATS_LOG,MASA_FANOUT_AWARE"
+    )
