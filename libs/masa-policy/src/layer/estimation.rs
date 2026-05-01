@@ -245,7 +245,8 @@ impl EstimationLayer {
             // estimate to avoid converting estimator variance into false ERs.
             let deadline = ctx.deadline().saturating_sub(deadline_est_remaining);
             let priority_deadline = ctx.deadline().saturating_sub(priority_est_remaining);
-            (deadline, PriorityHint::new(priority_deadline))
+            let priority_remaining = priority_deadline.saturating_sub(masa_core::time_now());
+            (deadline, PriorityHint::new(priority_remaining))
         }
         #[cfg(not(feature = "sched_pred"))]
         {

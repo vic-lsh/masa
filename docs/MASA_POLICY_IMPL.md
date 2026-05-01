@@ -83,7 +83,7 @@ The `masa` crate defines the fundamental types shared across the system.
 
 `Context` also provides `e2e_deadline()`, computed as `gateway_entry + slo`, which is the absolute end-to-end deadline.
 
-`ContextBuilder` creates `Context` instances. If no explicit `prio_hint` is provided, it defaults to `PriorityHint::new(deadline)` — using the per-hop deadline as the priority value.
+`ContextBuilder` creates `Context` instances. If no explicit `prio_hint` is provided, it defaults to `PriorityHint::new(deadline)` — using the per-hop deadline as the priority value. Under `sched_pred`, the default is converted to relative time-left (`deadline - time_now()`) so initial H2 stream priority uses the same scale as dynamic reprioritization.
 
 Serialization:
 *   `to_json()` / `from_json()`: JSON format (used for logging/debugging).
@@ -186,19 +186,19 @@ Masa modifies `hyper` to be priority-aware on the server side.
 ### Server-Side Request Handling
 In `libs/hyper/src/proto/h2/server.rs`, when `hyper` receives a new HTTP/2 stream (request):
 1.  It checks for the `ctx` header.
-2.  **If present**: It calls `.to_str().unwrap()`, then `MasaContext::from_header_string()` (base64 decode → bincode deserialize) to extract the hop deadline. It computes the initial stream priority as `PriorityHint::new(ctx.deadline() - time_now())`. Note: these `.unwrap()` calls will **panic** on malformed input (see `docs/MASA_IMPROVEMENTS.md`).
+2.  **If present**: It calls `.to_str().unwrap()`, then `MasaContext::from_header_string()` (base64 decode → bincode deserialize) to extract the propagated priority hint. Note: these `.unwrap()` calls will **panic** on malformed input (see `docs/MASA_IMPROVEMENTS.md`).
 3.  It calls `exec.execute_h2stream_with_prio(future, prio)`.
 4.  **If absent**: It calls `exec.execute_h2stream(future)`, which defaults to `PriorityHint::infra()` (highest priority, value 0). This means requests without a `ctx` header are treated as infrastructure and always execute first.
 
-Hyper intentionally derives a relative time-left priority instead of using the serialized
-`ctx.prio_hint()` directly. For `sched_pred`, child RPCs serialize `prio_hint` as an
-absolute deadline-like value (`parent_deadline - estimated_remaining_work`), but the
-request task is later reprioritized on each policy poll with relative remaining time
-(`ctx.deadline() - time_now()`). Mixing those scales makes newly spawned, never-polled
-streams look much lower priority than already-polled tasks, because smaller
-`PriorityHint` values win. Under overload this can delay new streams before their first
-policy poll, inflate observed child wallclock latency, and feed back into more pessimistic
-admission control.
+Hyper intentionally consumes the serialized `ctx.prio_hint()` directly. The context/policy
+layer is responsible for putting this value on the same relative time-left scale used by
+`sched_pred` reprioritization (`ctx.deadline() - time_now()`). `ContextBuilder` handles the
+root/default case; `EstimationLayer::child_deadline_and_prio` handles child RPCs with
+estimated downstream work. Mixing absolute deadline-like values with relative
+reprioritization values makes newly spawned, never-polled streams look much lower priority
+than already-polled tasks, because smaller `PriorityHint` values win. Under overload this
+can delay new streams before their first policy poll, inflate observed child wallclock
+latency, and feed back into more pessimistic admission control.
 
 ### Executor Interface
 The `Exec` enum in `libs/hyper/src/common/exec.rs` has three variants:
