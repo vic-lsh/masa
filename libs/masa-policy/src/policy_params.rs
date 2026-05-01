@@ -147,6 +147,22 @@ pub struct PredParams {
     /// (e.g. 0.40 if saturation produces ~41% ER fraction).
     /// Default 0.10.
     pub aimd_er_threshold: f64,
+    /// Blend factor for fanout-corrected hard-deadline remaining-work estimates.
+    ///
+    /// `0.0` uses the fanout estimate directly when it is below the legacy
+    /// per-edge estimate. `1.0` keeps the legacy per-edge hard-deadline
+    /// estimate while still allowing fanout tracking and lookup. Intermediate
+    /// values partially remove sibling-wait noise without fully loosening child
+    /// deadlines. Soft scheduling priority continues to use the legacy full
+    /// estimate.
+    pub fanout_deadline_legacy_fraction: f64,
+    /// Restrict fanout-aware after-child estimation to root-level parents.
+    ///
+    /// This is useful for workloads where internal fanouts are mostly
+    /// conditional single-child steps: root fanout correction can still remove
+    /// sibling-wait noise, while internal services keep the legacy low-overhead
+    /// per-edge estimator.
+    pub fanout_root_only: bool,
 }
 
 impl Default for PredParams {
@@ -157,6 +173,8 @@ impl Default for PredParams {
             aimd_alpha: 0.05,
             aimd_beta: 0.875,
             aimd_er_threshold: 0.10,
+            fanout_deadline_legacy_fraction: 0.0,
+            fanout_root_only: false,
         }
     }
 }
