@@ -1,0 +1,630 @@
+{
+  "S_1798353": {
+    "format": "conditional_variants",
+    "metadata": {
+      "chunk_rows": 1000000,
+      "dataset_ids": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24
+      ],
+      "excluded_rpctypes": [
+        "UNKNOWN",
+        "mq"
+      ],
+      "max_rows_per_csv": null,
+      "missing_parent_as_root": true,
+      "overlap_threshold": 0.1,
+      "random_state": 42,
+      "sample_mode": "hash",
+      "sample_trace_frac": 0.01,
+      "selected_services": [
+        "S_86516878",
+        "S_130831269",
+        "S_32048416",
+        "S_1823467",
+        "S_51794709",
+        "S_21852643",
+        "S_156482560",
+        "S_119456620",
+        "S_156147254",
+        "S_36816397",
+        "S_17454060",
+        "S_14677443",
+        "S_5991695",
+        "S_124848862",
+        "S_92283722",
+        "S_122984786",
+        "S_1798353",
+        "S_40318420",
+        "S_58367703",
+        "S_88923722",
+        "S_98493745",
+        "S_137590631",
+        "S_155382676",
+        "S_110631735",
+        "S_10694245"
+      ],
+      "trace_dir": "/mnt/nvme1/proj/masa/traces/alibaba/cluster-trace-microservices-v2022/data/CallGraph",
+      "workers": 8
+    },
+    "method_count": 18,
+    "methods": {
+      "MS_13460::4Db39LxDTC": {
+        "count": 43,
+        "variants": {
+          "v001": {
+            "count": 43,
+            "probability": 1.0,
+            "sequence": []
+          }
+        }
+      },
+      "MS_13731::4Db39LxDTC": {
+        "count": 34,
+        "variants": {
+          "v001": {
+            "count": 34,
+            "probability": 1.0,
+            "sequence": []
+          }
+        }
+      },
+      "MS_13790::4Db39LxDTC": {
+        "count": 28,
+        "variants": {
+          "v001": {
+            "count": 28,
+            "probability": 1.0,
+            "sequence": []
+          }
+        }
+      },
+      "MS_15296::4Db39LxDTC": {
+        "count": 30,
+        "variants": {
+          "v001": {
+            "count": 30,
+            "probability": 1.0,
+            "sequence": []
+          }
+        }
+      },
+      "MS_15934::4Db39LxDTC": {
+        "count": 435,
+        "variants": {
+          "v001": {
+            "count": 435,
+            "probability": 1.0,
+            "sequence": []
+          }
+        }
+      },
+      "MS_18850::4Db39LxDTC": {
+        "count": 48,
+        "variants": {
+          "v001": {
+            "count": 48,
+            "probability": 1.0,
+            "sequence": []
+          }
+        }
+      },
+      "MS_19633::4Db39LxDTC": {
+        "count": 34,
+        "variants": {
+          "v001": {
+            "count": 34,
+            "probability": 1.0,
+            "sequence": []
+          }
+        }
+      },
+      "MS_20083::4Db39LxDTC": {
+        "count": 36,
+        "variants": {
+          "v001": {
+            "count": 36,
+            "probability": 1.0,
+            "sequence": []
+          }
+        }
+      },
+      "MS_24094::4Db39LxDTC": {
+        "count": 780,
+        "variants": {
+          "v001": {
+            "count": 780,
+            "probability": 1.0,
+            "sequence": []
+          }
+        }
+      },
+      "MS_25190::4Db39LxDTC": {
+        "count": 32,
+        "variants": {
+          "v001": {
+            "count": 32,
+            "probability": 1.0,
+            "sequence": []
+          }
+        }
+      },
+      "MS_27239::4Db39LxDTC": {
+        "count": 82,
+        "variants": {
+          "v001": {
+            "count": 82,
+            "probability": 1.0,
+            "sequence": []
+          }
+        }
+      },
+      "MS_3168::4Db39LxDTC": {
+        "count": 112,
+        "variants": {
+          "v001": {
+            "count": 112,
+            "probability": 1.0,
+            "sequence": []
+          }
+        }
+      },
+      "MS_36882::4Db39LxDTC": {
+        "count": 120,
+        "variants": {
+          "v001": {
+            "count": 120,
+            "probability": 1.0,
+            "sequence": []
+          }
+        }
+      },
+      "MS_37235::4Db39LxDTC": {
+        "count": 37,
+        "variants": {
+          "v001": {
+            "count": 37,
+            "probability": 1.0,
+            "sequence": []
+          }
+        }
+      },
+      "MS_43566::4Db39LxDTC": {
+        "count": 30,
+        "variants": {
+          "v001": {
+            "count": 30,
+            "probability": 1.0,
+            "sequence": []
+          }
+        }
+      },
+      "MS_44366::4Db39LxDTC": {
+        "count": 115,
+        "variants": {
+          "v001": {
+            "count": 115,
+            "probability": 1.0,
+            "sequence": []
+          }
+        }
+      },
+      "MS_46802::4Db39LxDTC": {
+        "count": 39,
+        "variants": {
+          "v001": {
+            "count": 39,
+            "probability": 1.0,
+            "sequence": []
+          }
+        }
+      },
+      "USER": {
+        "count": 2035,
+        "variants": {
+          "v001": {
+            "count": 780,
+            "probability": 0.3832923832923833,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 780
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_24094::4Db39LxDTC"
+                }
+              ]
+            ]
+          },
+          "v002": {
+            "count": 435,
+            "probability": 0.21375921375921375,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 435
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_15934::4Db39LxDTC"
+                }
+              ]
+            ]
+          },
+          "v003": {
+            "count": 120,
+            "probability": 0.05896805896805897,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 120
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_36882::4Db39LxDTC"
+                }
+              ]
+            ]
+          },
+          "v004": {
+            "count": 115,
+            "probability": 0.056511056511056514,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 115
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_44366::4Db39LxDTC"
+                }
+              ]
+            ]
+          },
+          "v005": {
+            "count": 112,
+            "probability": 0.055036855036855035,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 112
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_3168::4Db39LxDTC"
+                }
+              ]
+            ]
+          },
+          "v006": {
+            "count": 82,
+            "probability": 0.040294840294840296,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 82
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_27239::4Db39LxDTC"
+                }
+              ]
+            ]
+          },
+          "v007": {
+            "count": 48,
+            "probability": 0.023587223587223587,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 48
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_18850::4Db39LxDTC"
+                }
+              ]
+            ]
+          },
+          "v008": {
+            "count": 43,
+            "probability": 0.02113022113022113,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 43
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_13460::4Db39LxDTC"
+                }
+              ]
+            ]
+          },
+          "v009": {
+            "count": 39,
+            "probability": 0.019164619164619166,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 39
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_46802::4Db39LxDTC"
+                }
+              ]
+            ]
+          },
+          "v010": {
+            "count": 37,
+            "probability": 0.01818181818181818,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 37
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_37235::4Db39LxDTC"
+                }
+              ]
+            ]
+          },
+          "v011": {
+            "count": 36,
+            "probability": 0.01769041769041769,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 36
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_20083::4Db39LxDTC"
+                }
+              ]
+            ]
+          },
+          "v012": {
+            "count": 34,
+            "probability": 0.016707616707616706,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 34
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_13731::4Db39LxDTC"
+                }
+              ]
+            ]
+          },
+          "v013": {
+            "count": 34,
+            "probability": 0.016707616707616706,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 34
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_19633::4Db39LxDTC"
+                }
+              ]
+            ]
+          },
+          "v014": {
+            "count": 32,
+            "probability": 0.015724815724815724,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 32
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_25190::4Db39LxDTC"
+                }
+              ]
+            ]
+          },
+          "v015": {
+            "count": 30,
+            "probability": 0.014742014742014743,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 30
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_15296::4Db39LxDTC"
+                }
+              ]
+            ]
+          },
+          "v016": {
+            "count": 30,
+            "probability": 0.014742014742014743,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 30
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_43566::4Db39LxDTC"
+                }
+              ]
+            ]
+          },
+          "v017": {
+            "count": 28,
+            "probability": 0.013759213759213759,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 28
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_13790::4Db39LxDTC"
+                }
+              ]
+            ]
+          }
+        }
+      }
+    },
+    "root_span_count": 2035,
+    "row_count": 2508,
+    "schema_version": 1,
+    "span_count": 2035,
+    "summary": {
+      "method_count": 18,
+      "root_span_count": 2035,
+      "row_count": 2508,
+      "service": "S_1798353",
+      "span_count": 2035,
+      "stat_clamped_spans": 0,
+      "stat_missing_parent_root_spans": 2035,
+      "stat_root_span_count": 2035,
+      "stat_row_count": 2508,
+      "stat_span_count": 2035,
+      "stat_trace_count": 2035,
+      "trace_count": 2035,
+      "variant_count": 34
+    },
+    "trace_count": 2035,
+    "variant_count": 34
+  }
+}

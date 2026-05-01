@@ -1,0 +1,1024 @@
+{
+  "S_156482560": {
+    "format": "conditional_variants",
+    "metadata": {
+      "chunk_rows": 1000000,
+      "dataset_ids": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24
+      ],
+      "excluded_rpctypes": [
+        "UNKNOWN",
+        "mq"
+      ],
+      "max_rows_per_csv": null,
+      "missing_parent_as_root": true,
+      "overlap_threshold": 0.1,
+      "random_state": 42,
+      "sample_mode": "hash",
+      "sample_trace_frac": 0.01,
+      "selected_services": [
+        "S_86516878",
+        "S_130831269",
+        "S_32048416",
+        "S_1823467",
+        "S_51794709",
+        "S_21852643",
+        "S_156482560",
+        "S_119456620",
+        "S_156147254",
+        "S_36816397",
+        "S_17454060",
+        "S_14677443",
+        "S_5991695",
+        "S_124848862",
+        "S_92283722",
+        "S_122984786",
+        "S_1798353",
+        "S_40318420",
+        "S_58367703",
+        "S_88923722",
+        "S_98493745",
+        "S_137590631",
+        "S_155382676",
+        "S_110631735",
+        "S_10694245"
+      ],
+      "trace_dir": "/mnt/nvme1/proj/masa/traces/alibaba/cluster-trace-microservices-v2022/data/CallGraph",
+      "workers": 8
+    },
+    "method_count": 6,
+    "methods": {
+      "MS_13448::MOp38B0Ls1:TDDL_QUERY": {
+        "count": 61,
+        "variants": {
+          "v001": {
+            "count": 61,
+            "probability": 1.0,
+            "sequence": []
+          }
+        }
+      },
+      "MS_41385::bHiJXTZtx1": {
+        "count": 336,
+        "variants": {
+          "v001": {
+            "count": 336,
+            "probability": 1.0,
+            "sequence": []
+          }
+        }
+      },
+      "MS_49817::Vd-FuQnAlF": {
+        "count": 14,
+        "variants": {
+          "v001": {
+            "count": 14,
+            "probability": 1.0,
+            "sequence": []
+          }
+        }
+      },
+      "MS_58269::ZaYxnA3U_f": {
+        "count": 10782,
+        "variants": {
+          "v001": {
+            "count": 10782,
+            "probability": 1.0,
+            "sequence": []
+          }
+        }
+      },
+      "MS_58269::yu1mmZ5-Zn": {
+        "count": 16,
+        "variants": {
+          "v001": {
+            "count": 16,
+            "probability": 1.0,
+            "sequence": []
+          }
+        }
+      },
+      "USER": {
+        "count": 7085,
+        "variants": {
+          "v001": {
+            "count": 3417,
+            "probability": 0.48228652081863094,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 3417
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_58269::ZaYxnA3U_f"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 3417
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 1,
+                    "index": 0
+                  },
+                  "target": "MS_58269::ZaYxnA3U_f"
+                }
+              ]
+            ]
+          },
+          "v002": {
+            "count": 3259,
+            "probability": 0.4599858856739591,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 3259
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_58269::ZaYxnA3U_f"
+                }
+              ]
+            ]
+          },
+          "v003": {
+            "count": 93,
+            "probability": 0.013126323218066338,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 93
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_41385::bHiJXTZtx1"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 93
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 1,
+                    "index": 0
+                  },
+                  "target": "MS_58269::ZaYxnA3U_f"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 93
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 2,
+                    "index": 0
+                  },
+                  "target": "MS_58269::ZaYxnA3U_f"
+                }
+              ]
+            ]
+          },
+          "v004": {
+            "count": 75,
+            "probability": 0.01058574453069866,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 75
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_41385::bHiJXTZtx1"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 75
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 1,
+                    "index": 0
+                  },
+                  "target": "MS_58269::ZaYxnA3U_f"
+                }
+              ]
+            ]
+          },
+          "v005": {
+            "count": 59,
+            "probability": 0.008327452364149612,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 59
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_41385::bHiJXTZtx1"
+                },
+                {
+                  "callee_variant_counts": {
+                    "v001": 59
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 1
+                  },
+                  "target": "MS_58269::ZaYxnA3U_f"
+                },
+                {
+                  "callee_variant_counts": {
+                    "v001": 59
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 2
+                  },
+                  "target": "MS_58269::ZaYxnA3U_f"
+                }
+              ]
+            ]
+          },
+          "v006": {
+            "count": 58,
+            "probability": 0.008186309103740297,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 58
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_58269::ZaYxnA3U_f"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 58
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 1,
+                    "index": 0
+                  },
+                  "target": "MS_58269::ZaYxnA3U_f"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 58
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 2,
+                    "index": 0
+                  },
+                  "target": "MS_13448::MOp38B0Ls1:TDDL_QUERY"
+                }
+              ]
+            ]
+          },
+          "v007": {
+            "count": 54,
+            "probability": 0.007621736062103035,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 54
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_41385::bHiJXTZtx1"
+                },
+                {
+                  "callee_variant_counts": {
+                    "v001": 54
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 1
+                  },
+                  "target": "MS_58269::ZaYxnA3U_f"
+                }
+              ]
+            ]
+          },
+          "v008": {
+            "count": 50,
+            "probability": 0.007057163020465773,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 50
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_41385::bHiJXTZtx1"
+                },
+                {
+                  "callee_variant_counts": {
+                    "v001": 50
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 1
+                  },
+                  "target": "MS_58269::ZaYxnA3U_f"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 50
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 1,
+                    "index": 0
+                  },
+                  "target": "MS_58269::ZaYxnA3U_f"
+                }
+              ]
+            ]
+          },
+          "v009": {
+            "count": 11,
+            "probability": 0.00155257586450247,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 11
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_58269::ZaYxnA3U_f"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 11
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 1,
+                    "index": 0
+                  },
+                  "target": "MS_58269::ZaYxnA3U_f"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 11
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 2,
+                    "index": 0
+                  },
+                  "target": "MS_49817::Vd-FuQnAlF"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 11
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 3,
+                    "index": 0
+                  },
+                  "target": "MS_58269::yu1mmZ5-Zn"
+                }
+              ]
+            ]
+          },
+          "v010": {
+            "count": 2,
+            "probability": 0.0002822865208186309,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 2
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_58269::ZaYxnA3U_f"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 2
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 1,
+                    "index": 0
+                  },
+                  "target": "MS_49817::Vd-FuQnAlF"
+                },
+                {
+                  "callee_variant_counts": {
+                    "v001": 2
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 1,
+                    "index": 1
+                  },
+                  "target": "MS_58269::ZaYxnA3U_f"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 2
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 2,
+                    "index": 0
+                  },
+                  "target": "MS_58269::yu1mmZ5-Zn"
+                }
+              ]
+            ]
+          },
+          "v011": {
+            "count": 1,
+            "probability": 0.00014114326040931546,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 1
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_13448::MOp38B0Ls1:TDDL_QUERY"
+                },
+                {
+                  "callee_variant_counts": {
+                    "v001": 1
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 1
+                  },
+                  "target": "MS_41385::bHiJXTZtx1"
+                },
+                {
+                  "callee_variant_counts": {
+                    "v001": 1
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 2
+                  },
+                  "target": "MS_58269::ZaYxnA3U_f"
+                },
+                {
+                  "callee_variant_counts": {
+                    "v001": 1
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 3
+                  },
+                  "target": "MS_58269::ZaYxnA3U_f"
+                }
+              ]
+            ]
+          },
+          "v012": {
+            "count": 1,
+            "probability": 0.00014114326040931546,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 1
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_41385::bHiJXTZtx1"
+                },
+                {
+                  "callee_variant_counts": {
+                    "v001": 1
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 1
+                  },
+                  "target": "MS_58269::ZaYxnA3U_f"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 1
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 1,
+                    "index": 0
+                  },
+                  "target": "MS_58269::ZaYxnA3U_f"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 1
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 2,
+                    "index": 0
+                  },
+                  "target": "MS_13448::MOp38B0Ls1:TDDL_QUERY"
+                }
+              ]
+            ]
+          },
+          "v013": {
+            "count": 1,
+            "probability": 0.00014114326040931546,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 1
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_41385::bHiJXTZtx1"
+                },
+                {
+                  "callee_variant_counts": {
+                    "v001": 1
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 1
+                  },
+                  "target": "MS_58269::ZaYxnA3U_f"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 1
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 1,
+                    "index": 0
+                  },
+                  "target": "MS_58269::ZaYxnA3U_f"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 1
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 2,
+                    "index": 0
+                  },
+                  "target": "MS_49817::Vd-FuQnAlF"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 1
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 3,
+                    "index": 0
+                  },
+                  "target": "MS_58269::yu1mmZ5-Zn"
+                }
+              ]
+            ]
+          },
+          "v014": {
+            "count": 1,
+            "probability": 0.00014114326040931546,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 1
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_41385::bHiJXTZtx1"
+                },
+                {
+                  "callee_variant_counts": {
+                    "v001": 1
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 1
+                  },
+                  "target": "MS_58269::ZaYxnA3U_f"
+                },
+                {
+                  "callee_variant_counts": {
+                    "v001": 1
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 2
+                  },
+                  "target": "MS_58269::ZaYxnA3U_f"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 1
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 1,
+                    "index": 0
+                  },
+                  "target": "MS_13448::MOp38B0Ls1:TDDL_QUERY"
+                }
+              ]
+            ]
+          },
+          "v015": {
+            "count": 1,
+            "probability": 0.00014114326040931546,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 1
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_58269::ZaYxnA3U_f"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 1
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 1,
+                    "index": 0
+                  },
+                  "target": "MS_41385::bHiJXTZtx1"
+                },
+                {
+                  "callee_variant_counts": {
+                    "v001": 1
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 1,
+                    "index": 1
+                  },
+                  "target": "MS_58269::ZaYxnA3U_f"
+                }
+              ]
+            ]
+          },
+          "v016": {
+            "count": 1,
+            "probability": 0.00014114326040931546,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 1
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_58269::ZaYxnA3U_f"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 1
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 1,
+                    "index": 0
+                  },
+                  "target": "MS_58269::ZaYxnA3U_f"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 1
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 2,
+                    "index": 0
+                  },
+                  "target": "MS_58269::yu1mmZ5-Zn"
+                }
+              ]
+            ]
+          },
+          "v017": {
+            "count": 1,
+            "probability": 0.00014114326040931546,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 1
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_58269::ZaYxnA3U_f"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 1
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 1,
+                    "index": 0
+                  },
+                  "target": "MS_58269::yu1mmZ5-Zn"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 1
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 2,
+                    "index": 0
+                  },
+                  "target": "MS_58269::ZaYxnA3U_f"
+                }
+              ]
+            ]
+          }
+        }
+      }
+    },
+    "root_span_count": 11209,
+    "row_count": 19601,
+    "schema_version": 1,
+    "span_count": 11209,
+    "summary": {
+      "method_count": 6,
+      "root_span_count": 11209,
+      "row_count": 19601,
+      "service": "S_156482560",
+      "span_count": 11209,
+      "stat_clamped_spans": 0,
+      "stat_missing_parent_root_spans": 10873,
+      "stat_root_span_count": 11209,
+      "stat_row_count": 19601,
+      "stat_span_count": 11209,
+      "stat_trace_count": 7085,
+      "trace_count": 7085,
+      "variant_count": 22
+    },
+    "trace_count": 7085,
+    "variant_count": 22
+  }
+}

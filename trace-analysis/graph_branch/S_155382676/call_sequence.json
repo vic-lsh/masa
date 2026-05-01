@@ -1,0 +1,485 @@
+{
+  "S_155382676": {
+    "format": "conditional_variants",
+    "metadata": {
+      "chunk_rows": 1000000,
+      "dataset_ids": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24
+      ],
+      "excluded_rpctypes": [
+        "UNKNOWN",
+        "mq"
+      ],
+      "max_rows_per_csv": null,
+      "missing_parent_as_root": true,
+      "overlap_threshold": 0.1,
+      "random_state": 42,
+      "sample_mode": "hash",
+      "sample_trace_frac": 0.01,
+      "selected_services": [
+        "S_86516878",
+        "S_130831269",
+        "S_32048416",
+        "S_1823467",
+        "S_51794709",
+        "S_21852643",
+        "S_156482560",
+        "S_119456620",
+        "S_156147254",
+        "S_36816397",
+        "S_17454060",
+        "S_14677443",
+        "S_5991695",
+        "S_124848862",
+        "S_92283722",
+        "S_122984786",
+        "S_1798353",
+        "S_40318420",
+        "S_58367703",
+        "S_88923722",
+        "S_98493745",
+        "S_137590631",
+        "S_155382676",
+        "S_110631735",
+        "S_10694245"
+      ],
+      "trace_dir": "/mnt/nvme1/proj/masa/traces/alibaba/cluster-trace-microservices-v2022/data/CallGraph",
+      "workers": 8
+    },
+    "method_count": 12,
+    "methods": {
+      "MS_11415::SE_MZnqn-p": {
+        "count": 45,
+        "variants": {
+          "v001": {
+            "count": 45,
+            "probability": 1.0,
+            "sequence": []
+          }
+        }
+      },
+      "MS_15763::SE_MZnqn-p": {
+        "count": 2,
+        "variants": {
+          "v001": {
+            "count": 2,
+            "probability": 1.0,
+            "sequence": []
+          }
+        }
+      },
+      "MS_25409::SE_MZnqn-p": {
+        "count": 154,
+        "variants": {
+          "v001": {
+            "count": 153,
+            "probability": 0.9935064935064936,
+            "sequence": []
+          },
+          "v002": {
+            "count": 1,
+            "probability": 0.006493506493506494,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 1
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_37691::GZKdYvyM_T"
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "MS_28784::SE_MZnqn-p": {
+        "count": 97,
+        "variants": {
+          "v001": {
+            "count": 97,
+            "probability": 1.0,
+            "sequence": []
+          }
+        }
+      },
+      "MS_37691::GZKdYvyM_T": {
+        "count": 1,
+        "variants": {
+          "v001": {
+            "count": 1,
+            "probability": 1.0,
+            "sequence": []
+          }
+        }
+      },
+      "MS_37691::ZMXGSG6Bhv": {
+        "count": 26,
+        "variants": {
+          "v001": {
+            "count": 26,
+            "probability": 1.0,
+            "sequence": []
+          }
+        }
+      },
+      "MS_47974::SE_MZnqn-p": {
+        "count": 4,
+        "variants": {
+          "v001": {
+            "count": 4,
+            "probability": 1.0,
+            "sequence": []
+          }
+        }
+      },
+      "MS_5075::SE_MZnqn-p": {
+        "count": 1317,
+        "variants": {
+          "v001": {
+            "count": 1292,
+            "probability": 0.9810174639331815,
+            "sequence": []
+          },
+          "v002": {
+            "count": 24,
+            "probability": 0.018223234624145785,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 24
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_37691::ZMXGSG6Bhv"
+                }
+              ]
+            ]
+          },
+          "v003": {
+            "count": 1,
+            "probability": 0.0007593014426727411,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 1
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_37691::ZMXGSG6Bhv"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 1
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 1,
+                    "index": 0
+                  },
+                  "target": "MS_37691::ZMXGSG6Bhv"
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "MS_5449::SE_MZnqn-p": {
+        "count": 32,
+        "variants": {
+          "v001": {
+            "count": 32,
+            "probability": 1.0,
+            "sequence": []
+          }
+        }
+      },
+      "MS_59450::SE_MZnqn-p": {
+        "count": 1,
+        "variants": {
+          "v001": {
+            "count": 1,
+            "probability": 1.0,
+            "sequence": []
+          }
+        }
+      },
+      "MS_62830::SE_MZnqn-p": {
+        "count": 3,
+        "variants": {
+          "v001": {
+            "count": 3,
+            "probability": 1.0,
+            "sequence": []
+          }
+        }
+      },
+      "USER": {
+        "count": 1655,
+        "variants": {
+          "v001": {
+            "count": 1317,
+            "probability": 0.7957703927492447,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 1292,
+                    "v002": 24,
+                    "v003": 1
+                  },
+                  "callee_variants": {
+                    "v001": 0.9810174639331815,
+                    "v002": 0.018223234624145785,
+                    "v003": 0.0007593014426727411
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_5075::SE_MZnqn-p"
+                }
+              ]
+            ]
+          },
+          "v002": {
+            "count": 154,
+            "probability": 0.09305135951661632,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 153,
+                    "v002": 1
+                  },
+                  "callee_variants": {
+                    "v001": 0.9935064935064936,
+                    "v002": 0.006493506493506494
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_25409::SE_MZnqn-p"
+                }
+              ]
+            ]
+          },
+          "v003": {
+            "count": 97,
+            "probability": 0.05861027190332326,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 97
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_28784::SE_MZnqn-p"
+                }
+              ]
+            ]
+          },
+          "v004": {
+            "count": 45,
+            "probability": 0.027190332326283987,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 45
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_11415::SE_MZnqn-p"
+                }
+              ]
+            ]
+          },
+          "v005": {
+            "count": 32,
+            "probability": 0.01933534743202417,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 32
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_5449::SE_MZnqn-p"
+                }
+              ]
+            ]
+          },
+          "v006": {
+            "count": 4,
+            "probability": 0.002416918429003021,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 4
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_47974::SE_MZnqn-p"
+                }
+              ]
+            ]
+          },
+          "v007": {
+            "count": 3,
+            "probability": 0.0018126888217522659,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 3
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_62830::SE_MZnqn-p"
+                }
+              ]
+            ]
+          },
+          "v008": {
+            "count": 2,
+            "probability": 0.0012084592145015106,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 2
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_15763::SE_MZnqn-p"
+                }
+              ]
+            ]
+          },
+          "v009": {
+            "count": 1,
+            "probability": 0.0006042296072507553,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 1
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_59450::SE_MZnqn-p"
+                }
+              ]
+            ]
+          }
+        }
+      }
+    },
+    "root_span_count": 1655,
+    "row_count": 3303,
+    "schema_version": 1,
+    "span_count": 1682,
+    "summary": {
+      "method_count": 12,
+      "root_span_count": 1655,
+      "row_count": 3303,
+      "service": "S_155382676",
+      "span_count": 1682,
+      "stat_clamped_spans": 0,
+      "stat_root_span_count": 1655,
+      "stat_row_count": 3303,
+      "stat_span_count": 1682,
+      "stat_trace_count": 1655,
+      "trace_count": 1655,
+      "variant_count": 23
+    },
+    "trace_count": 1655,
+    "variant_count": 23
+  }
+}
