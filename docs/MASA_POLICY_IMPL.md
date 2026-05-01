@@ -12,6 +12,7 @@ Policy is configured along three composable dimensions:
 - `sched_fifo`: First-In-First-Out ordering (baseline).
 - `sched_slo`: Priority by end-to-end SLO deadline (implies tokio priority queue).
 - `sched_tailclipper`: Priority by request arrival time (oldest first), implementing the TailClipper paper (implies tokio priority queue).
+- `sched_oracle`: Perfect-information child deadline/priority assignment for deterministic synthetic experiments (implies tokio priority queue).
 - `sched_pred`: Priority by per-RPC predicted deadline with deadline tightening and dynamic reprioritization (implies `sched_slo` and `estimator`).
 
 **Admission control** (mutually exclusive — pick at most one):
@@ -35,7 +36,7 @@ Application Cargo.toml (e.g., apps/hotel --features sched_slo)
        └─ libs/tokio/tokio/Cargo.toml: sched_prio = ["masa/sched_prio"]  (tokio-internal flag)
 ```
 
-Note: `sched_prio` remains as a tokio-internal flag that controls the priority queue implementation. User-facing flags (`sched_slo`, `sched_pred`, `sched_tailclipper`) activate it internally.
+Note: `sched_prio` remains as a tokio-internal flag that controls the priority queue implementation. User-facing flags (`sched_slo`, `sched_pred`, `sched_tailclipper`, `sched_oracle`) activate it internally.
 
 The root `Cargo.toml` `[patch.crates-io]` section replaces 8 upstream crates (`tokio`, `tokio-util`, `tokio-stream`, `tokio-test`, `tokio-macros`, `hyper`, `tower`, `tower-service`, `tower-layer`) with local modified versions. All must be built from local copies.
 
@@ -43,7 +44,7 @@ The root `Cargo.toml` `[patch.crates-io]` section replaces 8 upstream crates (`t
 
 The `DefaultHooks` type alias (in `libs/tonic/tonic/src/masa_ext/mod.rs`) is resolved by feature flag:
 
-- Any scheduling feature (`sched_fifo`, `sched_slo`, `sched_tailclipper`) → `masa_policy::PolicyHooks`
+- Any scheduling feature (`sched_fifo`, `sched_slo`, `sched_tailclipper`, `sched_oracle`) → `masa_policy::PolicyHooks`
 - No scheduling features → `NoopHooks`
 
 `PolicyHooks` uses composable layers selected at compile time:

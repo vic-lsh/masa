@@ -8,6 +8,7 @@ use std::fs::File;
 use std::future::Future;
 use std::io::BufReader;
 use std::io::Write;
+use std::io::{Error as IoError, ErrorKind};
 use std::iter::zip;
 use std::path::Path;
 use std::path::PathBuf;
@@ -112,6 +113,9 @@ pub struct GenConfig {
     pub repeats: u64,
     #[serde(rename = "Apis")]
     pub apis: Vec<String>,
+    #[serde(rename = "ApiWeights")]
+    #[serde(default)]
+    pub api_weights: Option<Vec<f64>>,
     #[serde(rename = "Slos")]
     pub slos: Vec<u64>,
     #[serde(rename = "Timeouts_ms")]
@@ -133,6 +137,65 @@ pub struct GenConfig {
 
 fn default_max_in_flight() -> usize {
     0 // 0 means unlimited
+}
+
+impl GenConfig {
+    fn validate(&self) -> Result<(), IoError> {
+        if self.apis.is_empty() {
+            return Err(invalid_config("Apis must not be empty"));
+        }
+        if self.apis.len() != self.timeouts_ms.len() {
+            return Err(invalid_config("Timeouts_ms length must match Apis length"));
+        }
+        if self.apis.len() != self.slos.len() {
+            return Err(invalid_config("Slos length must match Apis length"));
+        }
+        if let Some(weights) = &self.api_weights {
+            if weights.len() != self.apis.len() {
+                return Err(invalid_config("ApiWeights length must match Apis length"));
+            }
+            let mut total_weight = 0.0;
+            for weight in weights {
+                if !weight.is_finite() || *weight < 0.0 {
+                    return Err(invalid_config(
+                        "ApiWeights entries must be finite non-negative values",
+                    ));
+                }
+                total_weight += weight;
+            }
+            if total_weight <= 0.0 {
+                return Err(invalid_config(
+                    "ApiWeights must contain at least one positive value",
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    fn api_weight_cdf(&self) -> Vec<f64> {
+        debug_assert!(!self.apis.is_empty());
+        let weights = self
+            .api_weights
+            .clone()
+            .unwrap_or_else(|| vec![1.0; self.apis.len()]);
+        let total_weight = weights.iter().sum::<f64>();
+        debug_assert!(total_weight > 0.0);
+
+        let mut cumulative = 0.0;
+        let mut cdf = Vec::with_capacity(weights.len());
+        for weight in weights {
+            cumulative += weight / total_weight;
+            cdf.push(cumulative);
+        }
+        if let Some(last) = cdf.last_mut() {
+            *last = 1.0;
+        }
+        cdf
+    }
+}
+
+fn invalid_config(message: &str) -> IoError {
+    IoError::new(ErrorKind::InvalidData, message)
 }
 
 #[derive(StructOpt, Debug, Clone)]
@@ -290,7 +353,7 @@ impl TraceRecord {
             self.start_at,
             self.deadline,
             self.latency,
-            Self::escape_error(&self.error),
+            Self::escape_csv_field(&self.error),
             self.q_lat_init,
             self.q_lat_resume
         );
@@ -298,15 +361,21 @@ impl TraceRecord {
         if self.additional_metrics.is_empty() {
             generic
         } else {
-            format!("{},{}", generic, self.additional_metrics.join(","))
+            let additional = self
+                .additional_metrics
+                .iter()
+                .map(|field| Self::escape_csv_field(field))
+                .collect::<Vec<_>>()
+                .join(",");
+            format!("{},{}", generic, additional)
         }
     }
 
-    fn escape_error(error: &str) -> String {
-        if error.contains(',') || error.contains('"') || error.contains('\n') {
-            format!("\"{}\"", error.replace('"', "\"\""))
+    fn escape_csv_field(field: &str) -> String {
+        if field.contains(',') || field.contains('"') || field.contains('\n') {
+            format!("\"{}\"", field.replace('"', "\"\""))
         } else {
-            error.to_string()
+            field.to_string()
         }
     }
 }
@@ -581,6 +650,7 @@ where
     rps: u64,
     client: C::FrontendClient,
     api_handlers: Vec<Arc<H>>,
+    api_weight_cdf: Vec<f64>,
 }
 
 impl<H, C> LoadGenerator<H, C>
@@ -597,11 +667,20 @@ where
     ) -> Self {
         Self {
             rng: StdRng::seed_from_u64(seed + rps),
+            api_weight_cdf: gen_cfg.api_weight_cdf(),
             gen_cfg,
             rps,
             client,
             api_handlers,
         }
+    }
+
+    fn sample_api_handler(&mut self) -> usize {
+        let draw: f64 = self.rng.gen();
+        self.api_weight_cdf
+            .iter()
+            .position(|cutoff| draw < *cutoff)
+            .unwrap_or_else(|| self.api_weight_cdf.len() - 1)
     }
 
     async fn run(&mut self, output_path: &Path) -> Result<(), Box<dyn Error>> {
@@ -678,7 +757,7 @@ where
                 None
             };
 
-            let i = self.rng.gen_range(0..self.api_handlers.len());
+            let i = self.sample_api_handler();
             let handler = Arc::clone(&self.api_handlers[i]);
 
             #[cfg(feature = "ac_rajomon")]
@@ -760,12 +839,10 @@ where
         let reader = BufReader::new(file);
         serde_json::from_reader(reader)?
     };
+    gen_cfg.validate()?;
 
     for rps in &gen_cfg.rps_values {
         log::info!("Running rps: {}... ({})", rps, get_timestamp());
-
-        assert_eq!(gen_cfg.apis.len(), gen_cfg.timeouts_ms.len());
-        assert_eq!(gen_cfg.apis.len(), gen_cfg.slos.len());
         let mut api_handlers = Vec::new();
         for (api, (timeout_ms, slo)) in zip(&gen_cfg.apis, zip(&gen_cfg.timeouts_ms, &gen_cfg.slos))
         {
@@ -850,6 +927,57 @@ fn map_response<T>(
         Err(_) => None,
     };
     (response, error)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_gen_config(api_weights: Option<Vec<f64>>) -> GenConfig {
+        GenConfig {
+            repeats: 1,
+            apis: vec!["a".to_string(), "b".to_string()],
+            api_weights,
+            slos: vec![200_000, 200_000],
+            timeouts_ms: vec![1_000, 1_000],
+            rps_values: vec![100],
+            gap: ArrivalProcess::Exp,
+            warmup_secs: 1,
+            duration_secs: 1,
+            max_in_flight: 0,
+            addr: "http://localhost:8000".to_string(),
+        }
+    }
+
+    #[test]
+    fn api_weight_cdf_defaults_to_uniform() {
+        let cfg = test_gen_config(None);
+        cfg.validate().unwrap();
+
+        assert_eq!(cfg.api_weight_cdf(), vec![0.5, 1.0]);
+    }
+
+    #[test]
+    fn api_weight_cdf_normalizes_explicit_weights() {
+        let cfg = test_gen_config(Some(vec![3.0, 7.0]));
+        cfg.validate().unwrap();
+
+        assert_eq!(cfg.api_weight_cdf(), vec![0.3, 1.0]);
+    }
+
+    #[test]
+    fn api_weights_must_match_apis() {
+        let cfg = test_gen_config(Some(vec![1.0]));
+
+        assert!(cfg.validate().is_err());
+    }
+
+    #[test]
+    fn api_weights_must_have_positive_total() {
+        let cfg = test_gen_config(Some(vec![0.0, 0.0]));
+
+        assert!(cfg.validate().is_err());
+    }
 }
 
 // pub fn parse_tasks_from_file<P: AsRef<Path>>(path: P) -> io::Result<Vec<Task>> {

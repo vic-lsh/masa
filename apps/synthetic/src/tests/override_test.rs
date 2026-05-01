@@ -1,8 +1,11 @@
 use crate::child::server::ChildImpl;
-use crate::config::{CallGraphConfig, ServiceDefinition, ServiceMethod, SyntheticConfig};
+use crate::config::{
+    CallGraphConfig, OracleWorkEstimateConfig, ServiceDefinition, ServiceMethod, SyntheticConfig,
+};
 use crate::distribution::LatencyDistribution;
 use crate::tonic::{child, child::child_client::ChildClient, child::child_server::ChildServer};
 use app_utils::timing::time_now;
+use masa::ContextBuilder;
 use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio_stream::wrappers::TcpListenerStream;
@@ -24,6 +27,7 @@ async fn test_override_headers() {
 
     let config = SyntheticConfig {
         child_cpus_per_replica: 1.0,
+        oracle_work_estimate: OracleWorkEstimateConfig::default(),
         call_graph: CallGraphConfig {
             entry_points,
             parsed_entry_points: Default::default(),
@@ -32,10 +36,10 @@ async fn test_override_headers() {
                 replicas: 1,
                 methods: vec![ServiceMethod {
                     name: "test_method".to_string(),
-                    latency_distribution: LatencyDistribution::Normal {
-                        mean: 1000.0,
-                        std: 0.0,
-                        dist: rand_distr::Normal::new(1000.0, 0.0).unwrap(),
+                    latency_distribution: LatencyDistribution::Discrete {
+                        weights: vec![1.0],
+                        values: vec![1000],
+                        dist: rand_distr::WeightedIndex::new(vec![1.0]).unwrap(),
                     },
                     call_sequence_raw: vec![],
                     parsed_call_sequence: vec![],
@@ -71,11 +75,18 @@ async fn test_override_headers() {
         .unwrap();
 
     let sent_at = time_now();
+    let slo = 1_000_000;
+    let ctx = ContextBuilder::new("test_override_headers", 0)
+        .slo(slo)
+        .gateway_entry(sent_at)
+        .deadline(sent_at + slo)
+        .build();
     let mut request = Request::new(child::MethodRequest {
         service_id: "TestService".to_string(),
         method_name: "test_method".to_string(),
         sent_at,
     });
+    request.set_masa_context(&ctx);
 
     // Set overrides
     request

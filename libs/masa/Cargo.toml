@@ -14,6 +14,7 @@ tonic = { path = "../tonic/tonic" }
 sched_slo = ["masa-core/sched_slo", "tokio/sched_prio", "tonic/sched_slo", "masa-policy/sched_slo"]
 sched_tailclipper = ["masa-core/sched_tailclipper", "tokio/sched_prio", "tokio/tailclipper", "tonic/sched_tailclipper", "masa-policy/sched_tailclipper"]
 sched_fifo  = ["masa-core/sched_fifo",  "tokio/sched_fifo",  "tonic/sched_fifo", "masa-policy/sched_fifo"]
+sched_oracle = ["masa-core/sched_oracle", "tokio/sched_prio", "tonic/sched_oracle", "masa-policy/sched_oracle"]
 sched_pred = ["masa-core/sched_pred", "tonic/sched_pred", "sched_slo", "masa-policy/sched_pred"]
 
 abort_slo = ["masa-core/abort_slo", "tonic/abort_slo", "masa-policy/abort_slo"]
