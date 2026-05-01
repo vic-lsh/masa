@@ -140,6 +140,12 @@ struct GroupPatternKey {
     signature: Vec<MethodId>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+struct PostingKey {
+    scope: PatternScope,
+    child_id: MethodId,
+}
+
 /// Tracked group pattern: the EMA of post-join remaining work observed for a
 /// sorted multiset of child method ids.
 #[derive(Debug)]
@@ -148,12 +154,35 @@ struct GroupPattern<E> {
     occurrence_count: u64,
 }
 
+#[derive(Debug)]
+struct PatternEntry<E> {
+    key: GroupPatternKey,
+    pattern: GroupPattern<E>,
+}
+
+#[derive(Debug)]
+struct ParentFanoutPatterns<E> {
+    by_key: HashMap<GroupPatternKey, usize>,
+    entries: Vec<PatternEntry<E>>,
+    postings: HashMap<PostingKey, Vec<usize>>,
+}
+
+impl<E> Default for ParentFanoutPatterns<E> {
+    fn default() -> Self {
+        Self {
+            by_key: HashMap::new(),
+            entries: Vec::new(),
+            postings: HashMap::new(),
+        }
+    }
+}
+
 /// Server-level fanout pattern table: `(root_api, parent_method) -> known group patterns`.
 /// Indexing on root API keeps observations from different ingress API types
 /// from contaminating each other when they share a downstream parent.
 #[derive(Debug)]
 pub(crate) struct FanoutPatternTable<E: LatencyEstimator + Default + 'static> {
-    by_root_parent: Mutex<HashMap<(MethodId, MethodId), HashMap<GroupPatternKey, GroupPattern<E>>>>,
+    by_root_parent: Mutex<HashMap<(MethodId, MethodId), ParentFanoutPatterns<E>>>,
 }
 
 impl<E: LatencyEstimator + Default + 'static> Default for FanoutPatternTable<E> {
@@ -183,7 +212,7 @@ impl<E: LatencyEstimator + Default + 'static> FanoutPatternTable<E> {
         cap: u64,
     ) -> AfterChildEstimates {
         let by_root_parent = self.by_root_parent.lock().unwrap();
-        let groups = match by_root_parent.get(&(root, parent)) {
+        let patterns = match by_root_parent.get(&(root, parent)) {
             Some(g) => g,
             None => {
                 return AfterChildEstimates {
@@ -195,7 +224,7 @@ impl<E: LatencyEstimator + Default + 'static> FanoutPatternTable<E> {
         };
 
         closest_compatible_lookup(
-            groups,
+            patterns,
             PatternScope::Path(path_prefix),
             base_signature,
             min_samples,
@@ -203,7 +232,7 @@ impl<E: LatencyEstimator + Default + 'static> FanoutPatternTable<E> {
         )
         .or_else(|| {
             closest_compatible_lookup(
-                groups,
+                patterns,
                 PatternScope::Aggregate,
                 base_signature,
                 min_samples,
@@ -223,21 +252,25 @@ impl<E: LatencyEstimator + Default + 'static> FanoutPatternTable<E> {
         after_child_us: u64,
     ) {
         let mut by_root_parent = self.by_root_parent.lock().unwrap();
-        let groups = by_root_parent.entry((root, parent)).or_default();
+        let patterns = by_root_parent.entry((root, parent)).or_default();
         let key = GroupPatternKey { scope, signature };
-        if let Some(p) = groups.get_mut(&key) {
+        if let Some(index) = patterns.by_key.get(&key).copied() {
+            let p = &mut patterns.entries[index].pattern;
             p.estimator.track(after_child_us);
             p.occurrence_count += 1;
         } else {
             let mut estimator = E::default();
             estimator.track(after_child_us);
-            groups.insert(
+            let index = patterns.entries.len();
+            index_group_pattern(patterns, &key, index);
+            patterns.by_key.insert(key.clone(), index);
+            patterns.entries.push(PatternEntry {
                 key,
-                GroupPattern {
+                pattern: GroupPattern {
                     estimator,
                     occurrence_count: 1,
                 },
-            );
+            });
         }
     }
 
@@ -252,23 +285,45 @@ impl<E: LatencyEstimator + Default + 'static> FanoutPatternTable<E> {
         mut f: F,
     ) {
         let by_root_parent = self.by_root_parent.lock().unwrap();
-        for ((root, parent), groups) in by_root_parent.iter() {
-            for (key, p) in groups {
+        for ((root, parent), patterns) in by_root_parent.iter() {
+            for entry in &patterns.entries {
                 f(
                     *root,
                     *parent,
-                    key.scope,
-                    &key.signature,
-                    &p.estimator,
-                    p.occurrence_count,
+                    entry.key.scope,
+                    &entry.key.signature,
+                    &entry.pattern.estimator,
+                    entry.pattern.occurrence_count,
                 );
             }
         }
     }
 }
 
+fn index_group_pattern<E>(
+    patterns: &mut ParentFanoutPatterns<E>,
+    key: &GroupPatternKey,
+    index: usize,
+) {
+    let mut previous = None;
+    for child_id in key.signature.iter().copied() {
+        if previous == Some(child_id) {
+            continue;
+        }
+        previous = Some(child_id);
+        patterns
+            .postings
+            .entry(PostingKey {
+                scope: key.scope,
+                child_id,
+            })
+            .or_default()
+            .push(index);
+    }
+}
+
 fn closest_compatible_lookup<E: LatencyEstimator + Default + 'static>(
-    groups: &HashMap<GroupPatternKey, GroupPattern<E>>,
+    patterns: &ParentFanoutPatterns<E>,
     scope: PatternScope,
     base_signature: &[MethodId],
     min_samples: u64,
@@ -278,42 +333,52 @@ fn closest_compatible_lookup<E: LatencyEstimator + Default + 'static>(
         scope,
         signature: base_signature.to_vec(),
     };
-    if let Some(p) = groups.get(&exact_key) {
-        if p.occurrence_count >= min_samples && p.estimator.can_estimate() {
-            return Some(pattern_estimates(p, cap));
+    if let Some(index) = patterns.by_key.get(&exact_key).copied() {
+        let pattern = &patterns.entries[index].pattern;
+        if pattern.occurrence_count >= min_samples && pattern.estimator.can_estimate() {
+            return Some(pattern_estimates(pattern, cap));
         }
     }
 
-    let closest_signature_len = groups
-        .iter()
-        .filter(|(key, p)| {
-            key.scope == scope
-                && is_multiset_subset(base_signature, &key.signature)
-                && p.occurrence_count >= min_samples
-                && p.estimator.can_estimate()
-        })
-        .map(|(key, _)| key.signature.len())
-        .min()?;
-
+    let candidates = compatible_candidate_keys(patterns, scope, base_signature)?;
+    let mut closest_signature_len = None;
     let mut total_weight = 0u128;
     let mut full = 0u128;
     let mut mean = 0u128;
     let mut floor = 0u128;
 
-    for (key, p) in groups {
+    for index in candidates.iter() {
+        let Some(entry) = patterns.entries.get(index) else {
+            continue;
+        };
+        let key = &entry.key;
+        let pattern = &entry.pattern;
         if key.scope != scope
-            || key.signature.len() != closest_signature_len
             || !is_multiset_subset(base_signature, &key.signature)
-            || p.occurrence_count < min_samples
-            || !p.estimator.can_estimate()
+            || pattern.occurrence_count < min_samples
+            || !pattern.estimator.can_estimate()
         {
             continue;
         }
-        let weight = u128::from(p.occurrence_count.max(1));
+        match closest_signature_len {
+            Some(len) if key.signature.len() > len => continue,
+            Some(len) if key.signature.len() < len => {
+                closest_signature_len = Some(key.signature.len());
+                total_weight = 0;
+                full = 0;
+                mean = 0;
+                floor = 0;
+            }
+            None => {
+                closest_signature_len = Some(key.signature.len());
+            }
+            Some(_) => {}
+        }
+        let weight = u128::from(pattern.occurrence_count.max(1));
         total_weight += weight;
-        full += u128::from(p.estimator.estimate().min(cap)) * weight;
-        mean += u128::from(p.estimator.mean_estimate().min(cap)) * weight;
-        floor += u128::from(p.estimator.mean_floor_estimate().min(cap)) * weight;
+        full += u128::from(pattern.estimator.estimate().min(cap)) * weight;
+        mean += u128::from(pattern.estimator.mean_estimate().min(cap)) * weight;
+        floor += u128::from(pattern.estimator.mean_floor_estimate().min(cap)) * weight;
     }
 
     if total_weight == 0 {
@@ -325,6 +390,64 @@ fn closest_compatible_lookup<E: LatencyEstimator + Default + 'static>(
         mean: (mean / total_weight) as u64,
         floor: (floor / total_weight) as u64,
     })
+}
+
+enum CompatibleCandidates<'a> {
+    All(std::ops::Range<usize>),
+    Posting(&'a [usize]),
+}
+
+impl<'a> CompatibleCandidates<'a> {
+    fn iter(&'a self) -> CandidateIter<'a> {
+        match self {
+            CompatibleCandidates::All(range) => CandidateIter::All(range.clone()),
+            CompatibleCandidates::Posting(posting) => CandidateIter::Posting(posting.iter()),
+        }
+    }
+}
+
+enum CandidateIter<'a> {
+    All(std::ops::Range<usize>),
+    Posting(std::slice::Iter<'a, usize>),
+}
+
+impl Iterator for CandidateIter<'_> {
+    type Item = usize;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            CandidateIter::All(iter) => iter.next(),
+            CandidateIter::Posting(iter) => iter.next().copied(),
+        }
+    }
+}
+
+fn compatible_candidate_keys<'a, E: LatencyEstimator + Default + 'static>(
+    patterns: &'a ParentFanoutPatterns<E>,
+    scope: PatternScope,
+    base_signature: &[MethodId],
+) -> Option<CompatibleCandidates<'a>> {
+    if base_signature.is_empty() {
+        return Some(CompatibleCandidates::All(0..patterns.entries.len()));
+    }
+
+    let mut smallest_posting: Option<&Vec<usize>> = None;
+    let mut previous = None;
+    for child_id in base_signature.iter().copied() {
+        if previous == Some(child_id) {
+            continue;
+        }
+        previous = Some(child_id);
+        let posting = patterns.postings.get(&PostingKey { scope, child_id })?;
+        if smallest_posting
+            .map(|current| posting.len() < current.len())
+            .unwrap_or(true)
+        {
+            smallest_posting = Some(posting);
+        }
+    }
+
+    smallest_posting.map(|posting| CompatibleCandidates::Posting(posting.as_slice()))
 }
 
 fn pattern_estimates<E: LatencyEstimator + Default + 'static>(
@@ -777,6 +900,36 @@ mod tests {
     }
 
     #[test]
+    fn lookup_averages_all_closest_compatible_signatures() {
+        let root = mid(521);
+        let parent = mid(522);
+        let a = mid(523);
+        let b = mid(524);
+        let c = mid(525);
+        let mut sig_ab = vec![a, b];
+        sig_ab.sort();
+        let mut sig_ac = vec![a, c];
+        sig_ac.sort();
+        let prefix = PathPrefix::root();
+
+        let table = FanoutPatternTable::<LastValueEstimator>::new();
+        table.update(root, parent, PatternScope::Path(prefix), sig_ab, 100);
+        for _ in 0..3 {
+            table.update(
+                root,
+                parent,
+                PatternScope::Path(prefix),
+                sig_ac.clone(),
+                300,
+            );
+        }
+
+        let estimate = table.lookup_estimate(root, parent, prefix, &[a], 1, u64::MAX);
+
+        assert_eq!(estimate.full, 250);
+    }
+
+    #[test]
     fn lookup_falls_back_to_aggregate_when_prefix_is_cold() {
         let root = mid(601);
         let parent = mid(602);
@@ -821,5 +974,82 @@ mod tests {
         table.update(root, parent, PatternScope::Path(prefix), sig_ab.clone(), 30);
         let warm = table.lookup_estimate(root, parent, prefix, &sig_ab, 3, u64::MAX);
         assert_eq!(warm.full, 30);
+    }
+
+    #[test]
+    #[ignore = "microbenchmark; run with --ignored --nocapture"]
+    fn lookup_harsh_microbenchmark() {
+        let root = mid(800);
+        let parent = mid(801);
+        let common = mid(802);
+        let rare = mid(803);
+        let prefix = PathPrefix::root();
+        let table = FanoutPatternTable::<LastValueEstimator>::new();
+        let pattern_count = 50_000;
+
+        for i in 0..pattern_count {
+            let mut signature = vec![common, mid(10_000 + i), mid(100_000 + i)];
+            if i % 1_000 == 0 {
+                signature.push(rare);
+            }
+            signature.sort();
+            table.update(
+                root,
+                parent,
+                PatternScope::Path(prefix),
+                signature,
+                1_000 + (i % 97),
+            );
+        }
+
+        let exact_child_a = mid(10_123);
+        let exact_child_b = mid(100_123);
+        let mut exact = vec![common, exact_child_a, exact_child_b];
+        exact.sort();
+        let common_cold = vec![common];
+        let rare_cold = vec![rare];
+
+        bench_lookup_case(&table, root, parent, prefix, "exact_hit", &exact, 20_000);
+        bench_lookup_case(
+            &table,
+            root,
+            parent,
+            prefix,
+            "compatible_common",
+            &common_cold,
+            200,
+        );
+        bench_lookup_case(
+            &table,
+            root,
+            parent,
+            prefix,
+            "compatible_rare",
+            &rare_cold,
+            20_000,
+        );
+    }
+
+    fn bench_lookup_case(
+        table: &FanoutPatternTable<LastValueEstimator>,
+        root: MethodId,
+        parent: MethodId,
+        prefix: PathPrefix,
+        label: &str,
+        signature: &[MethodId],
+        iterations: u64,
+    ) {
+        let start = Instant::now();
+        let mut checksum = 0u64;
+        for _ in 0..iterations {
+            let estimate = table.lookup_estimate(root, parent, prefix, signature, 1, u64::MAX);
+            checksum ^= estimate.full;
+        }
+        let elapsed = start.elapsed();
+        let ns_per_lookup = elapsed.as_nanos() / u128::from(iterations);
+        println!(
+            "fanout_lookup_bench case={} iterations={} ns_per_lookup={} checksum={}",
+            label, iterations, ns_per_lookup, checksum
+        );
     }
 }
