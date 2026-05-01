@@ -13,9 +13,9 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
-PLOT_FONT_SCALE = 2.8125
-PLOT_LINEWIDTH_SCALE = 2.25
-PLOT_MARKER_SCALE = 2.25
+PLOT_FONT_SCALE = 2.25
+PLOT_LINEWIDTH_SCALE = 2.5
+PLOT_MARKER_SCALE = 2.5
 _PLOT_FONT_SCALE_APPLIED = False
 
 
