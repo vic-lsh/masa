@@ -1324,7 +1324,7 @@ def _plot_avg_goodput_bars(
 
     index = np.arange(len(rps_values))
     fig, ax = plt.subplots(figsize=(12, 6))
-    bar_width = 0.12
+    bar_width = 0.2
 
     for j, policy in enumerate(sorted_policies):
         offset = (j - len(sorted_policies) / 2 + 0.5) * bar_width
@@ -1336,8 +1336,8 @@ def _plot_avg_goodput_bars(
             **get_policy_bar_style(policy),
         )
 
-    ax.set_xlabel("Requests Per Second (RPS)")
-    ax.set_ylabel("average goodput (req/s)")
+    ax.set_xlabel("Load (req/s)")
+    ax.set_ylabel("Goodput (req/s)")
     ax.set_xticks(index)
     ax.set_xticklabels([str(rps) for rps in rps_values])
     ax.legend(

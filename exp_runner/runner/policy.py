@@ -62,7 +62,7 @@ _DROP_DISPLAY: dict[str | None, str] = {
     None: "no drop",
     "e2e_slo": "drop@SLO",
     "slack": "drop@slack",
-    "slack_signal": "signal@slack",
+    "slack_signal": "no drop w/ signal",
 }
 
 _FALLBACK_COLORS = [
