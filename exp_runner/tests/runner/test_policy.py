@@ -174,7 +174,7 @@ class TestDisplayName:
     def test_masa_signal_slack_variant(self):
         assert (
             Policy.parse("sched_pred,signal_slack,ac_pred,est_mean_var").display_name
-            == "Masa (signal@slack)"
+            == "Masa (no drop w/ signal)"
         )
 
     def test_masa_slo_priority_no_drop_variant(self):
