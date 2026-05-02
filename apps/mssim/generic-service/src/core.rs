@@ -137,8 +137,12 @@ impl ServiceCore {
 
     async fn handle_leaf_service(&self, total_latency_ms: f64) {
         const SPIN_FRACTION: f64 = 0.2;
+        // Cap spin time so a few extreme-tail leaf samples (p99.9 reaching seconds
+        // in some graphs) don't make the trace unreplayable above very low RPS.
+        // Excess time is shifted into the sleep portion, preserving total service time.
+        const MAX_SPIN_MS: f64 = 50.0;
 
-        let spin_duration = total_latency_ms * SPIN_FRACTION;
+        let spin_duration = (total_latency_ms * SPIN_FRACTION).min(MAX_SPIN_MS);
         let block_duration = total_latency_ms - spin_duration;
 
         busy_spin(std::time::Duration::from_millis(spin_duration as u64));
