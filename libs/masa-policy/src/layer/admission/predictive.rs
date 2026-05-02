@@ -21,6 +21,20 @@ use crate::layer::est::state::{is_early_return_response, LatencyEstimators};
 use crate::policy_params::PolicyParams;
 use crate::registry::MethodId;
 
+// ── Tunables specific to the BCF feasibility check ──────────────────────
+//
+// Generic decay primitives live in `crate::layer::est::state` so the
+// estimation layer (deadline tightening, priority assignment) can apply the
+// same staleness model.
+
+use crate::layer::est::state::{decay_factor, fast_exp_neg};
+
+/// Steepness of the probabilistic shed sigmoid: `shed_prob = 1 - exp(-LAMBDA * overshoot/time_left)`.
+/// At `ratio = 1.0` (overshoot equal to remaining budget), sheds ~86%; at 0.1, ~18%;
+/// at 5.0, ~99%. Never reaches exactly 1.0, so a trickle of admissions always
+/// flows through to refresh the EMA.
+const LAMBDA: f64 = 2.0;
+
 // ── Server ──────────────────────────────────────────────────────────────
 
 /// Server-level predictive admission state (shared across requests).
@@ -102,7 +116,18 @@ impl Layer for PredAdmissionLayer {
         Ok(())
     }
 
-    /// Floor-based deadline feasibility check before each child RPC.
+    /// Time-decay-aware probabilistic feasibility check before each child RPC.
+    ///
+    /// Two gates:
+    ///   1. Hard floor backstop (deterministic): aborts only when even the lower
+    ///      envelope of observed wallclock places completion past the deadline.
+    ///   2. Probabilistic mean-based shed: above the deadline by `overshoot`,
+    ///      shed with probability `1 - exp(-LAMBDA * overshoot / time_left)`.
+    ///
+    /// Both gates apply wallclock-time decay to the EMA estimates: stale samples
+    /// (no fresh observation in `TAU_DECAY_US`) shrink toward zero, breaking the
+    /// metastable lockout where AIMD rejects everything → no fresh observations →
+    /// estimates stay frozen at spike values.
     #[inline]
     fn before_child_rpc<T>(
         &self,
@@ -121,21 +146,67 @@ impl Layer for PredAdmissionLayer {
             .parent_rpc_method(parent_id)
             .child_rpc_method(child_id);
 
-        let time_left = ctx.e2e_deadline().saturating_sub(time_now());
+        let now = time_now();
+        let deadline = ctx.e2e_deadline();
+        let time_left = deadline.saturating_sub(now);
+        if time_left == 0 {
+            return Err(Self::bcf_error(&self.rpc, child_method_name));
+        }
 
+        // One pack lookup for child wallclock (mean, floor, last_obs).
+        let child = self.est.child_wallclock_pack(key).unwrap_or_default();
+        // Existing fanout-aware lookup for the after-child wallclock.
         let remaining = self.est.est_after_child_wallclock(key, time_left);
-        let est_child = self.est.est_child_wallclock(key).unwrap_or(0);
-        if time_now() + est_child + remaining.floor > ctx.e2e_deadline() {
-            return Err(Status::new(
-                Code::DeadlineExceeded,
-                format!(
-                    "/EarlyReturn?src={}::{}?last_rpc={}::{}&reason=BeforeChildFeasibility",
-                    self.rpc.service(),
-                    self.rpc.method(),
-                    child_method_name.service(),
-                    child_method_name.method(),
-                ),
-            ));
+        let remaining_last_obs = self.est.after_child_wallclock_last_obs(key);
+
+        // Cold start: no observations on either side → admit unconditionally.
+        if child.mean == 0 && remaining.mean == 0 {
+            return Ok(());
+        }
+
+        // Compute decay once and apply it to BOTH gates. Without the decay, a
+        // floor estimate that ratchets up under sustained queueing would lock
+        // out admission once it crosses the deadline, even after load drops —
+        // the same metastable trap the redesign exists to break.
+        let decay = {
+            let child_decay = decay_factor(now, child.last_observation_us);
+            let rem_decay = decay_factor(now, remaining_last_obs);
+            child_decay.min(rem_decay)
+        };
+
+        // Gate 1: hard backstop on decayed floors. Aborts only when even the
+        // (decayed) lower envelope places completion past the deadline — a true
+        // "no chance" signal under current freshness.
+        let floor_finish_us =
+            now as f64 + (child.floor as f64 + remaining.floor as f64) * decay;
+        if floor_finish_us > deadline as f64 {
+            return Err(Self::bcf_error(&self.rpc, child_method_name));
+        }
+
+        // Fast path: even the raw means fit (decay ≈ 1 here too — covered by the
+        // same comparison without recomputation). No exp, no rand.
+        let raw_finish = now + child.mean + remaining.mean;
+        if raw_finish <= deadline {
+            return Ok(());
+        }
+
+        // Apply decay to the mean-based projection for the probabilistic shed.
+        let decayed_finish = if decay < 1.0 {
+            now + ((child.mean as f64 + remaining.mean as f64) * decay) as u64
+        } else {
+            raw_finish
+        };
+
+        if decayed_finish <= deadline {
+            return Ok(());
+        }
+
+        // Gate 2: probabilistic shed proportional to mean-based overshoot ratio.
+        let overshoot = decayed_finish - deadline;
+        let ratio = overshoot as f64 / time_left as f64;
+        let shed_prob = 1.0 - fast_exp_neg(LAMBDA * ratio);
+        if rand::random::<f64>() < shed_prob {
+            return Err(Self::bcf_error(&self.rpc, child_method_name));
         }
 
         Ok(())
@@ -196,6 +267,25 @@ impl Layer for PredAdmissionLayer {
             .root_method_id
             .unwrap_or_else(|| crate::MethodRegistry::global().get_or_register(self.rpc.clone()));
         self.pred_admission.record_outcome(root_id, is_er);
+    }
+}
+
+impl PredAdmissionLayer {
+    /// Build the `BeforeChildFeasibility` early-return status. Factored out so
+    /// both the floor-backstop and probabilistic-shed paths emit identical
+    /// error envelopes.
+    #[inline]
+    fn bcf_error(parent_rpc: &CowGrpcMethod, child_rpc: &CowGrpcMethod) -> Status {
+        Status::new(
+            Code::DeadlineExceeded,
+            format!(
+                "/EarlyReturn?src={}::{}?last_rpc={}::{}&reason=BeforeChildFeasibility",
+                parent_rpc.service(),
+                parent_rpc.method(),
+                child_rpc.service(),
+                child_rpc.method(),
+            ),
+        )
     }
 }
 
@@ -564,6 +654,213 @@ mod tests {
         assert!(
             admitted_after > 900,
             "idle decay should open admission after 3×tau_er, got {admitted_after}/1000"
+        );
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // Microbenchmarks for the BCF feasibility check (run with --ignored).
+    //
+    // Measures the per-call overhead of the time-decay-aware probabilistic
+    // shed logic. Three cases:
+    //   - cold_start: no observations on either side → fast return
+    //   - fast_path:  raw mean fits, no decay/exp/rand
+    //   - shed_path:  overshoot triggers the probabilistic shed (worst case)
+    // ──────────────────────────────────────────────────────────────────────
+
+    use crate::layer::est::estimator::DefaultLatencyEstimator;
+    use crate::layer::est::state::LatencyEstimators;
+    use std::time::Instant;
+
+    fn build_estimators_with_observations(
+        key: ParentToChildKey,
+        child_us: u64,
+        remaining_us: u64,
+    ) -> LatencyEstimators<DefaultLatencyEstimator> {
+        let est = LatencyEstimators::<DefaultLatencyEstimator>::new();
+        // Seed both estimators with steady-state observations.
+        for _ in 0..200 {
+            est.track_child_wallclock(key, child_us);
+            est.track_after_child_wallclock(key, remaining_us);
+        }
+        est
+    }
+
+    /// Replicates the new BCF check body in isolation, with the same gate
+    /// structure as `before_child_rpc`. Returns true if the request would be
+    /// shed (`Err`), false if admitted.
+    #[inline(never)]
+    fn bcf_check(
+        est: &LatencyEstimators<DefaultLatencyEstimator>,
+        key: ParentToChildKey,
+        now: u64,
+        deadline: u64,
+    ) -> bool {
+        let time_left = deadline.saturating_sub(now);
+        if time_left == 0 {
+            return true;
+        }
+        let child = est.child_wallclock_pack(key).unwrap_or_default();
+        let remaining = est.est_after_child_wallclock(key, time_left);
+        let remaining_last_obs = est.after_child_wallclock_last_obs(key);
+
+        if child.mean == 0 && remaining.mean == 0 {
+            return false;
+        }
+        let decay = {
+            let child_decay = decay_factor(now, child.last_observation_us);
+            let rem_decay = decay_factor(now, remaining_last_obs);
+            child_decay.min(rem_decay)
+        };
+        let floor_finish_us =
+            now as f64 + (child.floor as f64 + remaining.floor as f64) * decay;
+        if floor_finish_us > deadline as f64 {
+            return true;
+        }
+        let raw_finish = now + child.mean + remaining.mean;
+        if raw_finish <= deadline {
+            return false;
+        }
+        let decayed_finish = if decay < 1.0 {
+            now + ((child.mean as f64 + remaining.mean as f64) * decay) as u64
+        } else {
+            raw_finish
+        };
+        if decayed_finish <= deadline {
+            return false;
+        }
+        let overshoot = decayed_finish - deadline;
+        let ratio = overshoot as f64 / time_left as f64;
+        let shed_prob = 1.0 - fast_exp_neg(LAMBDA * ratio);
+        rand::random::<f64>() < shed_prob
+    }
+
+    fn bench_key() -> ParentToChildKey {
+        let reg = crate::MethodRegistry::global();
+        let r = reg.get_or_register(CowGrpcMethod::new("BenchSvc", "Root"));
+        let p = reg.get_or_register(CowGrpcMethod::new("BenchSvc", "Parent"));
+        let c = reg.get_or_register(CowGrpcMethod::new("BenchSvc", "Child"));
+        ParentToChildKey::root_rpc_method(r)
+            .parent_rpc_method(p)
+            .child_rpc_method(c)
+    }
+
+    fn run_bench(label: &str, iterations: u64, mut f: impl FnMut() -> bool) {
+        let mut checksum: u64 = 0;
+        let start = Instant::now();
+        for _ in 0..iterations {
+            checksum = checksum.wrapping_add(f() as u64);
+        }
+        let elapsed = start.elapsed();
+        let ns_per = elapsed.as_nanos() / u128::from(iterations);
+        println!(
+            "bcf_bench case={} iterations={} ns_per_call={} checksum={}",
+            label, iterations, ns_per, checksum
+        );
+    }
+
+    /// Replicates the *previous* BCF check body (mean est_child + floor remaining,
+    /// no decay, no probabilistic shed). Kept here to quantify the overhead delta
+    /// of the redesign in apples-to-apples conditions.
+    #[inline(never)]
+    fn bcf_check_legacy(
+        est: &LatencyEstimators<DefaultLatencyEstimator>,
+        key: ParentToChildKey,
+        now: u64,
+        deadline: u64,
+    ) -> bool {
+        let time_left = deadline.saturating_sub(now);
+        let remaining = est.est_after_child_wallclock(key, time_left);
+        let est_child = est.est_child_wallclock(key).unwrap_or(0);
+        now + est_child + remaining.floor > deadline
+    }
+
+    #[test]
+    #[ignore = "microbenchmark; run with --ignored --nocapture"]
+    fn bcf_overhead_microbenchmark() {
+        let key = bench_key();
+        let now = masa_core::time_now();
+        let deadline_far = now + 100_000; // 100 ms budget — fits comfortably
+        let deadline_tight = now + 5_000; // 5 ms budget — overshoots
+
+        // Cold start: no observations, both maps empty for this key.
+        let cold = LatencyEstimators::<DefaultLatencyEstimator>::new();
+        run_bench("cold_start", 100_000, || {
+            bcf_check(&cold, key, now, deadline_far)
+        });
+
+        // Fast path: raw mean fits, no decay, no exp, no rand.
+        // Child=8ms, remaining=4ms, deadline 100ms in future → 12ms ≤ 100ms.
+        let warm_fits = build_estimators_with_observations(key, 8_000, 4_000);
+        run_bench("fast_path_admit", 100_000, || {
+            bcf_check(&warm_fits, key, now, deadline_far)
+        });
+
+        // Shed path: child=8ms, remaining=4ms, but only 5ms time_left → 12ms > 5ms.
+        // Triggers floor backstop and/or probabilistic shed.
+        run_bench("shed_path", 100_000, || {
+            bcf_check(&warm_fits, key, now, deadline_tight)
+        });
+
+        // Legacy comparison: same scenarios run through the old BCF body.
+        run_bench("legacy_cold_start", 100_000, || {
+            bcf_check_legacy(&cold, key, now, deadline_far)
+        });
+        run_bench("legacy_fast_path", 100_000, || {
+            bcf_check_legacy(&warm_fits, key, now, deadline_far)
+        });
+        run_bench("legacy_shed_path", 100_000, || {
+            bcf_check_legacy(&warm_fits, key, now, deadline_tight)
+        });
+    }
+
+    #[test]
+    #[ignore = "microbenchmark; run with --ignored --nocapture"]
+    fn fast_exp_neg_vs_libm() {
+        // Compare our Padé approximant against f64::exp on a representative range.
+        let inputs: Vec<f64> = (0..1000).map(|i| (i as f64) * 0.005).collect(); // 0..5
+        let mut checksum = 0.0_f64;
+
+        let start = Instant::now();
+        for _ in 0..1000 {
+            for &x in &inputs {
+                checksum += fast_exp_neg(x);
+            }
+        }
+        let fast_elapsed = start.elapsed();
+
+        let mut checksum_libm = 0.0_f64;
+        let start = Instant::now();
+        for _ in 0..1000 {
+            for &x in &inputs {
+                checksum_libm += (-x).exp();
+            }
+        }
+        let libm_elapsed = start.elapsed();
+
+        let n = 1000 * inputs.len();
+        println!(
+            "exp_bench fast_exp_neg ns_per_call={} checksum={:.4}",
+            fast_elapsed.as_nanos() / n as u128,
+            checksum
+        );
+        println!(
+            "exp_bench f64::exp     ns_per_call={} checksum={:.4}",
+            libm_elapsed.as_nanos() / n as u128,
+            checksum_libm
+        );
+        // Worst-case relative error report.
+        let mut max_rel_err = 0.0_f64;
+        for &x in &inputs {
+            let approx = fast_exp_neg(x);
+            let exact = (-x).exp();
+            let rel = (approx - exact).abs() / exact.max(1e-12);
+            if rel > max_rel_err {
+                max_rel_err = rel;
+            }
+        }
+        println!(
+            "exp_bench fast_exp_neg max_rel_err on [0,5] = {:.4e}",
+            max_rel_err
         );
     }
 }

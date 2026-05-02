@@ -109,6 +109,16 @@ impl fmt::Display for RootToLocalKey {
 // LatencyMap
 // ---------------------------------------------------------------------------
 
+/// Single-lookup pack of estimator state used by callers that need mean +
+/// floor + freshness in one go (e.g. the BCF feasibility check).
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, Default)]
+pub(crate) struct EstimatesPack {
+    pub(crate) mean: u64,
+    pub(crate) floor: u64,
+    pub(crate) last_observation_us: u64,
+}
+
 #[derive(Debug)]
 pub(crate) struct LatencyMap<K, E> {
     inner: Mutex<HashMap<K, E>>,
@@ -162,6 +172,26 @@ where
     #[allow(dead_code)]
     pub(crate) fn get_mean_floor_estimate(&self, key: K) -> Option<u64> {
         self.get_estimate_with(key, E::mean_floor_estimate)
+    }
+
+    /// Single-lookup pack of (mean, mean_floor, last_observation_us).
+    /// Returns `None` if the entry exists but does not yet have enough data;
+    /// inserts a default entry if the key is missing (mirrors `get_estimate_with`).
+    #[allow(dead_code)]
+    pub(crate) fn get_estimates_pack(&self, key: K) -> Option<EstimatesPack> {
+        let mut m = self.inner.lock().unwrap();
+        if let Some(estimator) = m.get(&key) {
+            if estimator.can_estimate() {
+                return Some(EstimatesPack {
+                    mean: estimator.mean_estimate(),
+                    floor: estimator.mean_floor_estimate(),
+                    last_observation_us: estimator.last_observation_us(),
+                });
+            }
+        } else {
+            m.insert(key, E::default());
+        }
+        None
     }
 
     pub(crate) fn track(&self, key: K, duration: u64) {
