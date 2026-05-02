@@ -156,8 +156,24 @@ impl Layer for EstimationLayer {
             .est
             .log_estimates(&child_tracker.key, &remaining);
 
+        // Wallclock-time decay applied to BOTH the deadline-tightening floor
+        // and the priority-tightening full estimate. Stale samples (no fresh
+        // observation in TAU_DECAY_US) shrink toward zero — without this, a
+        // floor inflated by sustained queueing keeps tightening child
+        // deadlines indefinitely, causing `abort_slack` to kill mid-flight
+        // requests that could have completed (the same metastable trap the
+        // BCF check now avoids).
+        let decay = crate::layer::est::state::decay_factor(
+            masa_core::time_now(),
+            self.estimation
+                .est
+                .after_child_wallclock_last_obs(child_tracker.key),
+        );
+        let decayed_full = (remaining.full as f64 * decay) as u64;
+        let decayed_floor = (remaining.floor as f64 * decay) as u64;
+
         let (deadline, prio_hint) =
-            Self::child_deadline_and_prio(ctx, remaining.full, remaining.floor);
+            Self::child_deadline_and_prio(ctx, decayed_full, decayed_floor);
         child_rpc.deadline = deadline;
         child_rpc.prio_hint = prio_hint;
 
@@ -235,6 +251,7 @@ impl EstimationLayer {
     #[inline]
     fn child_deadline_and_prio(
         ctx: &Context,
+        #[cfg_attr(not(feature = "sched_pred"), allow(unused_variables))]
         priority_est_remaining: u64,
         deadline_est_remaining: u64,
     ) -> (u64, PriorityHint) {

@@ -40,6 +40,10 @@ pub struct LatencyMeanVar {
     /// Tracks the lower envelope of latency observations to provide a conservative
     /// lower bound that is resistant to mean inflation during load spikes.
     mean_floor: f64,
+    /// Wallclock timestamp (microseconds since epoch) of the most recent `track()` call.
+    /// Used by callers to apply time-based decay to stale estimates: the longer it has
+    /// been since a fresh sample, the less informative the EMA is. Zero if never tracked.
+    last_observation_us: u64,
 }
 
 impl LatencyMeanVar {
@@ -54,6 +58,7 @@ impl LatencyMeanVar {
             estimate: 0,
             initialized: false,
             mean_floor: 0.0,
+            last_observation_us: 0,
         }
     }
 
@@ -96,6 +101,7 @@ impl LatencyEstimator for LatencyMeanVar {
         } else {
             0
         };
+        self.last_observation_us = crate::time_now();
     }
 
     fn can_estimate(&self) -> bool {
@@ -120,6 +126,10 @@ impl LatencyEstimator for LatencyMeanVar {
         } else {
             0
         }
+    }
+
+    fn last_observation_us(&self) -> u64 {
+        self.last_observation_us
     }
 }
 

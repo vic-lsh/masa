@@ -30,6 +30,46 @@ use crate::registry::MethodId;
 use crate::MethodRegistry;
 
 // ══════════════════════════════════════════════════════════════════════════
+// Wallclock-time decay for stale estimates
+// ══════════════════════════════════════════════════════════════════════════
+
+/// Wallclock-time decay constant (microseconds) for stale EMA estimates.
+/// At age = TAU_DECAY_US, the contribution is multiplied by 1/e ≈ 0.37.
+/// Picked at 5 s so that a sustained admission lockout breaks within tens of
+/// seconds even without fresh observations.
+pub(crate) const TAU_DECAY_US: f64 = 5_000_000.0;
+
+/// Skip the `exp()` call when the most recent observation is younger than this.
+/// At ages well below TAU_DECAY_US the decay factor is ≈ 1.0 anyway; avoiding
+/// the transcendental keeps the hot path cheap.
+pub(crate) const DECAY_THRESHOLD_US: u64 = 200_000;
+
+/// `exp(-x)` for `x ≥ 0`, with an early-out for arguments large enough that
+/// the result rounds to 0. For typical arguments this is just `f64::exp(-x)`,
+/// ~10 ns on x86.
+#[inline(always)]
+pub(crate) fn fast_exp_neg(x: f64) -> f64 {
+    debug_assert!(x >= 0.0);
+    if x >= 50.0 {
+        return 0.0;
+    }
+    (-x).exp()
+}
+
+/// Decay factor for an estimate whose most recent observation is `last_obs_us`
+/// (microseconds since epoch), evaluated at `now_us`. Returns 1.0 for fresh
+/// observations and shrinks toward 0 as the age grows past `TAU_DECAY_US`.
+#[inline]
+pub(crate) fn decay_factor(now_us: u64, last_obs_us: u64) -> f64 {
+    let age = now_us.saturating_sub(last_obs_us);
+    if age <= DECAY_THRESHOLD_US {
+        1.0
+    } else {
+        fast_exp_neg(age as f64 / TAU_DECAY_US)
+    }
+}
+
+// ══════════════════════════════════════════════════════════════════════════
 // Remaining-wallclock estimate bundle
 // ══════════════════════════════════════════════════════════════════════════
 
@@ -306,6 +346,27 @@ impl<E: LatencyEstimator + Default + 'static> LatencyEstimators<E> {
     /// Estimated wall-clock duration of a child RPC call.
     pub(crate) fn est_child_wallclock(&self, key: ParentToChildKey) -> Option<u64> {
         self.child_wallclock.get_estimate(key)
+    }
+
+    /// Single-lookup pack of (mean, floor, last_observation_us) for the child
+    /// wall-clock estimator. Used by the time-decay-aware BCF feasibility check.
+    #[allow(dead_code)]
+    pub(crate) fn child_wallclock_pack(
+        &self,
+        key: ParentToChildKey,
+    ) -> Option<super::latency_map::EstimatesPack> {
+        self.child_wallclock.get_estimates_pack(key)
+    }
+
+    /// Wall-clock timestamp of the most recent observation for the after-child
+    /// remaining-wall-clock estimator on a given (root, parent, child) edge.
+    /// Used by the BCF check to gauge how stale `remaining.floor` is.
+    #[allow(dead_code)]
+    pub(crate) fn after_child_wallclock_last_obs(&self, key: ParentToChildKey) -> u64 {
+        self.after_child_wallclock
+            .get_estimates_pack(key)
+            .map(|p| p.last_observation_us)
+            .unwrap_or(0)
     }
 
     /// Estimated accumulated CPU compute cost for a request subtree (root API key).
