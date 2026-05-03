@@ -1,0 +1,4863 @@
+{
+  "S_92283722": {
+    "format": "conditional_variants",
+    "metadata": {
+      "chunk_rows": 1000000,
+      "dataset_ids": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24
+      ],
+      "excluded_rpctypes": [
+        "UNKNOWN",
+        "mq"
+      ],
+      "max_rows_per_csv": null,
+      "missing_parent_as_root": true,
+      "overlap_threshold": 0.1,
+      "random_state": 42,
+      "sample_mode": "hash",
+      "sample_trace_frac": 0.01,
+      "selected_services": [
+        "S_86516878",
+        "S_130831269",
+        "S_32048416",
+        "S_1823467",
+        "S_51794709",
+        "S_21852643",
+        "S_156482560",
+        "S_119456620",
+        "S_156147254",
+        "S_36816397",
+        "S_17454060",
+        "S_14677443",
+        "S_5991695",
+        "S_124848862",
+        "S_92283722",
+        "S_122984786",
+        "S_1798353",
+        "S_40318420",
+        "S_58367703",
+        "S_88923722",
+        "S_98493745",
+        "S_137590631",
+        "S_155382676",
+        "S_110631735",
+        "S_10694245"
+      ],
+      "trace_dir": "/mnt/nvme1/proj/masa/traces/alibaba/cluster-trace-microservices-v2022/data/CallGraph",
+      "workers": 8
+    },
+    "method_count": 10,
+    "methods": {
+      "MS_10180::OhYWZTTGgV": {
+        "count": 86,
+        "variants": {
+          "v001": {
+            "count": 27,
+            "probability": 0.313953488372093,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 27
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v002": 27
+                  },
+                  "callee_variants": {
+                    "v002": 1.0
+                  },
+                  "slot": {
+                    "group": 1,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v002": 27
+                  },
+                  "callee_variants": {
+                    "v002": 1.0
+                  },
+                  "slot": {
+                    "group": 2,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v002": 27
+                  },
+                  "callee_variants": {
+                    "v002": 1.0
+                  },
+                  "slot": {
+                    "group": 3,
+                    "index": 0
+                  },
+                  "target": "MS_8234::5CffIW3Vyb"
+                }
+              ]
+            ]
+          },
+          "v002": {
+            "count": 20,
+            "probability": 0.23255813953488372,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v002": 4,
+                    "v003": 9,
+                    "v004": 6,
+                    "v006": 1
+                  },
+                  "callee_variants": {
+                    "v002": 0.2,
+                    "v003": 0.45,
+                    "v004": 0.3,
+                    "v006": 0.05
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v002": 4,
+                    "v003": 11,
+                    "v004": 4,
+                    "v006": 1
+                  },
+                  "callee_variants": {
+                    "v002": 0.2,
+                    "v003": 0.55,
+                    "v004": 0.2,
+                    "v006": 0.05
+                  },
+                  "slot": {
+                    "group": 1,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v002": 2,
+                    "v003": 8,
+                    "v004": 9,
+                    "v005": 1
+                  },
+                  "callee_variants": {
+                    "v002": 0.1,
+                    "v003": 0.4,
+                    "v004": 0.45,
+                    "v005": 0.05
+                  },
+                  "slot": {
+                    "group": 2,
+                    "index": 0
+                  },
+                  "target": "MS_8234::5CffIW3Vyb"
+                }
+              ]
+            ]
+          },
+          "v003": {
+            "count": 9,
+            "probability": 0.10465116279069768,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 9
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v002": 9
+                  },
+                  "callee_variants": {
+                    "v002": 1.0
+                  },
+                  "slot": {
+                    "group": 1,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v002": 9
+                  },
+                  "callee_variants": {
+                    "v002": 1.0
+                  },
+                  "slot": {
+                    "group": 2,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v002": 9
+                  },
+                  "callee_variants": {
+                    "v002": 1.0
+                  },
+                  "slot": {
+                    "group": 3,
+                    "index": 0
+                  },
+                  "target": "MS_8234::5CffIW3Vyb"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v002": 9
+                  },
+                  "callee_variants": {
+                    "v002": 1.0
+                  },
+                  "slot": {
+                    "group": 4,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 9
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 5,
+                    "index": 0
+                  },
+                  "target": "MS_12071::2Qi8XRsBKp"
+                }
+              ]
+            ]
+          },
+          "v004": {
+            "count": 4,
+            "probability": 0.046511627906976744,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v002": 2,
+                    "v004": 2
+                  },
+                  "callee_variants": {
+                    "v002": 0.5,
+                    "v004": 0.5
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v002": 1,
+                    "v003": 1,
+                    "v004": 1,
+                    "v005": 1
+                  },
+                  "callee_variants": {
+                    "v002": 0.25,
+                    "v003": 0.25,
+                    "v004": 0.25,
+                    "v005": 0.25
+                  },
+                  "slot": {
+                    "group": 1,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ]
+            ]
+          },
+          "v005": {
+            "count": 3,
+            "probability": 0.03488372093023256,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 3
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v002": 3
+                  },
+                  "callee_variants": {
+                    "v002": 1.0
+                  },
+                  "slot": {
+                    "group": 1,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v002": 3
+                  },
+                  "callee_variants": {
+                    "v002": 1.0
+                  },
+                  "slot": {
+                    "group": 2,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v002": 3
+                  },
+                  "callee_variants": {
+                    "v002": 1.0
+                  },
+                  "slot": {
+                    "group": 3,
+                    "index": 0
+                  },
+                  "target": "MS_8234::5CffIW3Vyb"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v002": 3
+                  },
+                  "callee_variants": {
+                    "v002": 1.0
+                  },
+                  "slot": {
+                    "group": 4,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ]
+            ]
+          },
+          "v006": {
+            "count": 2,
+            "probability": 0.023255813953488372,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 2
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 2
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 1,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v003": 1,
+                    "v004": 1
+                  },
+                  "callee_variants": {
+                    "v003": 0.5,
+                    "v004": 0.5
+                  },
+                  "slot": {
+                    "group": 2,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v003": 1,
+                    "v004": 1
+                  },
+                  "callee_variants": {
+                    "v003": 0.5,
+                    "v004": 0.5
+                  },
+                  "slot": {
+                    "group": 3,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ]
+            ]
+          },
+          "v007": {
+            "count": 2,
+            "probability": 0.023255813953488372,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 2
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 2
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 1,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v003": 2
+                  },
+                  "callee_variants": {
+                    "v003": 1.0
+                  },
+                  "slot": {
+                    "group": 2,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v003": 2
+                  },
+                  "callee_variants": {
+                    "v003": 1.0
+                  },
+                  "slot": {
+                    "group": 3,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v003": 2
+                  },
+                  "callee_variants": {
+                    "v003": 1.0
+                  },
+                  "slot": {
+                    "group": 4,
+                    "index": 0
+                  },
+                  "target": "MS_8234::5CffIW3Vyb"
+                }
+              ]
+            ]
+          },
+          "v008": {
+            "count": 2,
+            "probability": 0.023255813953488372,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 2
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v002": 2
+                  },
+                  "callee_variants": {
+                    "v002": 1.0
+                  },
+                  "slot": {
+                    "group": 1,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v002": 2
+                  },
+                  "callee_variants": {
+                    "v002": 1.0
+                  },
+                  "slot": {
+                    "group": 2,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v002": 2
+                  },
+                  "callee_variants": {
+                    "v002": 1.0
+                  },
+                  "slot": {
+                    "group": 3,
+                    "index": 0
+                  },
+                  "target": "MS_8234::5CffIW3Vyb"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v002": 2
+                  },
+                  "callee_variants": {
+                    "v002": 1.0
+                  },
+                  "slot": {
+                    "group": 4,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 2
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 5,
+                    "index": 0
+                  },
+                  "target": "MS_12071::2Qi8XRsBKp"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v002": 2
+                  },
+                  "callee_variants": {
+                    "v002": 1.0
+                  },
+                  "slot": {
+                    "group": 6,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 2
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 7,
+                    "index": 0
+                  },
+                  "target": "MS_12071::2Qi8XRsBKp"
+                }
+              ]
+            ]
+          },
+          "v009": {
+            "count": 2,
+            "probability": 0.023255813953488372,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 2
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v002": 2
+                  },
+                  "callee_variants": {
+                    "v002": 1.0
+                  },
+                  "slot": {
+                    "group": 1,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v002": 2
+                  },
+                  "callee_variants": {
+                    "v002": 1.0
+                  },
+                  "slot": {
+                    "group": 2,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v002": 2
+                  },
+                  "callee_variants": {
+                    "v002": 1.0
+                  },
+                  "slot": {
+                    "group": 3,
+                    "index": 0
+                  },
+                  "target": "MS_8234::5CffIW3Vyb"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v002": 2
+                  },
+                  "callee_variants": {
+                    "v002": 1.0
+                  },
+                  "slot": {
+                    "group": 4,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v002": 2
+                  },
+                  "callee_variants": {
+                    "v002": 1.0
+                  },
+                  "slot": {
+                    "group": 5,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ]
+            ]
+          },
+          "v010": {
+            "count": 2,
+            "probability": 0.023255813953488372,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 2
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v002": 2
+                  },
+                  "callee_variants": {
+                    "v002": 1.0
+                  },
+                  "slot": {
+                    "group": 1,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v002": 2
+                  },
+                  "callee_variants": {
+                    "v002": 1.0
+                  },
+                  "slot": {
+                    "group": 2,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v002": 2
+                  },
+                  "callee_variants": {
+                    "v002": 1.0
+                  },
+                  "slot": {
+                    "group": 3,
+                    "index": 0
+                  },
+                  "target": "MS_8234::5CffIW3Vyb"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v002": 2
+                  },
+                  "callee_variants": {
+                    "v002": 1.0
+                  },
+                  "slot": {
+                    "group": 4,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v002": 2
+                  },
+                  "callee_variants": {
+                    "v002": 1.0
+                  },
+                  "slot": {
+                    "group": 5,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 2
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 6,
+                    "index": 0
+                  },
+                  "target": "MS_12071::2Qi8XRsBKp"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 2
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 7,
+                    "index": 0
+                  },
+                  "target": "MS_12071::2Qi8XRsBKp"
+                }
+              ]
+            ]
+          },
+          "v011": {
+            "count": 2,
+            "probability": 0.023255813953488372,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v003": 1,
+                    "v004": 1
+                  },
+                  "callee_variants": {
+                    "v003": 0.5,
+                    "v004": 0.5
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v003": 1,
+                    "v004": 1
+                  },
+                  "callee_variants": {
+                    "v003": 0.5,
+                    "v004": 0.5
+                  },
+                  "slot": {
+                    "group": 1,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v003": 2
+                  },
+                  "callee_variants": {
+                    "v003": 1.0
+                  },
+                  "slot": {
+                    "group": 2,
+                    "index": 0
+                  },
+                  "target": "MS_8234::5CffIW3Vyb"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v003": 2
+                  },
+                  "callee_variants": {
+                    "v003": 1.0
+                  },
+                  "slot": {
+                    "group": 3,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ]
+            ]
+          },
+          "v012": {
+            "count": 2,
+            "probability": 0.023255813953488372,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v003": 2
+                  },
+                  "callee_variants": {
+                    "v003": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v003": 1,
+                    "v004": 1
+                  },
+                  "callee_variants": {
+                    "v003": 0.5,
+                    "v004": 0.5
+                  },
+                  "slot": {
+                    "group": 1,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v004": 2
+                  },
+                  "callee_variants": {
+                    "v004": 1.0
+                  },
+                  "slot": {
+                    "group": 2,
+                    "index": 0
+                  },
+                  "target": "MS_8234::5CffIW3Vyb"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v003": 1,
+                    "v004": 1
+                  },
+                  "callee_variants": {
+                    "v003": 0.5,
+                    "v004": 0.5
+                  },
+                  "slot": {
+                    "group": 3,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 2
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 4,
+                    "index": 0
+                  },
+                  "target": "MS_12071::2Qi8XRsBKp"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 2
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 5,
+                    "index": 0
+                  },
+                  "target": "MS_12071::2Qi8XRsBKp"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 2
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 6,
+                    "index": 0
+                  },
+                  "target": "MS_8234::5CffIW3Vyb"
+                }
+              ]
+            ]
+          },
+          "v013": {
+            "count": 2,
+            "probability": 0.023255813953488372,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v003": 1,
+                    "v004": 1
+                  },
+                  "callee_variants": {
+                    "v003": 0.5,
+                    "v004": 0.5
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v002": 1,
+                    "v003": 1
+                  },
+                  "callee_variants": {
+                    "v002": 0.5,
+                    "v003": 0.5
+                  },
+                  "slot": {
+                    "group": 1,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v004": 2
+                  },
+                  "callee_variants": {
+                    "v004": 1.0
+                  },
+                  "slot": {
+                    "group": 2,
+                    "index": 0
+                  },
+                  "target": "MS_8234::5CffIW3Vyb"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v004": 2
+                  },
+                  "callee_variants": {
+                    "v004": 1.0
+                  },
+                  "slot": {
+                    "group": 3,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 2
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 4,
+                    "index": 0
+                  },
+                  "target": "MS_8234::5CffIW3Vyb"
+                }
+              ]
+            ]
+          },
+          "v014": {
+            "count": 1,
+            "probability": 0.011627906976744186,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 1
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v002": 1
+                  },
+                  "callee_variants": {
+                    "v002": 1.0
+                  },
+                  "slot": {
+                    "group": 1,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v002": 1
+                  },
+                  "callee_variants": {
+                    "v002": 1.0
+                  },
+                  "slot": {
+                    "group": 2,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ]
+            ]
+          },
+          "v015": {
+            "count": 1,
+            "probability": 0.011627906976744186,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 1
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v002": 1
+                  },
+                  "callee_variants": {
+                    "v002": 1.0
+                  },
+                  "slot": {
+                    "group": 1,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v002": 1
+                  },
+                  "callee_variants": {
+                    "v002": 1.0
+                  },
+                  "slot": {
+                    "group": 2,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v002": 1
+                  },
+                  "callee_variants": {
+                    "v002": 1.0
+                  },
+                  "slot": {
+                    "group": 3,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v002": 1
+                  },
+                  "callee_variants": {
+                    "v002": 1.0
+                  },
+                  "slot": {
+                    "group": 4,
+                    "index": 0
+                  },
+                  "target": "MS_8234::5CffIW3Vyb"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 1
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 5,
+                    "index": 0
+                  },
+                  "target": "MS_12071::2Qi8XRsBKp"
+                }
+              ]
+            ]
+          },
+          "v016": {
+            "count": 1,
+            "probability": 0.011627906976744186,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 1
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 1
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 1,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v003": 1
+                  },
+                  "callee_variants": {
+                    "v003": 1.0
+                  },
+                  "slot": {
+                    "group": 2,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v004": 1
+                  },
+                  "callee_variants": {
+                    "v004": 1.0
+                  },
+                  "slot": {
+                    "group": 3,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v003": 1
+                  },
+                  "callee_variants": {
+                    "v003": 1.0
+                  },
+                  "slot": {
+                    "group": 4,
+                    "index": 0
+                  },
+                  "target": "MS_8234::5CffIW3Vyb"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v003": 1
+                  },
+                  "callee_variants": {
+                    "v003": 1.0
+                  },
+                  "slot": {
+                    "group": 5,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 1
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 6,
+                    "index": 0
+                  },
+                  "target": "MS_12071::2Qi8XRsBKp"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 1
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 7,
+                    "index": 0
+                  },
+                  "target": "MS_12071::2Qi8XRsBKp"
+                }
+              ]
+            ]
+          },
+          "v017": {
+            "count": 1,
+            "probability": 0.011627906976744186,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 1
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 1
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 1,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v003": 1
+                  },
+                  "callee_variants": {
+                    "v003": 1.0
+                  },
+                  "slot": {
+                    "group": 2,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v003": 1
+                  },
+                  "callee_variants": {
+                    "v003": 1.0
+                  },
+                  "slot": {
+                    "group": 3,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v003": 1
+                  },
+                  "callee_variants": {
+                    "v003": 1.0
+                  },
+                  "slot": {
+                    "group": 4,
+                    "index": 0
+                  },
+                  "target": "MS_8234::5CffIW3Vyb"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v003": 1
+                  },
+                  "callee_variants": {
+                    "v003": 1.0
+                  },
+                  "slot": {
+                    "group": 5,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v003": 1
+                  },
+                  "callee_variants": {
+                    "v003": 1.0
+                  },
+                  "slot": {
+                    "group": 6,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 1
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 7,
+                    "index": 0
+                  },
+                  "target": "MS_12071::2Qi8XRsBKp"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 1
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 8,
+                    "index": 0
+                  },
+                  "target": "MS_12071::2Qi8XRsBKp"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 1
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 9,
+                    "index": 0
+                  },
+                  "target": "MS_12071::2Qi8XRsBKp"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 1
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 10,
+                    "index": 0
+                  },
+                  "target": "MS_12071::2Qi8XRsBKp"
+                }
+              ]
+            ]
+          },
+          "v018": {
+            "count": 1,
+            "probability": 0.011627906976744186,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v003": 1
+                  },
+                  "callee_variants": {
+                    "v003": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v003": 1
+                  },
+                  "callee_variants": {
+                    "v003": 1.0
+                  },
+                  "slot": {
+                    "group": 1,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v004": 1
+                  },
+                  "callee_variants": {
+                    "v004": 1.0
+                  },
+                  "slot": {
+                    "group": 2,
+                    "index": 0
+                  },
+                  "target": "MS_8234::5CffIW3Vyb"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v004": 1
+                  },
+                  "callee_variants": {
+                    "v004": 1.0
+                  },
+                  "slot": {
+                    "group": 3,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 1
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 4,
+                    "index": 0
+                  },
+                  "target": "MS_12071::2Qi8XRsBKp"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 1
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 5,
+                    "index": 0
+                  },
+                  "target": "MS_12071::2Qi8XRsBKp"
+                }
+              ]
+            ]
+          },
+          "v019": {
+            "count": 1,
+            "probability": 0.011627906976744186,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v003": 1
+                  },
+                  "callee_variants": {
+                    "v003": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v003": 1
+                  },
+                  "callee_variants": {
+                    "v003": 1.0
+                  },
+                  "slot": {
+                    "group": 1,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v003": 1
+                  },
+                  "callee_variants": {
+                    "v003": 1.0
+                  },
+                  "slot": {
+                    "group": 2,
+                    "index": 0
+                  },
+                  "target": "MS_8234::5CffIW3Vyb"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v003": 1
+                  },
+                  "callee_variants": {
+                    "v003": 1.0
+                  },
+                  "slot": {
+                    "group": 3,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v003": 1
+                  },
+                  "callee_variants": {
+                    "v003": 1.0
+                  },
+                  "slot": {
+                    "group": 4,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 1
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 5,
+                    "index": 0
+                  },
+                  "target": "MS_12071::2Qi8XRsBKp"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 1
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 6,
+                    "index": 0
+                  },
+                  "target": "MS_12071::2Qi8XRsBKp"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 1
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 7,
+                    "index": 0
+                  },
+                  "target": "MS_12071::2Qi8XRsBKp"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 1
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 8,
+                    "index": 0
+                  },
+                  "target": "MS_12071::2Qi8XRsBKp"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 1
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 9,
+                    "index": 0
+                  },
+                  "target": "MS_8234::5CffIW3Vyb"
+                }
+              ]
+            ]
+          },
+          "v020": {
+            "count": 1,
+            "probability": 0.011627906976744186,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v003": 1
+                  },
+                  "callee_variants": {
+                    "v003": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v003": 1
+                  },
+                  "callee_variants": {
+                    "v003": 1.0
+                  },
+                  "slot": {
+                    "group": 1,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v003": 1
+                  },
+                  "callee_variants": {
+                    "v003": 1.0
+                  },
+                  "slot": {
+                    "group": 2,
+                    "index": 0
+                  },
+                  "target": "MS_8234::5CffIW3Vyb"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v003": 1
+                  },
+                  "callee_variants": {
+                    "v003": 1.0
+                  },
+                  "slot": {
+                    "group": 3,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v003": 1
+                  },
+                  "callee_variants": {
+                    "v003": 1.0
+                  },
+                  "slot": {
+                    "group": 4,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 1
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 5,
+                    "index": 0
+                  },
+                  "target": "MS_8234::5CffIW3Vyb"
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "MS_10180::tCn0a8nGUx": {
+        "count": 671,
+        "variants": {
+          "v001": {
+            "count": 668,
+            "probability": 0.9955290611028316,
+            "sequence": []
+          },
+          "v002": {
+            "count": 3,
+            "probability": 0.004470938897168405,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 3
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_57346::hG8EAiuMIZ"
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "MS_12071::2Qi8XRsBKp": {
+        "count": 34,
+        "variants": {
+          "v001": {
+            "count": 34,
+            "probability": 1.0,
+            "sequence": []
+          }
+        }
+      },
+      "MS_12071::kCe5EFqRec": {
+        "count": 5121,
+        "variants": {
+          "v001": {
+            "count": 3607,
+            "probability": 0.7043546182386252,
+            "sequence": []
+          },
+          "v002": {
+            "count": 1046,
+            "probability": 0.20425698105838702,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 1046
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ]
+            ]
+          },
+          "v003": {
+            "count": 236,
+            "probability": 0.046084749072446786,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 236
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 236
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 1,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ]
+            ]
+          },
+          "v004": {
+            "count": 190,
+            "probability": 0.03710212849052919,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 190
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                },
+                {
+                  "callee_variant_counts": {
+                    "v001": 190
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 1
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ]
+            ]
+          },
+          "v005": {
+            "count": 18,
+            "probability": 0.0035149384885764497,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 18
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 18
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 1,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 18
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 2,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ]
+            ]
+          },
+          "v006": {
+            "count": 14,
+            "probability": 0.0027338410466705722,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 14
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                },
+                {
+                  "callee_variant_counts": {
+                    "v001": 14
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 1
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                },
+                {
+                  "callee_variant_counts": {
+                    "v001": 14
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 2
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ]
+            ]
+          },
+          "v007": {
+            "count": 10,
+            "probability": 0.0019527436047646943,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 10
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 10
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 1,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                },
+                {
+                  "callee_variant_counts": {
+                    "v001": 10
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 1,
+                    "index": 1
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "MS_16339::OhYWZTTGgV": {
+        "count": 1,
+        "variants": {
+          "v001": {
+            "count": 1,
+            "probability": 1.0,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v003": 1
+                  },
+                  "callee_variants": {
+                    "v003": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v003": 1
+                  },
+                  "callee_variants": {
+                    "v003": 1.0
+                  },
+                  "slot": {
+                    "group": 1,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "MS_16339::tCn0a8nGUx": {
+        "count": 10,
+        "variants": {
+          "v001": {
+            "count": 10,
+            "probability": 1.0,
+            "sequence": []
+          }
+        }
+      },
+      "MS_41385::2rsoa4EoGl": {
+        "count": 1540,
+        "variants": {
+          "v001": {
+            "count": 1540,
+            "probability": 1.0,
+            "sequence": []
+          }
+        }
+      },
+      "MS_57346::hG8EAiuMIZ": {
+        "count": 3,
+        "variants": {
+          "v001": {
+            "count": 3,
+            "probability": 1.0,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 3
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "MS_8234::5CffIW3Vyb": {
+        "count": 196,
+        "variants": {
+          "v001": {
+            "count": 117,
+            "probability": 0.5969387755102041,
+            "sequence": []
+          },
+          "v002": {
+            "count": 48,
+            "probability": 0.24489795918367346,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 48
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_8234::5CffIW3Vyb"
+                }
+              ]
+            ]
+          },
+          "v003": {
+            "count": 16,
+            "probability": 0.08163265306122448,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 16
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_8234::5CffIW3Vyb"
+                },
+                {
+                  "callee_variant_counts": {
+                    "v001": 16
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 1
+                  },
+                  "target": "MS_8234::5CffIW3Vyb"
+                }
+              ]
+            ]
+          },
+          "v004": {
+            "count": 14,
+            "probability": 0.07142857142857142,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 14
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_8234::5CffIW3Vyb"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 14
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 1,
+                    "index": 0
+                  },
+                  "target": "MS_8234::5CffIW3Vyb"
+                }
+              ]
+            ]
+          },
+          "v005": {
+            "count": 1,
+            "probability": 0.00510204081632653,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 1
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_8234::5CffIW3Vyb"
+                },
+                {
+                  "callee_variant_counts": {
+                    "v001": 1
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 1
+                  },
+                  "target": "MS_8234::5CffIW3Vyb"
+                },
+                {
+                  "callee_variant_counts": {
+                    "v001": 1
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 2
+                  },
+                  "target": "MS_8234::5CffIW3Vyb"
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "USER": {
+        "count": 2278,
+        "variants": {
+          "v001": {
+            "count": 328,
+            "probability": 0.14398595258999122,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 328
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_41385::2rsoa4EoGl"
+                }
+              ]
+            ]
+          },
+          "v002": {
+            "count": 326,
+            "probability": 0.1431079894644425,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 224,
+                    "v002": 37,
+                    "v003": 22,
+                    "v004": 37,
+                    "v006": 4,
+                    "v007": 2
+                  },
+                  "callee_variants": {
+                    "v001": 0.6871165644171779,
+                    "v002": 0.11349693251533742,
+                    "v003": 0.06748466257668712,
+                    "v004": 0.11349693251533742,
+                    "v006": 0.012269938650306749,
+                    "v007": 0.006134969325153374
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                },
+                {
+                  "callee_variant_counts": {
+                    "v001": 326
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 1
+                  },
+                  "target": "MS_41385::2rsoa4EoGl"
+                }
+              ]
+            ]
+          },
+          "v003": {
+            "count": 309,
+            "probability": 0.1356453028972783,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 233,
+                    "v002": 19,
+                    "v003": 28,
+                    "v004": 18,
+                    "v005": 5,
+                    "v006": 4,
+                    "v007": 2
+                  },
+                  "callee_variants": {
+                    "v001": 0.7540453074433657,
+                    "v002": 0.061488673139158574,
+                    "v003": 0.09061488673139159,
+                    "v004": 0.05825242718446602,
+                    "v005": 0.016181229773462782,
+                    "v006": 0.012944983818770227,
+                    "v007": 0.006472491909385114
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ]
+            ]
+          },
+          "v004": {
+            "count": 203,
+            "probability": 0.08911325724319578,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 203
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_41385::2rsoa4EoGl"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 162,
+                    "v002": 19,
+                    "v003": 21,
+                    "v005": 1
+                  },
+                  "callee_variants": {
+                    "v001": 0.7980295566502463,
+                    "v002": 0.09359605911330049,
+                    "v003": 0.10344827586206896,
+                    "v005": 0.0049261083743842365
+                  },
+                  "slot": {
+                    "group": 1,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ]
+            ]
+          },
+          "v005": {
+            "count": 153,
+            "probability": 0.06716417910447761,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 153
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v002": 153
+                  },
+                  "callee_variants": {
+                    "v002": 1.0
+                  },
+                  "slot": {
+                    "group": 1,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 153
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 2,
+                    "index": 0
+                  },
+                  "target": "MS_10180::tCn0a8nGUx"
+                }
+              ]
+            ]
+          },
+          "v006": {
+            "count": 134,
+            "probability": 0.058823529411764705,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 134
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 13,
+                    "v002": 121
+                  },
+                  "callee_variants": {
+                    "v001": 0.09701492537313433,
+                    "v002": 0.9029850746268657
+                  },
+                  "slot": {
+                    "group": 1,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ]
+            ]
+          },
+          "v007": {
+            "count": 116,
+            "probability": 0.050921861281826165,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 116
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_10180::tCn0a8nGUx"
+                },
+                {
+                  "callee_variant_counts": {
+                    "v002": 24,
+                    "v003": 31,
+                    "v004": 53,
+                    "v005": 3,
+                    "v006": 3,
+                    "v007": 2
+                  },
+                  "callee_variants": {
+                    "v002": 0.20689655172413793,
+                    "v003": 0.2672413793103448,
+                    "v004": 0.45689655172413796,
+                    "v005": 0.02586206896551724,
+                    "v006": 0.02586206896551724,
+                    "v007": 0.017241379310344827
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 1
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                },
+                {
+                  "callee_variant_counts": {
+                    "v001": 116
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 2
+                  },
+                  "target": "MS_41385::2rsoa4EoGl"
+                }
+              ]
+            ]
+          },
+          "v008": {
+            "count": 89,
+            "probability": 0.03906935908691835,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v002": 25,
+                    "v003": 25,
+                    "v004": 29,
+                    "v005": 5,
+                    "v006": 1,
+                    "v007": 4
+                  },
+                  "callee_variants": {
+                    "v002": 0.2808988764044944,
+                    "v003": 0.2808988764044944,
+                    "v004": 0.3258426966292135,
+                    "v005": 0.056179775280898875,
+                    "v006": 0.011235955056179775,
+                    "v007": 0.0449438202247191
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 88,
+                    "v002": 1
+                  },
+                  "callee_variants": {
+                    "v001": 0.9887640449438202,
+                    "v002": 0.011235955056179775
+                  },
+                  "slot": {
+                    "group": 1,
+                    "index": 0
+                  },
+                  "target": "MS_10180::tCn0a8nGUx"
+                }
+              ]
+            ]
+          },
+          "v009": {
+            "count": 88,
+            "probability": 0.038630377524143986,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 88
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                },
+                {
+                  "callee_variant_counts": {
+                    "v001": 88
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 1
+                  },
+                  "target": "MS_41385::2rsoa4EoGl"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v002": 88
+                  },
+                  "callee_variants": {
+                    "v002": 1.0
+                  },
+                  "slot": {
+                    "group": 1,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 88
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 2,
+                    "index": 0
+                  },
+                  "target": "MS_10180::tCn0a8nGUx"
+                }
+              ]
+            ]
+          },
+          "v010": {
+            "count": 88,
+            "probability": 0.038630377524143986,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 88
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_41385::2rsoa4EoGl"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 88
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 1,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v002": 88
+                  },
+                  "callee_variants": {
+                    "v002": 1.0
+                  },
+                  "slot": {
+                    "group": 2,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 87,
+                    "v002": 1
+                  },
+                  "callee_variants": {
+                    "v001": 0.9886363636363636,
+                    "v002": 0.011363636363636364
+                  },
+                  "slot": {
+                    "group": 3,
+                    "index": 0
+                  },
+                  "target": "MS_10180::tCn0a8nGUx"
+                }
+              ]
+            ]
+          },
+          "v011": {
+            "count": 77,
+            "probability": 0.033801580333625986,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 77
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_10180::tCn0a8nGUx"
+                },
+                {
+                  "callee_variant_counts": {
+                    "v001": 77
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 1
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                },
+                {
+                  "callee_variant_counts": {
+                    "v002": 77
+                  },
+                  "callee_variants": {
+                    "v002": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 2
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                },
+                {
+                  "callee_variant_counts": {
+                    "v001": 77
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 3
+                  },
+                  "target": "MS_41385::2rsoa4EoGl"
+                }
+              ]
+            ]
+          },
+          "v012": {
+            "count": 77,
+            "probability": 0.033801580333625986,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 77
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_41385::2rsoa4EoGl"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 77
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 1,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 2,
+                    "v002": 75
+                  },
+                  "callee_variants": {
+                    "v001": 0.025974025974025976,
+                    "v002": 0.974025974025974
+                  },
+                  "slot": {
+                    "group": 2,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ]
+            ]
+          },
+          "v013": {
+            "count": 62,
+            "probability": 0.027216856892010536,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 62
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                },
+                {
+                  "callee_variant_counts": {
+                    "v001": 62
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 1
+                  },
+                  "target": "MS_41385::2rsoa4EoGl"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 9,
+                    "v002": 53
+                  },
+                  "callee_variants": {
+                    "v001": 0.14516129032258066,
+                    "v002": 0.8548387096774194
+                  },
+                  "slot": {
+                    "group": 1,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ]
+            ]
+          },
+          "v014": {
+            "count": 56,
+            "probability": 0.024582967515364356,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 56
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                },
+                {
+                  "callee_variant_counts": {
+                    "v001": 5,
+                    "v002": 51
+                  },
+                  "callee_variants": {
+                    "v001": 0.08928571428571429,
+                    "v002": 0.9107142857142857
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 1
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                },
+                {
+                  "callee_variant_counts": {
+                    "v001": 56
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 2
+                  },
+                  "target": "MS_41385::2rsoa4EoGl"
+                }
+              ]
+            ]
+          },
+          "v015": {
+            "count": 40,
+            "probability": 0.01755926251097454,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 40
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_41385::2rsoa4EoGl"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v002": 13,
+                    "v003": 25,
+                    "v005": 2
+                  },
+                  "callee_variants": {
+                    "v002": 0.325,
+                    "v003": 0.625,
+                    "v005": 0.05
+                  },
+                  "slot": {
+                    "group": 1,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 40
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 2,
+                    "index": 0
+                  },
+                  "target": "MS_10180::tCn0a8nGUx"
+                }
+              ]
+            ]
+          },
+          "v016": {
+            "count": 18,
+            "probability": 0.007901668129938543,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v002": 3,
+                    "v003": 6,
+                    "v004": 8,
+                    "v005": 1
+                  },
+                  "callee_variants": {
+                    "v002": 0.16666666666666666,
+                    "v003": 0.3333333333333333,
+                    "v004": 0.4444444444444444,
+                    "v005": 0.05555555555555555
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v002": 11,
+                    "v004": 2,
+                    "v012": 1,
+                    "v013": 2,
+                    "v018": 1,
+                    "v019": 1
+                  },
+                  "callee_variants": {
+                    "v002": 0.6111111111111112,
+                    "v004": 0.1111111111111111,
+                    "v012": 0.05555555555555555,
+                    "v013": 0.1111111111111111,
+                    "v018": 0.05555555555555555,
+                    "v019": 0.05555555555555555
+                  },
+                  "slot": {
+                    "group": 1,
+                    "index": 0
+                  },
+                  "target": "MS_10180::OhYWZTTGgV"
+                }
+              ]
+            ]
+          },
+          "v017": {
+            "count": 13,
+            "probability": 0.005706760316066725,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 5,
+                    "v003": 3,
+                    "v005": 2,
+                    "v008": 2,
+                    "v015": 1
+                  },
+                  "callee_variants": {
+                    "v001": 0.38461538461538464,
+                    "v003": 0.23076923076923078,
+                    "v005": 0.15384615384615385,
+                    "v008": 0.15384615384615385,
+                    "v015": 0.07692307692307693
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_10180::OhYWZTTGgV"
+                },
+                {
+                  "callee_variant_counts": {
+                    "v001": 13
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 1
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                },
+                {
+                  "callee_variant_counts": {
+                    "v002": 13
+                  },
+                  "callee_variants": {
+                    "v002": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 2
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                },
+                {
+                  "callee_variant_counts": {
+                    "v001": 13
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 3
+                  },
+                  "target": "MS_41385::2rsoa4EoGl"
+                }
+              ]
+            ]
+          },
+          "v018": {
+            "count": 13,
+            "probability": 0.005706760316066725,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 13
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v002": 13
+                  },
+                  "callee_variants": {
+                    "v002": 1.0
+                  },
+                  "slot": {
+                    "group": 1,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 8,
+                    "v003": 3,
+                    "v009": 1,
+                    "v010": 1
+                  },
+                  "callee_variants": {
+                    "v001": 0.6153846153846154,
+                    "v003": 0.23076923076923078,
+                    "v009": 0.07692307692307693,
+                    "v010": 0.07692307692307693
+                  },
+                  "slot": {
+                    "group": 2,
+                    "index": 0
+                  },
+                  "target": "MS_10180::OhYWZTTGgV"
+                }
+              ]
+            ]
+          },
+          "v019": {
+            "count": 12,
+            "probability": 0.0052677787532923615,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 12
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 12
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 1,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v002": 4,
+                    "v003": 5,
+                    "v004": 3
+                  },
+                  "callee_variants": {
+                    "v002": 0.3333333333333333,
+                    "v003": 0.4166666666666667,
+                    "v004": 0.25
+                  },
+                  "slot": {
+                    "group": 2,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 11,
+                    "v002": 1
+                  },
+                  "callee_variants": {
+                    "v001": 0.9166666666666666,
+                    "v002": 0.08333333333333333
+                  },
+                  "slot": {
+                    "group": 3,
+                    "index": 0
+                  },
+                  "target": "MS_10180::tCn0a8nGUx"
+                }
+              ]
+            ]
+          },
+          "v020": {
+            "count": 12,
+            "probability": 0.0052677787532923615,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 12
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                },
+                {
+                  "callee_variant_counts": {
+                    "v001": 12
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 1
+                  },
+                  "target": "MS_41385::2rsoa4EoGl"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v002": 12
+                  },
+                  "callee_variants": {
+                    "v002": 1.0
+                  },
+                  "slot": {
+                    "group": 1,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 8,
+                    "v003": 1,
+                    "v005": 1,
+                    "v009": 1,
+                    "v010": 1
+                  },
+                  "callee_variants": {
+                    "v001": 0.6666666666666666,
+                    "v003": 0.08333333333333333,
+                    "v005": 0.08333333333333333,
+                    "v009": 0.08333333333333333,
+                    "v010": 0.08333333333333333
+                  },
+                  "slot": {
+                    "group": 2,
+                    "index": 0
+                  },
+                  "target": "MS_10180::OhYWZTTGgV"
+                }
+              ]
+            ]
+          },
+          "v021": {
+            "count": 9,
+            "probability": 0.003950834064969272,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v002": 5,
+                    "v011": 2,
+                    "v012": 1,
+                    "v020": 1
+                  },
+                  "callee_variants": {
+                    "v002": 0.5555555555555556,
+                    "v011": 0.2222222222222222,
+                    "v012": 0.1111111111111111,
+                    "v020": 0.1111111111111111
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_10180::OhYWZTTGgV"
+                },
+                {
+                  "callee_variant_counts": {
+                    "v003": 4,
+                    "v004": 5
+                  },
+                  "callee_variants": {
+                    "v003": 0.4444444444444444,
+                    "v004": 0.5555555555555556
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 1
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                },
+                {
+                  "callee_variant_counts": {
+                    "v001": 9
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 2
+                  },
+                  "target": "MS_41385::2rsoa4EoGl"
+                }
+              ]
+            ]
+          },
+          "v022": {
+            "count": 9,
+            "probability": 0.003950834064969272,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 9
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_41385::2rsoa4EoGl"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 9
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 1,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v002": 9
+                  },
+                  "callee_variants": {
+                    "v002": 1.0
+                  },
+                  "slot": {
+                    "group": 2,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 6,
+                    "v003": 2,
+                    "v014": 1
+                  },
+                  "callee_variants": {
+                    "v001": 0.6666666666666666,
+                    "v003": 0.2222222222222222,
+                    "v014": 0.1111111111111111
+                  },
+                  "slot": {
+                    "group": 3,
+                    "index": 0
+                  },
+                  "target": "MS_10180::OhYWZTTGgV"
+                }
+              ]
+            ]
+          },
+          "v023": {
+            "count": 8,
+            "probability": 0.003511852502194908,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 8
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                },
+                {
+                  "callee_variant_counts": {
+                    "v001": 8
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 1
+                  },
+                  "target": "MS_41385::2rsoa4EoGl"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 8
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 1,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v002": 3,
+                    "v003": 2,
+                    "v004": 3
+                  },
+                  "callee_variants": {
+                    "v002": 0.375,
+                    "v003": 0.25,
+                    "v004": 0.375
+                  },
+                  "slot": {
+                    "group": 2,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ]
+            ]
+          },
+          "v024": {
+            "count": 6,
+            "probability": 0.0026338893766461808,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 6
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                },
+                {
+                  "callee_variant_counts": {
+                    "v001": 6
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 1
+                  },
+                  "target": "MS_41385::2rsoa4EoGl"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 6
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 1,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v002": 1,
+                    "v003": 2,
+                    "v004": 3
+                  },
+                  "callee_variants": {
+                    "v002": 0.16666666666666666,
+                    "v003": 0.3333333333333333,
+                    "v004": 0.5
+                  },
+                  "slot": {
+                    "group": 2,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 6
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 3,
+                    "index": 0
+                  },
+                  "target": "MS_10180::tCn0a8nGUx"
+                }
+              ]
+            ]
+          },
+          "v025": {
+            "count": 6,
+            "probability": 0.0026338893766461808,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 6
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_41385::2rsoa4EoGl"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v002": 3,
+                    "v003": 3
+                  },
+                  "callee_variants": {
+                    "v002": 0.5,
+                    "v003": 0.5
+                  },
+                  "slot": {
+                    "group": 1,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v002": 4,
+                    "v004": 2
+                  },
+                  "callee_variants": {
+                    "v002": 0.6666666666666666,
+                    "v004": 0.3333333333333333
+                  },
+                  "slot": {
+                    "group": 2,
+                    "index": 0
+                  },
+                  "target": "MS_10180::OhYWZTTGgV"
+                }
+              ]
+            ]
+          },
+          "v026": {
+            "count": 5,
+            "probability": 0.0021949078138718174,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 5
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v002": 5
+                  },
+                  "callee_variants": {
+                    "v002": 1.0
+                  },
+                  "slot": {
+                    "group": 1,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 5
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 2,
+                    "index": 0
+                  },
+                  "target": "MS_16339::tCn0a8nGUx"
+                }
+              ]
+            ]
+          },
+          "v027": {
+            "count": 3,
+            "probability": 0.0013169446883230904,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 3
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                },
+                {
+                  "callee_variant_counts": {
+                    "v001": 3
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 1
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                },
+                {
+                  "callee_variant_counts": {
+                    "v002": 1,
+                    "v003": 2
+                  },
+                  "callee_variants": {
+                    "v002": 0.3333333333333333,
+                    "v003": 0.6666666666666666
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 2
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                },
+                {
+                  "callee_variant_counts": {
+                    "v001": 3
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 3
+                  },
+                  "target": "MS_41385::2rsoa4EoGl"
+                }
+              ]
+            ]
+          },
+          "v028": {
+            "count": 3,
+            "probability": 0.0013169446883230904,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 3
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_41385::2rsoa4EoGl"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 3
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 1,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 3
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 2,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v003": 1,
+                    "v004": 2
+                  },
+                  "callee_variants": {
+                    "v003": 0.3333333333333333,
+                    "v004": 0.6666666666666666
+                  },
+                  "slot": {
+                    "group": 3,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v006": 1,
+                    "v016": 1,
+                    "v017": 1
+                  },
+                  "callee_variants": {
+                    "v006": 0.3333333333333333,
+                    "v016": 0.3333333333333333,
+                    "v017": 0.3333333333333333
+                  },
+                  "slot": {
+                    "group": 4,
+                    "index": 0
+                  },
+                  "target": "MS_10180::OhYWZTTGgV"
+                }
+              ]
+            ]
+          },
+          "v029": {
+            "count": 2,
+            "probability": 0.000877963125548727,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 2
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                },
+                {
+                  "callee_variant_counts": {
+                    "v001": 2
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 1
+                  },
+                  "target": "MS_41385::2rsoa4EoGl"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 2
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 1,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v004": 2
+                  },
+                  "callee_variants": {
+                    "v004": 1.0
+                  },
+                  "slot": {
+                    "group": 2,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v006": 1,
+                    "v007": 1
+                  },
+                  "callee_variants": {
+                    "v006": 0.5,
+                    "v007": 0.5
+                  },
+                  "slot": {
+                    "group": 3,
+                    "index": 0
+                  },
+                  "target": "MS_10180::OhYWZTTGgV"
+                }
+              ]
+            ]
+          },
+          "v030": {
+            "count": 2,
+            "probability": 0.000877963125548727,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 2
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_41385::2rsoa4EoGl"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 2
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 1,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 2
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 2,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v002": 1,
+                    "v004": 1
+                  },
+                  "callee_variants": {
+                    "v002": 0.5,
+                    "v004": 0.5
+                  },
+                  "slot": {
+                    "group": 3,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ]
+            ]
+          },
+          "v031": {
+            "count": 2,
+            "probability": 0.000877963125548727,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 2
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_41385::2rsoa4EoGl"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 2
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 1,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v002": 2
+                  },
+                  "callee_variants": {
+                    "v002": 1.0
+                  },
+                  "slot": {
+                    "group": 2,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 2
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 3,
+                    "index": 0
+                  },
+                  "target": "MS_16339::tCn0a8nGUx"
+                }
+              ]
+            ]
+          },
+          "v032": {
+            "count": 1,
+            "probability": 0.0004389815627743635,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 1
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 1
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 1,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v003": 1
+                  },
+                  "callee_variants": {
+                    "v003": 1.0
+                  },
+                  "slot": {
+                    "group": 2,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ]
+            ]
+          },
+          "v033": {
+            "count": 1,
+            "probability": 0.0004389815627743635,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 1
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 1
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 1,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v004": 1
+                  },
+                  "callee_variants": {
+                    "v004": 1.0
+                  },
+                  "slot": {
+                    "group": 2,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v007": 1
+                  },
+                  "callee_variants": {
+                    "v007": 1.0
+                  },
+                  "slot": {
+                    "group": 3,
+                    "index": 0
+                  },
+                  "target": "MS_10180::OhYWZTTGgV"
+                }
+              ]
+            ]
+          },
+          "v034": {
+            "count": 1,
+            "probability": 0.0004389815627743635,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 1
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 1
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 1,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v002": 1
+                  },
+                  "callee_variants": {
+                    "v002": 1.0
+                  },
+                  "slot": {
+                    "group": 2,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 1
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 3,
+                    "index": 0
+                  },
+                  "target": "MS_16339::tCn0a8nGUx"
+                }
+              ]
+            ]
+          },
+          "v035": {
+            "count": 1,
+            "probability": 0.0004389815627743635,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v003": 1
+                  },
+                  "callee_variants": {
+                    "v003": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 1
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 1,
+                    "index": 0
+                  },
+                  "target": "MS_16339::OhYWZTTGgV"
+                }
+              ]
+            ]
+          },
+          "v036": {
+            "count": 1,
+            "probability": 0.0004389815627743635,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v004": 1
+                  },
+                  "callee_variants": {
+                    "v004": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 1
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 1,
+                    "index": 0
+                  },
+                  "target": "MS_16339::tCn0a8nGUx"
+                }
+              ]
+            ]
+          },
+          "v037": {
+            "count": 1,
+            "probability": 0.0004389815627743635,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 1
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 1
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 1,
+                    "index": 0
+                  },
+                  "target": "MS_41385::2rsoa4EoGl"
+                }
+              ]
+            ]
+          },
+          "v038": {
+            "count": 1,
+            "probability": 0.0004389815627743635,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 1
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                },
+                {
+                  "callee_variant_counts": {
+                    "v001": 1
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 1
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                },
+                {
+                  "callee_variant_counts": {
+                    "v001": 1
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 2
+                  },
+                  "target": "MS_41385::2rsoa4EoGl"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v003": 1
+                  },
+                  "callee_variants": {
+                    "v003": 1.0
+                  },
+                  "slot": {
+                    "group": 1,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 1
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 2,
+                    "index": 0
+                  },
+                  "target": "MS_10180::tCn0a8nGUx"
+                }
+              ]
+            ]
+          },
+          "v039": {
+            "count": 1,
+            "probability": 0.0004389815627743635,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 1
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                },
+                {
+                  "callee_variant_counts": {
+                    "v001": 1
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 1
+                  },
+                  "target": "MS_41385::2rsoa4EoGl"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v002": 1
+                  },
+                  "callee_variants": {
+                    "v002": 1.0
+                  },
+                  "slot": {
+                    "group": 1,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 1
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 2,
+                    "index": 0
+                  },
+                  "target": "MS_16339::tCn0a8nGUx"
+                }
+              ]
+            ]
+          },
+          "v040": {
+            "count": 1,
+            "probability": 0.0004389815627743635,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 1
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_41385::2rsoa4EoGl"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 1
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 1,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 1
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 2,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v003": 1
+                  },
+                  "callee_variants": {
+                    "v003": 1.0
+                  },
+                  "slot": {
+                    "group": 3,
+                    "index": 0
+                  },
+                  "target": "MS_12071::kCe5EFqRec"
+                }
+              ],
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 1
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 4,
+                    "index": 0
+                  },
+                  "target": "MS_10180::tCn0a8nGUx"
+                }
+              ]
+            ]
+          }
+        }
+      }
+    },
+    "root_span_count": 5130,
+    "row_count": 7749,
+    "schema_version": 1,
+    "span_count": 7662,
+    "summary": {
+      "method_count": 10,
+      "root_span_count": 5130,
+      "row_count": 7749,
+      "service": "S_92283722",
+      "span_count": 7662,
+      "stat_clamped_spans": 1177,
+      "stat_missing_parent_root_spans": 3590,
+      "stat_root_span_count": 5130,
+      "stat_row_count": 7749,
+      "stat_span_count": 7662,
+      "stat_trace_count": 2278,
+      "trace_count": 2278,
+      "variant_count": 79
+    },
+    "trace_count": 2278,
+    "variant_count": 79
+  }
+}

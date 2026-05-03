@@ -1,0 +1,1828 @@
+{
+  "S_130831269": {
+    "format": "conditional_variants",
+    "metadata": {
+      "chunk_rows": 1000000,
+      "dataset_ids": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24
+      ],
+      "excluded_rpctypes": [
+        "UNKNOWN",
+        "mq"
+      ],
+      "max_rows_per_csv": null,
+      "missing_parent_as_root": true,
+      "overlap_threshold": 0.1,
+      "random_state": 42,
+      "sample_mode": "hash",
+      "sample_trace_frac": 0.01,
+      "selected_services": [
+        "S_86516878",
+        "S_130831269",
+        "S_32048416",
+        "S_1823467",
+        "S_51794709",
+        "S_21852643",
+        "S_156482560",
+        "S_119456620",
+        "S_156147254",
+        "S_36816397",
+        "S_17454060",
+        "S_14677443",
+        "S_5991695",
+        "S_124848862",
+        "S_92283722",
+        "S_122984786",
+        "S_1798353",
+        "S_40318420",
+        "S_58367703",
+        "S_88923722",
+        "S_98493745",
+        "S_137590631",
+        "S_155382676",
+        "S_110631735",
+        "S_10694245"
+      ],
+      "trace_dir": "/mnt/nvme1/proj/masa/traces/alibaba/cluster-trace-microservices-v2022/data/CallGraph",
+      "workers": 8
+    },
+    "method_count": 58,
+    "methods": {
+      "MS_1117::KFUG835JJw": {
+        "count": 2,
+        "variants": {
+          "v001": {
+            "count": 2,
+            "probability": 1.0,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 2
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_1117::Tfnc-ENibi"
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "MS_1117::Tfnc-ENibi": {
+        "count": 2,
+        "variants": {
+          "v001": {
+            "count": 2,
+            "probability": 1.0,
+            "sequence": []
+          }
+        }
+      },
+      "MS_12005::Rs4VbRVJj2": {
+        "count": 2,
+        "variants": {
+          "v001": {
+            "count": 2,
+            "probability": 1.0,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 2
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_12005::Tfnc-ENibi"
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "MS_12005::Tfnc-ENibi": {
+        "count": 2,
+        "variants": {
+          "v001": {
+            "count": 2,
+            "probability": 1.0,
+            "sequence": []
+          }
+        }
+      },
+      "MS_1404::KFUG835JJw": {
+        "count": 2,
+        "variants": {
+          "v001": {
+            "count": 2,
+            "probability": 1.0,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 2
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_1404::Tfnc-ENibi"
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "MS_1404::Tfnc-ENibi": {
+        "count": 2,
+        "variants": {
+          "v001": {
+            "count": 2,
+            "probability": 1.0,
+            "sequence": []
+          }
+        }
+      },
+      "MS_15819::KFUG835JJw": {
+        "count": 30,
+        "variants": {
+          "v001": {
+            "count": 30,
+            "probability": 1.0,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 30
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_15819::Tfnc-ENibi"
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "MS_15819::Tfnc-ENibi": {
+        "count": 30,
+        "variants": {
+          "v001": {
+            "count": 30,
+            "probability": 1.0,
+            "sequence": []
+          }
+        }
+      },
+      "MS_19017::KFUG835JJw": {
+        "count": 6921,
+        "variants": {
+          "v001": {
+            "count": 6921,
+            "probability": 1.0,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 6921
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_19017::Tfnc-ENibi"
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "MS_19017::Rs4VbRVJj2": {
+        "count": 130,
+        "variants": {
+          "v001": {
+            "count": 130,
+            "probability": 1.0,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 130
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_19017::Tfnc-ENibi"
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "MS_19017::Tfnc-ENibi": {
+        "count": 7051,
+        "variants": {
+          "v001": {
+            "count": 7051,
+            "probability": 1.0,
+            "sequence": []
+          }
+        }
+      },
+      "MS_19630::KFUG835JJw": {
+        "count": 479,
+        "variants": {
+          "v001": {
+            "count": 479,
+            "probability": 1.0,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 475,
+                    "v002": 4
+                  },
+                  "callee_variants": {
+                    "v001": 0.9916492693110647,
+                    "v002": 0.008350730688935281
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_19630::Tfnc-ENibi"
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "MS_19630::Tfnc-ENibi": {
+        "count": 479,
+        "variants": {
+          "v001": {
+            "count": 475,
+            "probability": 0.9916492693110647,
+            "sequence": []
+          },
+          "v002": {
+            "count": 4,
+            "probability": 0.008350730688935281,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 4
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_20725::jibcnIwvgq"
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "MS_20725::jibcnIwvgq": {
+        "count": 4,
+        "variants": {
+          "v001": {
+            "count": 4,
+            "probability": 1.0,
+            "sequence": []
+          }
+        }
+      },
+      "MS_2310::jibcnIwvgq": {
+        "count": 11,
+        "variants": {
+          "v001": {
+            "count": 11,
+            "probability": 1.0,
+            "sequence": []
+          }
+        }
+      },
+      "MS_23571::KFUG835JJw": {
+        "count": 5,
+        "variants": {
+          "v001": {
+            "count": 5,
+            "probability": 1.0,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 5
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_23571::Tfnc-ENibi"
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "MS_23571::Tfnc-ENibi": {
+        "count": 5,
+        "variants": {
+          "v001": {
+            "count": 5,
+            "probability": 1.0,
+            "sequence": []
+          }
+        }
+      },
+      "MS_29370::KFUG835JJw": {
+        "count": 149,
+        "variants": {
+          "v001": {
+            "count": 149,
+            "probability": 1.0,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 149
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_29370::Tfnc-ENibi"
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "MS_29370::Tfnc-ENibi": {
+        "count": 149,
+        "variants": {
+          "v001": {
+            "count": 149,
+            "probability": 1.0,
+            "sequence": []
+          }
+        }
+      },
+      "MS_34145::KFUG835JJw": {
+        "count": 1,
+        "variants": {
+          "v001": {
+            "count": 1,
+            "probability": 1.0,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 1
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_34145::Tfnc-ENibi"
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "MS_34145::Tfnc-ENibi": {
+        "count": 1,
+        "variants": {
+          "v001": {
+            "count": 1,
+            "probability": 1.0,
+            "sequence": []
+          }
+        }
+      },
+      "MS_3891::KFUG835JJw": {
+        "count": 7,
+        "variants": {
+          "v001": {
+            "count": 7,
+            "probability": 1.0,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 7
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_3891::Tfnc-ENibi"
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "MS_3891::Tfnc-ENibi": {
+        "count": 7,
+        "variants": {
+          "v001": {
+            "count": 7,
+            "probability": 1.0,
+            "sequence": []
+          }
+        }
+      },
+      "MS_42200::KFUG835JJw": {
+        "count": 7555,
+        "variants": {
+          "v001": {
+            "count": 7555,
+            "probability": 1.0,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 7555
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_42200::Tfnc-ENibi"
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "MS_42200::Tfnc-ENibi": {
+        "count": 7555,
+        "variants": {
+          "v001": {
+            "count": 7555,
+            "probability": 1.0,
+            "sequence": []
+          }
+        }
+      },
+      "MS_43806::KFUG835JJw": {
+        "count": 505,
+        "variants": {
+          "v001": {
+            "count": 505,
+            "probability": 1.0,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 494,
+                    "v002": 11
+                  },
+                  "callee_variants": {
+                    "v001": 0.9782178217821782,
+                    "v002": 0.02178217821782178
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_43806::Tfnc-ENibi"
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "MS_43806::Tfnc-ENibi": {
+        "count": 505,
+        "variants": {
+          "v001": {
+            "count": 494,
+            "probability": 0.9782178217821782,
+            "sequence": []
+          },
+          "v002": {
+            "count": 11,
+            "probability": 0.02178217821782178,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 11
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_2310::jibcnIwvgq"
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "MS_5122::KFUG835JJw": {
+        "count": 2,
+        "variants": {
+          "v001": {
+            "count": 2,
+            "probability": 1.0,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 2
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_5122::Tfnc-ENibi"
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "MS_5122::Rs4VbRVJj2": {
+        "count": 2,
+        "variants": {
+          "v001": {
+            "count": 2,
+            "probability": 1.0,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 2
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_5122::Tfnc-ENibi"
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "MS_5122::Tfnc-ENibi": {
+        "count": 4,
+        "variants": {
+          "v001": {
+            "count": 4,
+            "probability": 1.0,
+            "sequence": []
+          }
+        }
+      },
+      "MS_5182::KFUG835JJw": {
+        "count": 264,
+        "variants": {
+          "v001": {
+            "count": 264,
+            "probability": 1.0,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 264
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_5182::Tfnc-ENibi"
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "MS_5182::Rs4VbRVJj2": {
+        "count": 5,
+        "variants": {
+          "v001": {
+            "count": 5,
+            "probability": 1.0,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 5
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_5182::Tfnc-ENibi"
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "MS_5182::Tfnc-ENibi": {
+        "count": 269,
+        "variants": {
+          "v001": {
+            "count": 269,
+            "probability": 1.0,
+            "sequence": []
+          }
+        }
+      },
+      "MS_52678::KFUG835JJw": {
+        "count": 100,
+        "variants": {
+          "v001": {
+            "count": 100,
+            "probability": 1.0,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 100
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_52678::Tfnc-ENibi"
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "MS_52678::Tfnc-ENibi": {
+        "count": 100,
+        "variants": {
+          "v001": {
+            "count": 100,
+            "probability": 1.0,
+            "sequence": []
+          }
+        }
+      },
+      "MS_53788::KFUG835JJw": {
+        "count": 83,
+        "variants": {
+          "v001": {
+            "count": 83,
+            "probability": 1.0,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 83
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_53788::Tfnc-ENibi"
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "MS_53788::Tfnc-ENibi": {
+        "count": 83,
+        "variants": {
+          "v001": {
+            "count": 83,
+            "probability": 1.0,
+            "sequence": []
+          }
+        }
+      },
+      "MS_56298::Rs4VbRVJj2": {
+        "count": 22,
+        "variants": {
+          "v001": {
+            "count": 22,
+            "probability": 1.0,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 22
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_56298::Tfnc-ENibi"
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "MS_56298::Tfnc-ENibi": {
+        "count": 22,
+        "variants": {
+          "v001": {
+            "count": 22,
+            "probability": 1.0,
+            "sequence": []
+          }
+        }
+      },
+      "MS_5766::KFUG835JJw": {
+        "count": 1,
+        "variants": {
+          "v001": {
+            "count": 1,
+            "probability": 1.0,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 1
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_5766::Tfnc-ENibi"
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "MS_5766::Tfnc-ENibi": {
+        "count": 1,
+        "variants": {
+          "v001": {
+            "count": 1,
+            "probability": 1.0,
+            "sequence": []
+          }
+        }
+      },
+      "MS_59::KFUG835JJw": {
+        "count": 125,
+        "variants": {
+          "v001": {
+            "count": 125,
+            "probability": 1.0,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 125
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_59::Tfnc-ENibi"
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "MS_59::Rs4VbRVJj2": {
+        "count": 39,
+        "variants": {
+          "v001": {
+            "count": 39,
+            "probability": 1.0,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 39
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_59::Tfnc-ENibi"
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "MS_59::Tfnc-ENibi": {
+        "count": 164,
+        "variants": {
+          "v001": {
+            "count": 164,
+            "probability": 1.0,
+            "sequence": []
+          }
+        }
+      },
+      "MS_61055::KFUG835JJw": {
+        "count": 1026,
+        "variants": {
+          "v001": {
+            "count": 1026,
+            "probability": 1.0,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 1026
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_61055::Tfnc-ENibi"
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "MS_61055::Rs4VbRVJj2": {
+        "count": 27,
+        "variants": {
+          "v001": {
+            "count": 27,
+            "probability": 1.0,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 27
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_61055::Tfnc-ENibi"
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "MS_61055::Tfnc-ENibi": {
+        "count": 1053,
+        "variants": {
+          "v001": {
+            "count": 1053,
+            "probability": 1.0,
+            "sequence": []
+          }
+        }
+      },
+      "MS_68166::KFUG835JJw": {
+        "count": 370,
+        "variants": {
+          "v001": {
+            "count": 370,
+            "probability": 1.0,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 370
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_68166::Tfnc-ENibi"
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "MS_68166::Tfnc-ENibi": {
+        "count": 370,
+        "variants": {
+          "v001": {
+            "count": 370,
+            "probability": 1.0,
+            "sequence": []
+          }
+        }
+      },
+      "MS_68220::KFUG835JJw": {
+        "count": 3,
+        "variants": {
+          "v001": {
+            "count": 3,
+            "probability": 1.0,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 3
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_68220::Tfnc-ENibi"
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "MS_68220::Tfnc-ENibi": {
+        "count": 3,
+        "variants": {
+          "v001": {
+            "count": 3,
+            "probability": 1.0,
+            "sequence": []
+          }
+        }
+      },
+      "MS_73347::Rs4VbRVJj2": {
+        "count": 14,
+        "variants": {
+          "v001": {
+            "count": 14,
+            "probability": 1.0,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 14
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_73347::Tfnc-ENibi"
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "MS_73347::Tfnc-ENibi": {
+        "count": 14,
+        "variants": {
+          "v001": {
+            "count": 14,
+            "probability": 1.0,
+            "sequence": []
+          }
+        }
+      },
+      "MS_7818::KFUG835JJw": {
+        "count": 17,
+        "variants": {
+          "v001": {
+            "count": 17,
+            "probability": 1.0,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 17
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_7818::Tfnc-ENibi"
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "MS_7818::Tfnc-ENibi": {
+        "count": 17,
+        "variants": {
+          "v001": {
+            "count": 17,
+            "probability": 1.0,
+            "sequence": []
+          }
+        }
+      },
+      "MS_8549::KFUG835JJw": {
+        "count": 5,
+        "variants": {
+          "v001": {
+            "count": 5,
+            "probability": 1.0,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 5
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_8549::Tfnc-ENibi"
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "MS_8549::Tfnc-ENibi": {
+        "count": 5,
+        "variants": {
+          "v001": {
+            "count": 5,
+            "probability": 1.0,
+            "sequence": []
+          }
+        }
+      },
+      "USER": {
+        "count": 17893,
+        "variants": {
+          "v001": {
+            "count": 7555,
+            "probability": 0.42223215782708323,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 7555
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_42200::KFUG835JJw"
+                }
+              ]
+            ]
+          },
+          "v002": {
+            "count": 6921,
+            "probability": 0.38679930699156095,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 6921
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_19017::KFUG835JJw"
+                }
+              ]
+            ]
+          },
+          "v003": {
+            "count": 1026,
+            "probability": 0.057340859554015536,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 1026
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_61055::KFUG835JJw"
+                }
+              ]
+            ]
+          },
+          "v004": {
+            "count": 505,
+            "probability": 0.028223327558263008,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 505
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_43806::KFUG835JJw"
+                }
+              ]
+            ]
+          },
+          "v005": {
+            "count": 479,
+            "probability": 0.026770245347342535,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 479
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_19630::KFUG835JJw"
+                }
+              ]
+            ]
+          },
+          "v006": {
+            "count": 370,
+            "probability": 0.020678477616945173,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 370
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_68166::KFUG835JJw"
+                }
+              ]
+            ]
+          },
+          "v007": {
+            "count": 264,
+            "probability": 0.014754373218577097,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 264
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_5182::KFUG835JJw"
+                }
+              ]
+            ]
+          },
+          "v008": {
+            "count": 149,
+            "probability": 0.008327278824121164,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 149
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_29370::KFUG835JJw"
+                }
+              ]
+            ]
+          },
+          "v009": {
+            "count": 130,
+            "probability": 0.0072654110546023585,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 130
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_19017::Rs4VbRVJj2"
+                }
+              ]
+            ]
+          },
+          "v010": {
+            "count": 125,
+            "probability": 0.006985972167886883,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 125
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_59::KFUG835JJw"
+                }
+              ]
+            ]
+          },
+          "v011": {
+            "count": 100,
+            "probability": 0.005588777734309507,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 100
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_52678::KFUG835JJw"
+                }
+              ]
+            ]
+          },
+          "v012": {
+            "count": 83,
+            "probability": 0.00463868551947689,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 83
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_53788::KFUG835JJw"
+                }
+              ]
+            ]
+          },
+          "v013": {
+            "count": 39,
+            "probability": 0.0021796233163807075,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 39
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_59::Rs4VbRVJj2"
+                }
+              ]
+            ]
+          },
+          "v014": {
+            "count": 30,
+            "probability": 0.001676633320292852,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 30
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_15819::KFUG835JJw"
+                }
+              ]
+            ]
+          },
+          "v015": {
+            "count": 27,
+            "probability": 0.0015089699882635667,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 27
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_61055::Rs4VbRVJj2"
+                }
+              ]
+            ]
+          },
+          "v016": {
+            "count": 22,
+            "probability": 0.0012295311015480914,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 22
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_56298::Rs4VbRVJj2"
+                }
+              ]
+            ]
+          },
+          "v017": {
+            "count": 17,
+            "probability": 0.0009500922148326161,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 17
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_7818::KFUG835JJw"
+                }
+              ]
+            ]
+          },
+          "v018": {
+            "count": 14,
+            "probability": 0.0007824288828033309,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 14
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_73347::Rs4VbRVJj2"
+                }
+              ]
+            ]
+          },
+          "v019": {
+            "count": 7,
+            "probability": 0.00039121444140166546,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 7
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_3891::KFUG835JJw"
+                }
+              ]
+            ]
+          },
+          "v020": {
+            "count": 5,
+            "probability": 0.0002794388867154753,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 5
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_23571::KFUG835JJw"
+                }
+              ]
+            ]
+          },
+          "v021": {
+            "count": 5,
+            "probability": 0.0002794388867154753,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 5
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_5182::Rs4VbRVJj2"
+                }
+              ]
+            ]
+          },
+          "v022": {
+            "count": 5,
+            "probability": 0.0002794388867154753,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 5
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_8549::KFUG835JJw"
+                }
+              ]
+            ]
+          },
+          "v023": {
+            "count": 3,
+            "probability": 0.0001676633320292852,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 3
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_68220::KFUG835JJw"
+                }
+              ]
+            ]
+          },
+          "v024": {
+            "count": 2,
+            "probability": 0.00011177555468619013,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 2
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_1117::KFUG835JJw"
+                }
+              ]
+            ]
+          },
+          "v025": {
+            "count": 2,
+            "probability": 0.00011177555468619013,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 2
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_12005::Rs4VbRVJj2"
+                }
+              ]
+            ]
+          },
+          "v026": {
+            "count": 2,
+            "probability": 0.00011177555468619013,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 2
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_1404::KFUG835JJw"
+                }
+              ]
+            ]
+          },
+          "v027": {
+            "count": 2,
+            "probability": 0.00011177555468619013,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 2
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_5122::KFUG835JJw"
+                }
+              ]
+            ]
+          },
+          "v028": {
+            "count": 2,
+            "probability": 0.00011177555468619013,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 2
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_5122::Rs4VbRVJj2"
+                }
+              ]
+            ]
+          },
+          "v029": {
+            "count": 1,
+            "probability": 5.588777734309507e-05,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 1
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_34145::KFUG835JJw"
+                }
+              ]
+            ]
+          },
+          "v030": {
+            "count": 1,
+            "probability": 5.588777734309507e-05,
+            "sequence": [
+              [
+                {
+                  "callee_variant_counts": {
+                    "v001": 1
+                  },
+                  "callee_variants": {
+                    "v001": 1.0
+                  },
+                  "slot": {
+                    "group": 0,
+                    "index": 0
+                  },
+                  "target": "MS_5766::KFUG835JJw"
+                }
+              ]
+            ]
+          }
+        }
+      }
+    },
+    "root_span_count": 17893,
+    "row_count": 46181,
+    "schema_version": 1,
+    "span_count": 35801,
+    "summary": {
+      "method_count": 58,
+      "root_span_count": 17893,
+      "row_count": 46181,
+      "service": "S_130831269",
+      "span_count": 35801,
+      "stat_clamped_spans": 1714,
+      "stat_root_span_count": 17893,
+      "stat_row_count": 46181,
+      "stat_span_count": 35801,
+      "stat_trace_count": 17893,
+      "trace_count": 17893,
+      "variant_count": 89
+    },
+    "trace_count": 17893,
+    "variant_count": 89
+  }
+}

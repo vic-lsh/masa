@@ -145,6 +145,8 @@ class SyntheticApp(AppPlugin):
                 "BINARY_NAME=synthetic_frontend",
                 "LOG_LEVEL=${LOG_LEVEL:-info}",
                 "DOCKER_COMPOSE_PROJECT_NAME=${DOCKER_COMPOSE_PROJECT_NAME:-}",
+                "MASA_FANOUT_AWARE=${MASA_FANOUT_AWARE:-1}",
+                "SYNTHETIC_DISABLE_CPU_YIELD=${SYNTHETIC_DISABLE_CPU_YIELD:-0}",
             ],
             "volumes": ["${APP_CONFIG_PATH}:/usr/config.json:ro"],
             "deploy": {"resources": {"limits": {"cpus": "4"}}},
@@ -166,6 +168,8 @@ class SyntheticApp(AppPlugin):
                     "LOG_LEVEL=${LOG_LEVEL:-info}",
                     f"SERVICE_ID={service_id}",
                     "DOCKER_COMPOSE_PROJECT_NAME=${DOCKER_COMPOSE_PROJECT_NAME:-}",
+                    "MASA_FANOUT_AWARE=${MASA_FANOUT_AWARE:-1}",
+                    "SYNTHETIC_DISABLE_CPU_YIELD=${SYNTHETIC_DISABLE_CPU_YIELD:-0}",
                 ],
                 "volumes": ["${APP_CONFIG_PATH}:/usr/config.json:ro"],
                 "deploy": {"resources": {"limits": {"cpus": "${CPUS_PER_REPLICA}"}}},
@@ -210,6 +214,9 @@ class SyntheticApp(AppPlugin):
                 # CPUs per replica (use default if not specified)
                 cpus_per_replica = app_config.get("child_cpus_per_replica", 1)
                 env_vars["CPUS_PER_REPLICA"] = str(cpus_per_replica)
+                env_vars["SYNTHETIC_DISABLE_CPU_YIELD"] = (
+                    "1" if app_config.get("disable_cpu_yield", False) else "0"
+                )
             else:
                 # Traditional mode: calculate child replicas from child_services
                 child_services = app_config.get("child_services", [])
@@ -225,10 +232,14 @@ class SyntheticApp(AppPlugin):
                 # CPUs per replica
                 cpus_per_replica = app_config.get("child_cpus_per_replica", 1)
                 env_vars["CPUS_PER_REPLICA"] = str(cpus_per_replica)
+                env_vars["SYNTHETIC_DISABLE_CPU_YIELD"] = (
+                    "1" if app_config.get("disable_cpu_yield", False) else "0"
+                )
         else:
             # Use defaults if no config provided
             env_vars["CHILD_REPLICAS"] = "1"
             env_vars["CPUS_PER_REPLICA"] = "1"
+            env_vars["SYNTHETIC_DISABLE_CPU_YIELD"] = "0"
 
         # Set default log level if not specified
         if "LOG_LEVEL" not in env_vars:

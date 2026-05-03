@@ -4,6 +4,8 @@ pub const SCHED_SLO: bool = cfg!(feature = "sched_slo");
 
 pub const SCHED_TAILCLIPPER: bool = cfg!(feature = "sched_tailclipper");
 
+pub const SCHED_ORACLE: bool = cfg!(feature = "sched_oracle");
+
 pub const SCHED_PRED: bool = cfg!(feature = "sched_pred");
 
 pub const ABORT_SLO: bool = cfg!(feature = "abort_slo");
@@ -18,13 +20,34 @@ pub const RAJOMON: bool = cfg!(feature = "ac_rajomon");
 // === Scheduling discipline constraints ===
 // The base scheduling policies are mutually exclusive.
 #[cfg(all(feature = "sched_fifo", feature = "sched_slo"))]
-compile_error!("Enable at most one scheduling policy: sched_fifo | sched_slo | sched_tailclipper");
+compile_error!(
+    "Enable at most one scheduling policy: sched_fifo | sched_slo | sched_tailclipper | sched_oracle"
+);
 
 #[cfg(all(feature = "sched_fifo", feature = "sched_tailclipper"))]
-compile_error!("Enable at most one scheduling policy: sched_fifo | sched_slo | sched_tailclipper");
+compile_error!(
+    "Enable at most one scheduling policy: sched_fifo | sched_slo | sched_tailclipper | sched_oracle"
+);
+
+#[cfg(all(feature = "sched_fifo", feature = "sched_oracle"))]
+compile_error!(
+    "Enable at most one scheduling policy: sched_fifo | sched_slo | sched_tailclipper | sched_oracle"
+);
 
 #[cfg(all(feature = "sched_slo", feature = "sched_tailclipper"))]
-compile_error!("Enable at most one scheduling policy: sched_slo | sched_tailclipper");
+compile_error!(
+    "Enable at most one scheduling policy: sched_fifo | sched_slo | sched_tailclipper | sched_oracle"
+);
+
+#[cfg(all(feature = "sched_slo", feature = "sched_oracle"))]
+compile_error!(
+    "Enable at most one scheduling policy: sched_fifo | sched_slo | sched_tailclipper | sched_oracle"
+);
+
+#[cfg(all(feature = "sched_tailclipper", feature = "sched_oracle"))]
+compile_error!(
+    "Enable at most one scheduling policy: sched_fifo | sched_slo | sched_tailclipper | sched_oracle"
+);
 
 // === TailClipper constraints ===
 // sched_tailclipper implements the TailClipper paper's scheduling policy exactly:
@@ -34,6 +57,12 @@ compile_error!("Enable at most one scheduling policy: sched_slo | sched_tailclip
 compile_error!(
     "'sched_tailclipper' cannot be combined with 'sched_pred': \
     sched_tailclipper implements the TailClipper paper's policy as-is"
+);
+
+#[cfg(all(feature = "sched_oracle", feature = "sched_pred"))]
+compile_error!(
+    "'sched_oracle' cannot be combined with 'sched_pred': \
+    oracle uses perfect synthetic knowledge instead of learned estimates"
 );
 
 // === Admission control constraints ===
@@ -85,10 +114,11 @@ compile_error!("'ac_pred' requires 'estimator'");
     not(any(
         feature = "sched_fifo",
         feature = "sched_slo",
-        feature = "sched_tailclipper"
+        feature = "sched_tailclipper",
+        feature = "sched_oracle"
     ))
 ))]
 compile_error!(
     "Admission control (ac_pred | ac_rajomon) requires a scheduling policy \
-     (sched_fifo | sched_slo | sched_tailclipper)"
+     (sched_fifo | sched_slo | sched_tailclipper | sched_oracle)"
 );

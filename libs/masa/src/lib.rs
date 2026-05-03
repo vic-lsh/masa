@@ -1,5 +1,6 @@
 pub use masa_core::{
     time_now, Context, ContextBuilder, FutureSpan, LatencyDistribution, MethodId, PriorityHint,
+    ORACLE_CHILD_WORK_US_HEADER, ORACLE_REMAINING_AFTER_US_HEADER,
 };
 
 use std::sync::atomic::{AtomicU64, Ordering};

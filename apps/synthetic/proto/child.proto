@@ -29,4 +29,5 @@ message MethodResponse {
   uint64 queueing_latency = 1;
   uint64 handler_latency = 2;
   uint64 finished_at = 3;
+  string hop_trace_json = 4;
 }

@@ -33,6 +33,13 @@ pub trait LatencyEstimator: Send + Sync {
     fn mean_floor_estimate(&self) -> u64 {
         self.mean_estimate()
     }
+
+    /// Wallclock timestamp (microseconds since epoch) of the most recent `track()` call.
+    /// Used by callers to apply time-based decay to stale estimates. Default is 0
+    /// (no observation recorded), which callers should treat as "infinitely old".
+    fn last_observation_us(&self) -> u64 {
+        0
+    }
 }
 
 pub use ewma::LatencyEwma;

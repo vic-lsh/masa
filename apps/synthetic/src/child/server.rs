@@ -8,9 +8,14 @@ use tonic::{Request, Response, Status};
 
 use crate::bootstrap::{ConnectionBootstrap, ConnectionBootstrapTask};
 use crate::config::{parse_call_sequences, ServiceMethod, SyntheticConfig};
+use crate::hop_trace::{encode_hop_traces, HopTrace};
 use crate::service_registry::ServiceRegistry;
 use crate::tonic::{child, child::child_server::Child};
-use crate::util::{execute_call_sequence, simulate_work};
+#[cfg(not(feature = "sched_oracle"))]
+use crate::util::execute_call_sequence;
+#[cfg(feature = "sched_oracle")]
+use crate::util::execute_oracle_call_sequence;
+use crate::util::simulate_work;
 use app_utils::timing::time_now;
 
 pub struct ChildImpl {
@@ -150,29 +155,69 @@ impl Child for ChildImpl {
         &self,
         request: Request<child::MethodRequest>,
     ) -> Result<Response<child::MethodResponse>, Status> {
+        #[cfg(feature = "sched_oracle")]
+        let oracle_plan = crate::oracle::ExecutionPlan::from_metadata(request.metadata())?;
+
         let request = request.into_inner();
-        let queueing_latency = time_now() - request.sent_at;
+        let started_at = time_now();
+        let queueing_latency = started_at - request.sent_at;
         let start = Instant::now();
 
         // Get the method definition
         let method = self.get_method(&request.service_id, &request.method_name)?;
 
-        // Sample latency from method's distribution
+        // Under sched_oracle, execute the same per-request work sampled by the frontend planner.
+        #[cfg(feature = "sched_oracle")]
+        let duration_us = oracle_plan
+            .as_ref()
+            .map(|plan| plan.local_work_us)
+            .unwrap_or_else(|| method.latency_distribution.sample());
+
+        #[cfg(not(feature = "sched_oracle"))]
         let duration_us = method.latency_distribution.sample();
 
         // Execute call sequence
-        if !method.parsed_call_sequence.is_empty() {
-            execute_call_sequence(&self.service_registry, &method.parsed_call_sequence).await?;
-        }
+        #[cfg(feature = "sched_oracle")]
+        let child_traces = if let Some(plan) = oracle_plan.as_ref() {
+            execute_oracle_call_sequence(&self.service_registry, &plan.child_steps).await?
+        } else if !method.parsed_call_sequence.is_empty() {
+            return Err(Status::internal(format!(
+                "missing oracle execution plan for non-leaf method {}::{}",
+                request.service_id, request.method_name
+            )));
+        } else {
+            Vec::new()
+        };
+
+        #[cfg(not(feature = "sched_oracle"))]
+        let child_traces = if !method.parsed_call_sequence.is_empty() {
+            execute_call_sequence(&self.service_registry, &method.parsed_call_sequence).await?
+        } else {
+            Vec::new()
+        };
 
         let busy_spin_ratio = method.busy_spin_ratio.unwrap_or(0.1);
 
         simulate_work(duration_us, busy_spin_ratio).await;
+        let finished_at = time_now();
+        let handler_latency = Instant::now().duration_since(start).as_micros() as u64;
+        let trace = HopTrace {
+            service_id: request.service_id,
+            method_name: request.method_name,
+            sent_at: request.sent_at,
+            started_at,
+            finished_at,
+            configured_work_us: duration_us,
+            queueing_latency_us: queueing_latency,
+            handler_latency_us: handler_latency,
+            children: child_traces,
+        };
 
         Ok(Response::new(child::MethodResponse {
             queueing_latency,
-            handler_latency: Instant::now().duration_since(start).as_micros() as u64,
-            finished_at: time_now(),
+            handler_latency,
+            finished_at,
+            hop_trace_json: encode_hop_traces(&[trace])?,
         }))
     }
 }

@@ -14,30 +14,44 @@ use crate::MethodRegistry;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) struct MethodKey(pub(crate) MethodId);
 
-/// Builder intermediate for [`ParentToChildKey`].
-pub(crate) struct ParentToChildKeyBuilder(MethodId);
+/// Builder intermediates for [`ParentToChildKey`].
+pub(crate) struct ParentToChildKeyRootStage(MethodId);
+pub(crate) struct ParentToChildKeyParentStage(MethodId, MethodId);
 
-/// Parent→child RPC method pair key (for remaining-wallclock, child-wallclock estimates).
+/// (root API, parent, child) RPC method triple key (for remaining-wallclock,
+/// child-wallclock estimates). Root API is the primary index so observations
+/// from different ingress API types are not pooled together on a shared
+/// downstream edge.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub(crate) struct ParentToChildKey(MethodId, MethodId);
+pub(crate) struct ParentToChildKey(MethodId, MethodId, MethodId);
 
 impl ParentToChildKey {
-    pub(crate) fn parent_rpc_method(id: MethodId) -> ParentToChildKeyBuilder {
-        ParentToChildKeyBuilder(id)
+    pub(crate) fn root_rpc_method(id: MethodId) -> ParentToChildKeyRootStage {
+        ParentToChildKeyRootStage(id)
     }
 
-    pub(crate) fn parent(&self) -> MethodId {
+    pub(crate) fn root(&self) -> MethodId {
         self.0
     }
 
-    pub(crate) fn child(&self) -> MethodId {
+    pub(crate) fn parent(&self) -> MethodId {
         self.1
+    }
+
+    pub(crate) fn child(&self) -> MethodId {
+        self.2
     }
 }
 
-impl ParentToChildKeyBuilder {
+impl ParentToChildKeyRootStage {
+    pub(crate) fn parent_rpc_method(self, id: MethodId) -> ParentToChildKeyParentStage {
+        ParentToChildKeyParentStage(self.0, id)
+    }
+}
+
+impl ParentToChildKeyParentStage {
     pub(crate) fn child_rpc_method(self, id: MethodId) -> ParentToChildKey {
-        ParentToChildKey(self.0, id)
+        ParentToChildKey(self.0, self.1, id)
     }
 }
 
@@ -45,7 +59,8 @@ impl fmt::Display for ParentToChildKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "{}=>{}",
+            "[{}]{}=>{}",
+            format_method_name(self.root()),
             format_method_name(self.parent()),
             format_method_name(self.child())
         )
@@ -94,6 +109,16 @@ impl fmt::Display for RootToLocalKey {
 // LatencyMap
 // ---------------------------------------------------------------------------
 
+/// Single-lookup pack of estimator state used by callers that need mean +
+/// floor + freshness in one go (e.g. the BCF feasibility check).
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, Default)]
+pub(crate) struct EstimatesPack {
+    pub(crate) mean: u64,
+    pub(crate) floor: u64,
+    pub(crate) last_observation_us: u64,
+}
+
 #[derive(Debug)]
 pub(crate) struct LatencyMap<K, E> {
     inner: Mutex<HashMap<K, E>>,
@@ -138,13 +163,35 @@ where
     }
 
     /// Returns the mean-only estimate (k=0), used for conservative early-return thresholds.
+    #[allow(dead_code)]
     pub(crate) fn get_mean_estimate(&self, key: K) -> Option<u64> {
         self.get_estimate_with(key, E::mean_estimate)
     }
 
     /// Returns the floor estimate, used for ER thresholds that are robust to mean inflation.
+    #[allow(dead_code)]
     pub(crate) fn get_mean_floor_estimate(&self, key: K) -> Option<u64> {
         self.get_estimate_with(key, E::mean_floor_estimate)
+    }
+
+    /// Single-lookup pack of (mean, mean_floor, last_observation_us).
+    /// Returns `None` if the entry exists but does not yet have enough data;
+    /// inserts a default entry if the key is missing (mirrors `get_estimate_with`).
+    #[allow(dead_code)]
+    pub(crate) fn get_estimates_pack(&self, key: K) -> Option<EstimatesPack> {
+        let mut m = self.inner.lock().unwrap();
+        if let Some(estimator) = m.get(&key) {
+            if estimator.can_estimate() {
+                return Some(EstimatesPack {
+                    mean: estimator.mean_estimate(),
+                    floor: estimator.mean_floor_estimate(),
+                    last_observation_us: estimator.last_observation_us(),
+                });
+            }
+        } else {
+            m.insert(key, E::default());
+        }
+        None
     }
 
     pub(crate) fn track(&self, key: K, duration: u64) {

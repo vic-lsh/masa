@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -10,13 +11,14 @@ use tonic_core::CowGrpcMethod;
 /// Process-local: two different processes may assign different `MethodId`s to
 /// the same (service, method) pair. Use [`RootMethod`](masa_core::RootMethod)
 /// for cross-process identity.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct MethodId(u64);
 
 /// Global registry for mapping (Service, Method) pairs to unique IDs.
 /// This allows us to use u64 IDs in the hot path instead of hashing strings.
 pub struct MethodRegistry {
     map: Mutex<HashMap<CowGrpcMethod, MethodId>>,
+    service_map: Mutex<HashMap<Cow<'static, str>, MethodId>>,
     id_map: Mutex<HashMap<MethodId, CowGrpcMethod>>,
     next_id: AtomicU64,
 }
@@ -33,6 +35,7 @@ impl MethodRegistry {
     fn new() -> Self {
         Self {
             map: Mutex::new(HashMap::new()),
+            service_map: Mutex::new(HashMap::new()),
             id_map: Mutex::new(HashMap::new()),
             next_id: AtomicU64::new(1),
         }
@@ -67,6 +70,50 @@ impl MethodRegistry {
         let mut id_map = self.id_map.lock().unwrap();
         id_map.insert(id, key);
 
+        id
+    }
+
+    /// Get the ID for a service-only key.
+    ///
+    /// Fanout fallback estimates use service-shape signatures to avoid
+    /// fragmenting on high-cardinality method/interface names. Reuse the
+    /// method registry so the data path still deals in compact numeric IDs.
+    pub fn get_or_register_service(&self, service: impl Into<Cow<'static, str>>) -> MethodId {
+        self.get_or_register_service_cow(service.into())
+    }
+
+    /// Get the IDs for both exact method and service-only identity.
+    ///
+    /// Used by fanout estimation on the child-RPC data path. This avoids
+    /// asking callers to perform a second method-registry lookup just to build
+    /// the coarser service-shape signature.
+    pub fn get_or_register_with_service(&self, key: CowGrpcMethod) -> (MethodId, MethodId) {
+        let service_id = self.get_or_register_service_cow(Cow::Owned(key.service().to_string()));
+        let method_id = self.get_or_register(key);
+        (method_id, service_id)
+    }
+
+    fn get_or_register_service_cow(&self, service: Cow<'static, str>) -> MethodId {
+        {
+            let map = self.service_map.lock().unwrap();
+            if let Some(&id) = map.get(service.as_ref()) {
+                return id;
+            }
+        }
+
+        let mut map = self.service_map.lock().unwrap();
+        if let Some(&id) = map.get(service.as_ref()) {
+            return id;
+        }
+
+        let id = self
+            .next_id
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let id = MethodId(id);
+        map.insert(service.clone(), id);
+
+        let mut id_map = self.id_map.lock().unwrap();
+        id_map.insert(id, CowGrpcMethod::new(service, "*"));
         id
     }
 

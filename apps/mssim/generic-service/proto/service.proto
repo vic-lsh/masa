@@ -28,6 +28,7 @@ message InvokeRequest {
   uint64 start_at = 2;
   string method_name = 3;
   string graph_name = 4;
+  string variant_id = 5;
 }
 
 message InvokeResponse {

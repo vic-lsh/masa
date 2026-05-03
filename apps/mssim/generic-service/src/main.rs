@@ -77,10 +77,12 @@ impl Service for AlibabaService {
         let request = request.into_inner();
         let method_name: MethodId = request.method_name.into();
         let graph_name = GraphId::from_string(request.graph_name);
+        let variant_id = (!request.variant_id.is_empty()).then_some(request.variant_id);
 
         self.state()
             .handle_method(
                 method_name.clone(),
+                variant_id,
                 request.req_id,
                 request.start_at,
                 parent_chain,

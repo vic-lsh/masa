@@ -7,7 +7,7 @@
 use std::sync::OnceLock;
 use std::task::Poll;
 
-use masa_core::{Context, PriorityHint, RootMethod, ABORT_SLACK, SIGNAL_SLACK};
+use masa_core::{Context, PriorityHint, RootMethod, ABORT_SLACK};
 use tonic_core::{Code, CowGrpcMethod, Response, Status};
 
 use super::est::estimator::DefaultLatencyEstimator;
@@ -116,7 +116,7 @@ impl Layer for EstimationLayer {
             }
         }
 
-        self.mark_deadline_signal_if_late(ctx);
+        super::est::signal_slack::mark_if_late(ctx, &self.request_metadata);
 
         #[cfg(feature = "sched_pred")]
         {
@@ -141,16 +141,42 @@ impl Layer for EstimationLayer {
     ) -> Result<(), Status> {
         let child_tracker = self.estimation.begin_child(child_method_name);
         let time_left = ctx.e2e_deadline().saturating_sub(masa_core::time_now());
-        let remaining = self
+        let root = self
             .estimation
-            .est
-            .est_after_child_wallclock(child_tracker.key, time_left);
+            .root_method_id
+            .unwrap_or(self.estimation.resolved_method_id);
+        let remaining = self.estimation.est.est_after_child_wallclock_for_group(
+            root,
+            self.estimation.resolved_method_id,
+            child_tracker.path_prefix,
+            &child_tracker.base_signature,
+            child_tracker.service_path_prefix,
+            &child_tracker.base_service_signature,
+            child_tracker.child_id,
+            time_left,
+        );
 
         self.estimation
             .est
             .log_estimates(&child_tracker.key, &remaining);
 
-        let (deadline, prio_hint) = Self::child_deadline_and_prio(ctx, remaining.full);
+        // Wallclock-time decay applied to BOTH the deadline-tightening floor
+        // and the priority-tightening full estimate. Stale samples (no fresh
+        // observation in TAU_DECAY_US) shrink toward zero — without this, a
+        // floor inflated by sustained queueing keeps tightening child
+        // deadlines indefinitely, causing `abort_slack` to kill mid-flight
+        // requests that could have completed (the same metastable trap the
+        // BCF check now avoids).
+        let decay = crate::layer::est::state::decay_factor(
+            masa_core::time_now(),
+            self.estimation
+                .est
+                .after_child_wallclock_last_obs(child_tracker.key),
+        );
+        let decayed_full = (remaining.full as f64 * decay) as u64;
+        let decayed_floor = (remaining.floor as f64 * decay) as u64;
+
+        let (deadline, prio_hint) = Self::child_deadline_and_prio(ctx, decayed_full, decayed_floor);
         child_rpc.deadline = deadline;
         child_rpc.prio_hint = prio_hint;
 
@@ -209,7 +235,7 @@ impl Layer for EstimationLayer {
                 }
             }
         }
-        self.mark_deadline_signal_if_late(ctx);
+        super::est::signal_slack::mark_if_late(ctx, &self.request_metadata);
         Ok(())
     }
 
@@ -229,7 +255,7 @@ impl Layer for EstimationLayer {
     fn finalize<Ret>(&self, ctx: &mut Context, result: &mut Result<Response<Ret>, Status>) {
         if is_early_return_response(result) {
             self.request_metadata.mark_early_return();
-        } else if !self.request_metadata.is_subtree_signaled() {
+        } else if !super::est::signal_slack::should_skip_flush(&self.request_metadata) {
             self.estimation.flush();
         }
         self.request_metadata.inject_response_meta(ctx);
@@ -237,33 +263,30 @@ impl Layer for EstimationLayer {
 }
 
 impl EstimationLayer {
-    #[inline]
-    fn mark_deadline_signal_if_late(&self, ctx: &Context) {
-        if SIGNAL_SLACK {
-            let local_deadline = ctx.deadline();
-            if local_deadline != 0 && masa_core::time_now() > local_deadline {
-                self.request_metadata.mark_deadline_signal();
-            }
-        }
-    }
-
     /// Compute child deadline and priority hint.
     ///
     /// When `sched_pred` is enabled, tightens the deadline by subtracting
     /// `est_remaining`. When disabled, passes through the parent values.
     #[inline]
-    fn child_deadline_and_prio(ctx: &Context, est_remaining: u64) -> (u64, PriorityHint) {
+    fn child_deadline_and_prio(
+        ctx: &Context,
+        #[cfg_attr(not(feature = "sched_pred"), allow(unused_variables))]
+        priority_est_remaining: u64,
+        deadline_est_remaining: u64,
+    ) -> (u64, PriorityHint) {
         #[cfg(feature = "sched_pred")]
         {
-            let d = ctx.deadline().saturating_sub(est_remaining);
-            (
-                d,
-                PriorityHint::new(d.saturating_sub(masa_core::time_now())),
-            )
+            // Priority is a soft scheduling signal, so use the full estimate.
+            // The propagated deadline is a hard abort threshold; use the floor
+            // estimate to avoid converting estimator variance into false ERs.
+            let deadline = ctx.deadline().saturating_sub(deadline_est_remaining);
+            let priority_deadline = ctx.deadline().saturating_sub(priority_est_remaining);
+            let priority_remaining = priority_deadline.saturating_sub(masa_core::time_now());
+            (deadline, PriorityHint::new(priority_remaining))
         }
         #[cfg(not(feature = "sched_pred"))]
         {
-            let d = ctx.deadline().saturating_sub(est_remaining);
+            let d = ctx.deadline().saturating_sub(deadline_est_remaining);
             (d, ctx.prio_hint())
         }
     }

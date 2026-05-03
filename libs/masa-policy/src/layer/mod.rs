@@ -8,6 +8,8 @@
 // - **Guard**: `E2eDeadlineGuardLayer` — rejects past-deadline requests.
 // - **Estimation** (feature `estimator`): `EstimationLayer` — latency tracking,
 //   deadline tightening, reprioritization, feasibility checks.
+// - **Oracle** (feature `sched_oracle`): `OracleLayer` — perfect-information
+//   child deadline and priority assignment for synthetic experiments.
 // - **Admission** (mutually exclusive, compile-time selected):
 //   - `predictive` (feature `ac_pred`): goodput-tracking token-bucket AC.
 //   - `rajomon` (feature `ac_rajomon`): token-based AC with price signals.
@@ -32,6 +34,7 @@ pub(crate) mod est;
 pub(crate) mod estimation;
 
 mod e2e_deadline_guard;
+mod oracle;
 mod queue_latency;
 
 // ── Traits ──────────────────────────────────────────────────────────────
@@ -193,4 +196,5 @@ mod est_noop {
 
 pub(crate) use admission::AdmissionLayer;
 pub(crate) use e2e_deadline_guard::E2eDeadlineGuardLayer;
+pub(crate) use oracle::OracleLayer;
 pub(crate) use queue_latency::QueueLatencyLayer;

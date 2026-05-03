@@ -102,7 +102,7 @@ impl HandlerOuter<SyntheticClient> for RequestHandler {
 struct ARequest {}
 
 impl ARequest {
-    const HEADERS: [&'static str; 1] = ["frontend_latency"];
+    const HEADERS: [&'static str; 2] = ["frontend_latency", "hop_trace_json"];
 }
 
 impl RequestType<SyntheticClient> for ARequest {
@@ -127,7 +127,7 @@ impl RequestType<SyntheticClient> for ARequest {
     }
 
     fn response_to_row(_metadata: &MetadataMap, r: &Self::ResponseType) -> Vec<String> {
-        vec![r.handler_latency.to_string()]
+        vec![r.handler_latency.to_string(), r.hop_trace_json.clone()]
     }
 }
 
@@ -151,11 +151,11 @@ impl RequestType<SyntheticClient> for BRequest {
     }
 
     fn response_output_headers(&self) -> Vec<String> {
-        Vec::new()
+        vec!["hop_trace_json".to_string()]
     }
 
-    fn response_to_row(_metadata: &MetadataMap, _r: &Self::ResponseType) -> Vec<String> {
-        Vec::new()
+    fn response_to_row(_metadata: &MetadataMap, r: &Self::ResponseType) -> Vec<String> {
+        vec![r.hop_trace_json.clone()]
     }
 }
 

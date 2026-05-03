@@ -18,12 +18,14 @@ pub use thread_local::{client, server};
 /// Default hooks type, selected at compile time by feature flags.
 ///
 /// - No scheduling features: `NoopHooks` (zero overhead).
-/// - Any scheduling feature (`sched_fifo`, `sched_slo`, `sched_tailclipper`):
+/// - Any scheduling feature (`sched_fifo`, `sched_slo`, `sched_tailclipper`,
+///   `sched_oracle`):
 ///   `masa_policy::PolicyHooks` with full scheduling hooks.
 #[cfg(not(any(
     feature = "sched_fifo",
     feature = "sched_slo",
-    feature = "sched_tailclipper"
+    feature = "sched_tailclipper",
+    feature = "sched_oracle"
 )))]
 pub type DefaultHooks = tonic_core::masa_ext::noop::NoopHooks;
 
@@ -31,6 +33,7 @@ pub type DefaultHooks = tonic_core::masa_ext::noop::NoopHooks;
 #[cfg(any(
     feature = "sched_fifo",
     feature = "sched_slo",
-    feature = "sched_tailclipper"
+    feature = "sched_tailclipper",
+    feature = "sched_oracle"
 ))]
 pub type DefaultHooks = masa_policy::PolicyHooks;
