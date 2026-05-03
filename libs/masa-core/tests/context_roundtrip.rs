@@ -10,6 +10,7 @@ fn sample_context() -> Context {
         .queue_latencies(QueueLatencies {
             initial: 7,
             resume: 11,
+            ..Default::default()
         })
         .build()
 }

@@ -64,6 +64,7 @@ pub struct ReplayWorkItem {
     pub payload: ProtoReplayRequest,
 }
 
+#[allow(dead_code)]
 fn deserialize_opt_u64<'de, D>(deserializer: D) -> Result<Option<u64>, D::Error>
 where
     D: serde::Deserializer<'de>,
@@ -297,13 +298,22 @@ pub async fn run_replay_load(
     Ok(())
 }
 
-pub fn extract_queue_latencies(metadata: &MetadataMap) -> Option<(u64, u64)> {
+pub fn extract_queue_latencies(metadata: &MetadataMap) -> Option<(u64, u64, String)> {
     if let Some(ctx_str) = metadata.get("ctx").and_then(|v| v.to_str().ok()) {
         let ctx = masa::Context::from_header_string(ctx_str);
         if let Some(ql) = ctx.queue_latencies {
-            return Some((ql.initial, ql.resume));
+            let ql_json = format_queue_lengths(&ql.queue_lengths);
+            return Some((ql.initial, ql.resume, ql_json));
         }
     }
 
     None
+}
+
+fn format_queue_lengths(ql: &std::collections::HashMap<String, u64>) -> String {
+    if ql.is_empty() {
+        return String::new();
+    }
+    let pairs: Vec<String> = ql.iter().map(|(k, v)| format!("\"{}\":{}", k, v)).collect();
+    format!("{{{}}}", pairs.join(","))
 }

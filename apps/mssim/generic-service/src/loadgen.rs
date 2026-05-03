@@ -136,6 +136,7 @@ async fn flush_root_samples_internal(
                 },
                 q_lat_init: sample.queue_latency_init_us,
                 q_lat_resume: sample.queue_latency_resume_us,
+                queue_lengths: sample.queue_lengths.clone(),
                 additional_metrics: Vec::new(),
             };
             csv_data.push_str(&record.to_csv_row());
@@ -363,8 +364,9 @@ async fn run_root_load(
                     match res {
                         Ok(resp) => {
                             stats.ok.fetch_add(1, Ordering::Relaxed);
-                            let (q_init, q_resume) =
-                                extract_queue_latencies(resp.metadata()).unwrap_or((0, 0));
+                            let (q_init, q_resume, q_lengths) =
+                                extract_queue_latencies(resp.metadata())
+                                    .unwrap_or((0, 0, String::new()));
                             if record_sample {
                                 let sample = RootLatencySample {
                                     graph: entry.graph,
@@ -375,6 +377,7 @@ async fn run_root_load(
                                     start_at,
                                     queue_latency_init_us: q_init,
                                     queue_latency_resume_us: q_resume,
+                                    queue_lengths: q_lengths,
                                     e2e_latency_us: elapsed,
                                 };
                                 {
@@ -396,6 +399,7 @@ async fn run_root_load(
                                     start_at,
                                     queue_latency_init_us: 0,
                                     queue_latency_resume_us: 0,
+                                    queue_lengths: String::new(),
                                     e2e_latency_us: elapsed,
                                 };
                                 {
@@ -454,6 +458,8 @@ struct RootLatencySample {
     start_at: u64,
     queue_latency_init_us: u64,
     queue_latency_resume_us: u64,
+    /// JSON-encoded map of service name → queue length at first poll.
+    queue_lengths: String,
     e2e_latency_us: u64,
     error: String,
     missed_slo: bool,

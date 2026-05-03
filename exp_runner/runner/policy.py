@@ -37,6 +37,10 @@ _EST_MAP: dict[str, str] = {
 _DROP_MAP: dict[str, str] = {
     "abort_slack": "slack",
     "abort_slo": "e2e_slo",
+    # signal_slack uses the same trigger as abort_slack but does not abort —
+    # it only signals admission control. Treated as a third ablation in the
+    # same category for plotting purposes.
+    "signal_slack": "slack_signal",
 }
 
 _AC_MAP: dict[str, str] = {
@@ -58,6 +62,7 @@ _DROP_DISPLAY: dict[str | None, str] = {
     None: "no drop",
     "e2e_slo": "drop@SLO",
     "slack": "drop@slack",
+    "slack_signal": "no drop w/ signal",
 }
 
 _FALLBACK_COLORS = [
@@ -196,12 +201,10 @@ class Policy:
         if self.ac == "rajomon":
             if self.prio == "oldest":
                 base = "Rajomon"
-                details = ["w/ TailClipper"]
+                details = ["TailClipper"]
             else:
                 base = "Rajomon"
-                details = [
-                    "FIFO default" if self.prio == "fifo" else _PRIO_DISPLAY[self.prio]
-                ]
+                details = ["FIFO" if self.prio == "fifo" else _PRIO_DISPLAY[self.prio]]
             if self.drop is not None:
                 details.append(_DROP_DISPLAY[self.drop])
             return self._format_display_name(base, details)
@@ -224,38 +227,47 @@ class Policy:
         Palette (Okabe-Ito color-blind-safe + grey):
 
           prio=fifo:
-            no drop     → grey          #999999
-            abort_slo   → sky blue      #56B4E9
-            abort_slack → blue          #0072B2
+            no drop       → grey          #999999
+            abort_slo     → sky blue      #56B4E9
+            abort_slack   → blue          #0072B2
+            signal_slack  → teal          #44AA99
 
           prio=e2e_slo:
-            no drop     → yellow        #F0E442
-            abort_slo   → black         #000000
-            abort_slack → light blue    #88CCEE  (rare)
+            no drop       → yellow        #F0E442
+            abort_slo     → black         #000000
+            abort_slack   → light blue    #88CCEE  (rare)
+            signal_slack  → indigo        #332288  (rare)
 
           prio=oldest (tailclipper):
-            no drop     → dark pink     #AA3377  (rare)
-            abort_slo   → reddish purple #CC79A7
-            abort_slack → dark wine     #882255  (rare)
+            no drop       → dark grey     #555555  (groups with FIFO grey,
+                                                   used by Rajomon TailClipper)
+            abort_slo     → reddish purple #CC79A7
+            abort_slack   → dark wine     #882255  (rare)
+            signal_slack  → mauve         #DDCC77  (rare)
 
           prio=slack (pred):
-            no drop     → vermillion    #D55E00
-            abort_slo   → orange        #E69F00
-            abort_slack → bluish green  #009E73
+            no drop       → vermillion    #D55E00
+            abort_slo     → orange        #E69F00
+            abort_slack   → bluish green  #009E73
+            signal_slack  → green         #117733
         """
         _color_map: dict[tuple[str | None, str | None], str] = {
             ("fifo", None): "#999999",
             ("fifo", "e2e_slo"): "#56B4E9",
             ("fifo", "slack"): "#0072B2",
+            ("fifo", "slack_signal"): "#44AA99",
             ("e2e_slo", None): "#F0E442",
             ("e2e_slo", "e2e_slo"): "#000000",
             ("e2e_slo", "slack"): "#88CCEE",
-            ("oldest", None): "#AA3377",
+            ("e2e_slo", "slack_signal"): "#332288",
+            ("oldest", None): "#555555",
             ("oldest", "e2e_slo"): "#CC79A7",
             ("oldest", "slack"): "#882255",
+            ("oldest", "slack_signal"): "#DDCC77",
             ("slack", None): "#D55E00",
             ("slack", "e2e_slo"): "#E69F00",
             ("slack", "slack"): "#009E73",
+            ("slack", "slack_signal"): "#117733",
         }
         color = _color_map.get((self.prio, self.drop))
         if color is not None:
@@ -277,16 +289,19 @@ class Policy:
 
     @property
     def linestyle(self) -> str:
-        """Matplotlib linestyle. Encodes the drop mechanism as a 3-way split so
-        abort_slo and abort_slack are visually distinct even when color is similar:
-          no drop     → solid     "-"
-          abort_slo   → dashed    "--"
-          abort_slack → dash-dot  "-."
+        """Matplotlib linestyle. Encodes the drop mechanism so ablation
+        variants are visually distinct even when color is similar:
+          no drop       → solid     "-"
+          abort_slo     → dashed    "--"
+          abort_slack   → dash-dot  "-."
+          signal_slack  → dotted    ":"
         """
         if self.drop == "e2e_slo":
             return "--"
         if self.drop == "slack":
             return "-."
+        if self.drop == "slack_signal":
+            return ":"
         return "-"
 
     @property

@@ -1,26 +1,39 @@
-{{/* Socialnet microservices (per-binary images). */}}
+{{/*
+  Socialnet microservices (per-binary images).
+
+  Each `services[]` entry expands to `replicas` independent Deployments named
+  `{fullname}-{name}-1`..`{fullname}-{name}-N`, each with `replicas: 1` and a
+  unique component label. Paired with the matching per-pod Services in
+  services.yaml, this gives the Rust `LoadBalancedChannel` true client-side
+  fan-out to N endpoints — kube-proxy IP-level LB doesn't fan out per-RPC on
+  a single long-lived gRPC/HTTP-2 connection, so we need distinct endpoints.
+*/}}
 {{- range $service := .Values.services }}
+{{- $replicas := int ($service.replicas | default 1) }}
+{{- range $i := until $replicas }}
+{{- $idx := add $i 1 }}
+{{- $component := printf "%s-%d" $service.name $idx }}
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "socialnet.fullname" $ }}-{{ $service.name }}
+  name: {{ include "socialnet.fullname" $ }}-{{ $component }}
   labels:
     {{- include "socialnet.labels" $ | nindent 4 }}
-    app.kubernetes.io/component: {{ $service.name }}
+    app.kubernetes.io/component: {{ $component }}
 spec:
-  replicas: {{ $service.replicas | default 1 }}
+  replicas: 1
   selector:
     matchLabels:
       {{- include "socialnet.selectorLabels" $ | nindent 6 }}
-      app.kubernetes.io/component: {{ $service.name }}
+      app.kubernetes.io/component: {{ $component }}
   template:
     metadata:
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") $ | sha256sum }}
       labels:
         {{- include "socialnet.selectorLabels" $ | nindent 8 }}
-        app.kubernetes.io/component: {{ $service.name }}
+        app.kubernetes.io/component: {{ $component }}
     spec:
       containers:
         - name: service
@@ -61,6 +74,7 @@ spec:
         - name: config
           configMap:
             name: {{ include "socialnet.fullname" $ }}-config
+{{- end }}
 {{- end }}
 
 {{/* Stateful infrastructure: mongo / redis / memcached / rabbitmq. */}}

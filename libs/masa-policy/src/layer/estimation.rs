@@ -1,5 +1,5 @@
 // Estimation layer — latency tracking, deadline tightening, reprioritization,
-// and ABORT_SLACK local deadline checks.
+// and local deadline checks (ABORT_SLACK / SIGNAL_SLACK).
 //
 // Active when the `estimator` feature is enabled. Runs independently of the
 // admission control layer (ac_pred / ac_rajomon / noop).
@@ -60,8 +60,9 @@ impl LayerServer for EstimationServer {
 /// Per-request estimation layer state.
 ///
 /// Tracks latency distributions, tightens child deadlines (when `sched_pred`
-/// is enabled), handles ABORT_SLACK local deadline checks, and manages
-/// response metadata propagation.
+/// is enabled), handles local deadline checks (ABORT_SLACK aborts the request,
+/// SIGNAL_SLACK only signals admission control), and manages response metadata
+/// propagation.
 #[derive(Debug)]
 pub(crate) struct EstimationLayer {
     pub(crate) estimation: EstimationTracker<DefaultLatencyEstimator>,
@@ -97,7 +98,8 @@ impl Layer for EstimationLayer {
         }
     }
 
-    /// Reprioritize the current task and check ABORT_SLACK local deadline.
+    /// Reprioritize the current task and check the local deadline
+    /// (ABORT_SLACK aborts; SIGNAL_SLACK marks the soft signal).
     #[inline]
     fn before_poll<Ret>(&self, ctx: &Context) -> Result<(), Result<Response<Ret>, Status>> {
         if ABORT_SLACK {
@@ -113,6 +115,8 @@ impl Layer for EstimationLayer {
                 )));
             }
         }
+
+        super::est::signal_slack::mark_if_late(ctx, &self.request_metadata);
 
         #[cfg(feature = "sched_pred")]
         {
@@ -172,8 +176,7 @@ impl Layer for EstimationLayer {
         let decayed_full = (remaining.full as f64 * decay) as u64;
         let decayed_floor = (remaining.floor as f64 * decay) as u64;
 
-        let (deadline, prio_hint) =
-            Self::child_deadline_and_prio(ctx, decayed_full, decayed_floor);
+        let (deadline, prio_hint) = Self::child_deadline_and_prio(ctx, decayed_full, decayed_floor);
         child_rpc.deadline = deadline;
         child_rpc.prio_hint = prio_hint;
 
@@ -205,7 +208,11 @@ impl Layer for EstimationLayer {
         Ok(())
     }
 
-    /// Stop compute tracking and check ABORT_SLACK local deadline on Pending.
+    /// Stop compute tracking and check the local deadline.
+    ///
+    /// ABORT_SLACK can only replace a Pending poll with an early return.
+    /// SIGNAL_SLACK records a soft signal on every post-poll check, including
+    /// Ready, because it does not alter the response.
     #[inline]
     fn after_poll<Ret>(
         &self,
@@ -228,15 +235,27 @@ impl Layer for EstimationLayer {
                 }
             }
         }
+        super::est::signal_slack::mark_if_late(ctx, &self.request_metadata);
         Ok(())
     }
 
     /// Flush estimation observations and build response metadata.
+    ///
+    /// Three response classes drive different bookkeeping:
+    /// 1. `Err(EarlyReturn)` — abort path. Mark local early-return; skip
+    ///    flush so the latency estimator only learns from on-time work.
+    /// 2. `Ok` but the subtree tripped `signal_slack` — request finished
+    ///    successfully, but its wallclock was inflated by the
+    ///    signal-but-continue runtime. Skip flush for the same reason: an
+    ///    inflated observation poisons the estimator, which then
+    ///    over-tightens child deadlines in the next requests and triggers
+    ///    even more signals.
+    /// 3. `Ok` and on-time — the only case where the estimator should learn.
     #[inline]
     fn finalize<Ret>(&self, ctx: &mut Context, result: &mut Result<Response<Ret>, Status>) {
         if is_early_return_response(result) {
             self.request_metadata.mark_early_return();
-        } else {
+        } else if !super::est::signal_slack::should_skip_flush(&self.request_metadata) {
             self.estimation.flush();
         }
         self.request_metadata.inject_response_meta(ctx);

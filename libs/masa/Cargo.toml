@@ -19,6 +19,7 @@ sched_pred = ["masa-core/sched_pred", "tonic/sched_pred", "sched_slo", "masa-pol
 
 abort_slo = ["masa-core/abort_slo", "tonic/abort_slo", "masa-policy/abort_slo"]
 abort_slack = ["estimator", "masa-core/abort_slack", "tonic/abort_slack", "masa-policy/abort_slack"]
+signal_slack = ["estimator", "ac_pred", "masa-core/signal_slack", "tonic/signal_slack", "masa-policy/signal_slack"]
 estimator = ["masa-core/estimator", "tonic/estimator", "masa-policy/estimator"]
 
 est_rms = ["tonic/est_rms", "masa-policy/est_rms"]
