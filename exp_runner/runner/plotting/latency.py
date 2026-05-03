@@ -16,6 +16,7 @@ from .util import (
     PlotData,
     prepare_output_dir,
     read_data,
+    scale_markersize,
 )
 
 matplotlib.use("Agg")  # Use non-interactive backend for thread safety
@@ -53,14 +54,13 @@ def _plot_latency_cdf(
             latencies,
             percentiles,
             label=get_policy_display_name(policy),
-            markersize=5,
+            markersize=scale_markersize(5),
             **style,
         )
 
     # Add labels and title
     ax.set_xlabel("Latency (milliseconds)")
     ax.set_ylabel("Percentile (%)")
-    ax.set_title(f"Latency Distribution for {api} API - {rps} RPS")
     ax.grid(True, alpha=0.3)
     ax.legend()
     # Save the plot
@@ -92,11 +92,8 @@ def _plot_latency_histogram(
         ax=ax,
     )
 
-    # Add labels and title
+    # Add labels
     ax.set_xlabel("Latency (milliseconds)")
-    ax.set_title(
-        f"Latency Histogram for {api} API - {get_policy_display_name(policy)} - {rps} RPS"
-    )
     dir = os.path.join(output_dir, policy)
     os.makedirs(dir, exist_ok=True)
     fig.savefig(
@@ -117,7 +114,6 @@ def _plot_abort_reason_stacked(
         "E2EDeadline": "#999999",  # grey
         "LocalDeadlineExceeded": "#D55E00",  # vermillion
         "BeforePollFeasibility": "#E69F00",  # orange
-        "BeforeChildFeasibility": "#F0E442",  # yellow
         "PredAdmissionRej": "#56B4E9",  # sky blue
         "RajomonAdmissionRej": "#0072B2",  # blue
         "RajomonChildBudgetRej": "#009E73",  # bluish green
@@ -147,7 +143,6 @@ def _plot_abort_reason_stacked(
         "E2EDeadline",
         "LocalDeadlineExceeded",
         "BeforePollFeasibility",
-        "BeforeChildFeasibility",
         "PredAdmissionRej",
         "RajomonAdmissionRej",
         "RajomonChildBudgetRej",
@@ -172,7 +167,6 @@ def _plot_abort_reason_stacked(
 
     ax.set_xlabel("Requests Per Second (RPS)")
     ax.set_ylabel("Abort Count")
-    ax.set_title(f"Abort Reasons for {api} API - {get_policy_display_name(policy)}")
     ax.set_xticks(x)
     ax.set_xticklabels([str(r) for r in rps_values])
     ax.legend()
@@ -218,7 +212,6 @@ def _plot_p99_latency(
 
     ax.set_xlabel("Requests Per Second (RPS)")
     ax.set_ylabel("p99 latency (milliseconds)")
-    ax.set_title(f"p99 latency by policy and RPS for {api} API")
     ax.grid(True, alpha=0.3)
     ax.legend()
     ax.set_ylim(top=max_y)
@@ -268,7 +261,6 @@ def _plot_averaged_percentile_latency(
     p = int(percentile * 100)
     ax.set_xlabel("Requests Per Second (RPS)")
     ax.set_ylabel(f"average p{p} latency (milliseconds)")
-    ax.set_title(f"p{p} latency by policy and RPS for {api} API")
     ax.grid(True, alpha=0.3)
     ax.legend()
     ax.set_ylim(bottom=0, top=max_y)
@@ -328,7 +320,9 @@ def _save_latency_summary_csv(
         df.to_csv(output_path, index=False)
 
 
-def generate_plots(args, plot_data: PlotData | None = None) -> None:
+def generate_plots(
+    args, plot_data: PlotData | None = None, *, summary_only: bool = False
+) -> None:
     prepare_output_dir(args)
 
     if plot_data is None:
@@ -345,8 +339,15 @@ def generate_plots(args, plot_data: PlotData | None = None) -> None:
     # Generate plots in parallel
     futures = []
 
+    if summary_only:
+        # Skip per-iteration CDF / abort-reason / p99 plots — only the
+        # averaged summary plots and CSVs below run.
+        repeats_for_per_iter = 0
+    else:
+        repeats_for_per_iter = repeats
+
     # Submit CDF plots for each (repeat, api, rps)
-    for i in range(repeats):
+    for i in range(repeats_for_per_iter):
         latency_dir = os.path.join(args.output_dir, str(i), "latency")
         er_dir = os.path.join(args.output_dir, str(i), "early_return")
         os.makedirs(latency_dir, exist_ok=True)

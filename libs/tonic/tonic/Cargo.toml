@@ -63,6 +63,7 @@ sched_fifo = ["masa", "masa-core/sched_fifo", "masa-policy/sched_fifo", "tokio/s
 sched_oracle = ["masa", "masa-core/sched_oracle", "masa-policy/sched_oracle", "tokio/sched_prio"]
 abort_slo = ["masa-core/abort_slo", "masa-policy/abort_slo"]
 abort_slack = ["masa-core/abort_slack", "masa-policy/abort_slack"]
+signal_slack = ["masa-core/signal_slack", "masa-policy/signal_slack"]
 estimator = ["masa-core/estimator", "masa-policy/estimator"]
 sched_pred = ["estimator", "sched_slo", "masa-core/sched_pred", "masa-policy/sched_pred"]
 ac_pred = ["estimator", "masa-core/ac_pred", "masa-policy/ac_pred"]

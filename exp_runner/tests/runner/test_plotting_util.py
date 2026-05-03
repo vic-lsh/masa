@@ -27,7 +27,7 @@ def test_get_policy_display_name_delegates_to_policy():
     assert get_policy_display_name("sched_pred,abort_slack,ac_pred") == "Masa"
     assert (
         get_policy_display_name("sched_tailclipper,ac_rajomon")
-        == "Rajomon (w/ TailClipper)"
+        == "Rajomon (TailClipper)"
     )
     assert get_policy_display_name("custom") == "custom"
 
@@ -211,14 +211,14 @@ def test_generate_all_plots_loads_request_data_once(tmp_path, monkeypatch):
     )
     calls = {"load": 0, "goodput": 0, "latency": 0, "queueing": 0, "cpu": 0}
 
-    def fake_load_plot_data(config_dir, data_dir):
+    def fake_load_plot_data(config_dir, data_dir, *, use_cache=True):
         calls["load"] += 1
         assert config_dir == args.config_dir
         assert data_dir == args.data_dir
         return plot_data
 
     def fake_plotter(name):
-        def _run(passed_args, plot_data=None):
+        def _run(passed_args, plot_data=None, *, summary_only=False):
             calls[name] += 1
             assert passed_args is args
             assert plot_data is plot_data_ref

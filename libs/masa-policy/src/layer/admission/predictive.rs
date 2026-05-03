@@ -177,8 +177,7 @@ impl Layer for PredAdmissionLayer {
         // Gate 1: hard backstop on decayed floors. Aborts only when even the
         // (decayed) lower envelope places completion past the deadline — a true
         // "no chance" signal under current freshness.
-        let floor_finish_us =
-            now as f64 + (child.floor as f64 + remaining.floor as f64) * decay;
+        let floor_finish_us = now as f64 + (child.floor as f64 + remaining.floor as f64) * decay;
         if floor_finish_us > deadline as f64 {
             return Err(Self::bcf_error(&self.rpc, child_method_name));
         }
@@ -256,11 +255,13 @@ impl Layer for PredAdmissionLayer {
         }
 
         // Learn from the final ingress outcome so local early returns such as
-        // `LocalDeadlineExceeded` are visible to predictive admission.
+        // `LocalDeadlineExceeded` are visible to predictive admission. The
+        // `signal_slack` feature emits a parallel soft-deadline signal that
+        // also feeds the AIMD controller without requiring an actual abort.
         let is_er = is_early_return_response(result)
             || ctx
                 .response_meta()
-                .map(|meta| meta.early_return_count > 0)
+                .map(|meta| meta.early_return_count > 0 || meta.deadline_signal_count > 0)
                 .unwrap_or(false);
 
         let root_id = self
@@ -605,6 +606,31 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_deadline_signal_records_single_ac_outcome() {
+        let ac = Arc::new(PredictiveAdmission::new());
+        let layer = PredAdmissionLayer {
+            pred_admission: ac.clone(),
+            est: LatencyEstimators::new(),
+            root_method_id: None,
+            rpc: CowGrpcMethod::new("svc", "method"),
+            self_rejected: AtomicBool::new(false),
+            admission_checked: AtomicBool::new(false),
+        };
+        let mut ctx = Context::default();
+        ctx.set_response_meta(masa_core::ResponseMeta {
+            deadline_signal_count: 1,
+            ..Default::default()
+        });
+        let mut result = Ok(Response::new(()));
+
+        layer.finalize(&mut ctx, &mut result);
+
+        let state = ac.state.lock().unwrap();
+        assert_eq!(state.window_total, 1);
+        assert_eq!(state.er_count, 1);
+    }
+
     /// Verify idle decay reopens admission when no outcomes arrive.
     ///
     /// Scenario: admit_p is driven low by overload, then traffic goes idle.
@@ -711,8 +737,7 @@ mod tests {
             let rem_decay = decay_factor(now, remaining_last_obs);
             child_decay.min(rem_decay)
         };
-        let floor_finish_us =
-            now as f64 + (child.floor as f64 + remaining.floor as f64) * decay;
+        let floor_finish_us = now as f64 + (child.floor as f64 + remaining.floor as f64) * decay;
         if floor_finish_us > deadline as f64 {
             return true;
         }

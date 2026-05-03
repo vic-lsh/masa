@@ -12,6 +12,8 @@ pub const ABORT_SLO: bool = cfg!(feature = "abort_slo");
 
 pub const ABORT_SLACK: bool = cfg!(feature = "abort_slack");
 
+pub const SIGNAL_SLACK: bool = cfg!(feature = "signal_slack");
+
 #[allow(dead_code)]
 pub const RAJOMON: bool = cfg!(feature = "ac_rajomon");
 
@@ -77,6 +79,25 @@ compile_error!("Enable at most one abort strategy: abort_slo | abort_slack");
 
 #[cfg(all(feature = "abort_slack", not(feature = "estimator")))]
 compile_error!("'abort_slack' requires 'estimator' for predictive abort checks");
+
+// signal_slack is the soft-signal counterpart to abort_slack: it triggers on the
+// same condition but lets the request finish, reporting to ac_pred so the AIMD
+// controller throttles arrivals without aborting in-flight work. Enabling both
+// abort_slack and signal_slack is incoherent (same trigger, opposite actions).
+// Without ac_pred there is no consumer for the signal, so it is required.
+#[cfg(all(feature = "signal_slack", feature = "abort_slack"))]
+compile_error!(
+    "'signal_slack' is mutually exclusive with 'abort_slack': \
+     same trigger condition, opposite actions"
+);
+
+#[cfg(all(feature = "signal_slack", not(feature = "estimator")))]
+compile_error!("'signal_slack' requires 'estimator' for predictive deadline checks");
+
+#[cfg(all(feature = "signal_slack", not(feature = "ac_pred")))]
+compile_error!(
+    "'signal_slack' requires 'ac_pred' - without it there is no consumer for the signal"
+);
 
 // === Estimator constraints ===
 // sched_pred and ac_pred require the estimator infrastructure.

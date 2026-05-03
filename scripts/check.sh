@@ -14,6 +14,7 @@ flag_combos=(
     "sched_slo,ac_pred,est_mean_var"
     "sched_pred,abort_slo,ac_pred,est_mean_var"
     "sched_pred,abort_slack,est_mean_var"
+    "sched_pred,signal_slack,ac_pred,est_mean_var"
 )
 
 CONTINUE_ON_ERROR=false

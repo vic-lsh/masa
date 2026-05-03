@@ -35,6 +35,7 @@ services:
     environment:
       - LOG_LEVEL=${LOG_LEVEL:-info}
       - MASA_FANOUT_AWARE=${MASA_FANOUT_AWARE:-1}
+      - SERVICE_NAME=rate
     volumes:
       - ${PROJECT_CONFIG_PATH}:/usr/config.json:ro
       - ${POLICY_PARAMS_PATH}:/usr/policy_params.json:ro
@@ -79,6 +80,7 @@ services:
     environment:
       - LOG_LEVEL=${LOG_LEVEL:-info}
       - MASA_FANOUT_AWARE=${MASA_FANOUT_AWARE:-1}
+      - SERVICE_NAME=profile
     volumes:
       - ${PROJECT_CONFIG_PATH}:/usr/config.json:ro
       - ${POLICY_PARAMS_PATH}:/usr/policy_params.json:ro
@@ -123,6 +125,7 @@ services:
     environment:
       - LOG_LEVEL=${LOG_LEVEL:-info}
       - MASA_FANOUT_AWARE=${MASA_FANOUT_AWARE:-1}
+      - SERVICE_NAME=reservation
     volumes:
       - ${PROJECT_CONFIG_PATH}:/usr/config.json:ro
       - ${POLICY_PARAMS_PATH}:/usr/policy_params.json:ro
@@ -155,6 +158,7 @@ services:
     environment:
       - LOG_LEVEL=${LOG_LEVEL:-info}
       - MASA_FANOUT_AWARE=${MASA_FANOUT_AWARE:-1}
+      - SERVICE_NAME=user
     volumes:
       - ${PROJECT_CONFIG_PATH}:/usr/config.json:ro
       - ${POLICY_PARAMS_PATH}:/usr/policy_params.json:ro
@@ -172,6 +176,7 @@ services:
     environment:
       - LOG_LEVEL=${LOG_LEVEL:-info}
       - MASA_FANOUT_AWARE=${MASA_FANOUT_AWARE:-1}
+      - SERVICE_NAME=geo
     volumes:
       - ${PROJECT_CONFIG_PATH}:/usr/config.json:ro
       - ${POLICY_PARAMS_PATH}:/usr/policy_params.json:ro
@@ -192,6 +197,7 @@ services:
     environment:
       - LOG_LEVEL=${LOG_LEVEL:-info}
       - MASA_FANOUT_AWARE=${MASA_FANOUT_AWARE:-1}
+      - SERVICE_NAME=search
     volumes:
       - ${PROJECT_CONFIG_PATH}:/usr/config.json:ro
       - ${POLICY_PARAMS_PATH}:/usr/policy_params.json:ro
@@ -218,6 +224,7 @@ services:
     environment:
       - LOG_LEVEL=${LOG_LEVEL:-info}
       - MASA_FANOUT_AWARE=${MASA_FANOUT_AWARE:-1}
+      - SERVICE_NAME=frontend
     volumes:
       - ${PROJECT_CONFIG_PATH}:/usr/config.json:ro
       - ${POLICY_PARAMS_PATH}:/usr/policy_params.json:ro
