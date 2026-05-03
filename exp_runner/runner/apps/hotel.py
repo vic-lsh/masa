@@ -339,7 +339,7 @@ class HotelBuilder(AppBuilder):
                 if no_cache:
                     runtime_cmd.append("--no-cache")
 
-                runtime_cmd.extend(["-t", image_name, "."])
+                runtime_cmd.extend(["--load", "-t", image_name, "."])
 
                 if dry_run and isinstance(executor, MockCommandExecutor):
                     # Add progress flag for dry-run display

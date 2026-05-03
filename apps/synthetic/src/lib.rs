@@ -6,6 +6,9 @@ pub mod constants;
 pub mod distribution;
 pub mod error;
 pub mod frontend;
+pub mod hop_trace;
+#[cfg(feature = "sched_oracle")]
+pub mod oracle;
 pub mod service_registry;
 pub mod tests;
 pub mod types;

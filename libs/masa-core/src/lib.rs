@@ -8,8 +8,8 @@ mod typing;
 pub use context::FutureSpan;
 pub use context::{Context, ContextBuilder, QueueLatencies, ResponseMeta, RootMethod};
 pub use flag::{
-    ABORT_SLACK, ABORT_SLO, RAJOMON, SCHED_FIFO, SCHED_PRED, SCHED_SLO, SCHED_TAILCLIPPER,
-    SIGNAL_SLACK,
+    ABORT_SLACK, ABORT_SLO, RAJOMON, SCHED_FIFO, SCHED_ORACLE, SCHED_PRED, SCHED_SLO,
+    SCHED_TAILCLIPPER, SIGNAL_SLACK,
 };
 pub use latency_estimator::{
     LatencyDistribution, LatencyEstimator, LatencyEwma, LatencyMeanVar, LatencyRms,
@@ -20,3 +20,9 @@ pub use typing::{Address, Api, Latency, MethodId, RequestId, ServiceId, Timestam
 
 /// Header key for MASA context.
 pub const MASA_CONTEXT_HEADER: &str = "ctx";
+
+/// Oracle-only header carrying perfect child RPC wall-clock work in microseconds.
+pub const ORACLE_CHILD_WORK_US_HEADER: &str = "x-masa-oracle-child-work-us";
+
+/// Oracle-only header carrying perfect remaining wall-clock work after the child RPC.
+pub const ORACLE_REMAINING_AFTER_US_HEADER: &str = "x-masa-oracle-remaining-after-us";

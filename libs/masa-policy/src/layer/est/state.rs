@@ -13,24 +13,68 @@ use std::hash::Hash;
 use std::ops::Deref;
 use std::sync::{
     atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering},
-    Arc, Mutex,
+    Arc, Mutex, OnceLock,
 };
 use std::time::{Duration, Instant};
 
 use masa_core::{Context, LatencyEstimator, ResponseMeta};
 use tonic_core::{Code, CowGrpcMethod, Response, Status};
 
+use super::fanout::{
+    recover_path_groups, ChildRecord, FanoutPatternTable, PathPrefix, PatternScope,
+};
 use super::latency_map::{LatencyMap, MethodKey, ParentToChildKey, RootToLocalKey};
 use crate::context_ext::MasaResponseExt;
+use crate::policy_params::PolicyParams;
 use crate::registry::MethodId;
 use crate::MethodRegistry;
+
+// ══════════════════════════════════════════════════════════════════════════
+// Wallclock-time decay for stale estimates
+// ══════════════════════════════════════════════════════════════════════════
+
+/// Wallclock-time decay constant (microseconds) for stale EMA estimates.
+/// At age = TAU_DECAY_US, the contribution is multiplied by 1/e ≈ 0.37.
+/// Picked at 5 s so that a sustained admission lockout breaks within tens of
+/// seconds even without fresh observations.
+pub(crate) const TAU_DECAY_US: f64 = 5_000_000.0;
+
+/// Skip the `exp()` call when the most recent observation is younger than this.
+/// At ages well below TAU_DECAY_US the decay factor is ≈ 1.0 anyway; avoiding
+/// the transcendental keeps the hot path cheap.
+pub(crate) const DECAY_THRESHOLD_US: u64 = 200_000;
+
+/// `exp(-x)` for `x ≥ 0`, with an early-out for arguments large enough that
+/// the result rounds to 0. For typical arguments this is just `f64::exp(-x)`,
+/// ~10 ns on x86.
+#[inline(always)]
+pub(crate) fn fast_exp_neg(x: f64) -> f64 {
+    debug_assert!(x >= 0.0);
+    if x >= 50.0 {
+        return 0.0;
+    }
+    (-x).exp()
+}
+
+/// Decay factor for an estimate whose most recent observation is `last_obs_us`
+/// (microseconds since epoch), evaluated at `now_us`. Returns 1.0 for fresh
+/// observations and shrinks toward 0 as the age grows past `TAU_DECAY_US`.
+#[inline]
+pub(crate) fn decay_factor(now_us: u64, last_obs_us: u64) -> f64 {
+    let age = now_us.saturating_sub(last_obs_us);
+    if age <= DECAY_THRESHOLD_US {
+        1.0
+    } else {
+        fast_exp_neg(age as f64 / TAU_DECAY_US)
+    }
+}
 
 // ══════════════════════════════════════════════════════════════════════════
 // Remaining-wallclock estimate bundle
 // ══════════════════════════════════════════════════════════════════════════
 
 /// Three estimate flavors for after-child wall-clock time (parent's post-child work duration).
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 pub(crate) struct AfterChildEstimates {
     /// Full estimate (mean + k*stddev, capped at time_left).
     pub full: u64,
@@ -38,6 +82,105 @@ pub(crate) struct AfterChildEstimates {
     pub mean: u64,
     /// Floor estimate (spike-resistant, capped at time_left).
     pub floor: u64,
+}
+
+impl AfterChildEstimates {
+    fn is_empty(self) -> bool {
+        self.full == 0 && self.mean == 0 && self.floor == 0
+    }
+
+    fn merge_with_legacy_priority(self, legacy: Self, deadline_legacy_fraction: f64) -> Self {
+        if self.is_empty() {
+            return legacy;
+        }
+        if legacy.is_empty() {
+            return self;
+        }
+        Self {
+            // `full` is used as the soft scheduling priority signal. Keep
+            // the legacy per-edge value so fanout correction does not
+            // under-prioritize children that still have substantial service
+            // time ahead of them.
+            full: legacy.full,
+            // `mean`/`floor` feed hard deadline tightening. There fanout is
+            // allowed to remove sibling-wait noise, but never tighten beyond
+            // the legacy estimate.
+            mean: blend_toward_legacy(
+                self.mean.min(legacy.mean),
+                legacy.mean,
+                deadline_legacy_fraction,
+            ),
+            floor: blend_toward_legacy(
+                self.floor.min(legacy.floor),
+                legacy.floor,
+                deadline_legacy_fraction,
+            ),
+        }
+    }
+}
+
+fn blend_toward_legacy(value: u64, legacy: u64, fraction: f64) -> u64 {
+    if value >= legacy {
+        return legacy;
+    }
+    let fraction = fraction.clamp(0.0, 1.0);
+    if fraction <= f64::EPSILON {
+        return value;
+    }
+    if (1.0 - fraction) <= f64::EPSILON {
+        return legacy;
+    }
+    value + ((legacy - value) as f64 * fraction).round() as u64
+}
+
+/// Runtime toggle for fanout-aware after-child estimation.
+///
+/// Reads `MASA_FANOUT_AWARE` once on first access; default is `true` (new
+/// behavior). Set `MASA_FANOUT_AWARE=0` (or `false`/`off`/`no`) to use the
+/// legacy per-edge `(parent, child)` map for both reads and writes — useful
+/// for A/B testing the fix on the same binary.
+pub(crate) fn fanout_aware_enabled() -> bool {
+    static CACHED: OnceLock<bool> = OnceLock::new();
+    *CACHED.get_or_init(|| {
+        let val = match std::env::var("MASA_FANOUT_AWARE") {
+            Ok(v) => {
+                let v = v.trim().to_ascii_lowercase();
+                !matches!(v.as_str(), "0" | "false" | "off" | "no")
+            }
+            Err(_) => true,
+        };
+        log::info!("MASA_FANOUT_AWARE = {}", val);
+        val
+    })
+}
+
+fn fanout_enabled_for_parent(root: MethodId, parent: MethodId) -> bool {
+    if !fanout_aware_enabled() {
+        return false;
+    }
+    let params = &PolicyParams::global().pred;
+    !params.fanout_root_only || root == parent
+}
+
+/// Runtime toggle for verbose estimator table dumps.
+///
+/// The fanout table can contain thousands of method-level signatures on mssim
+/// traces. Walking and formatting that table every few seconds is useful while
+/// debugging, but it is far too expensive for performance experiments, so keep
+/// it opt-in.
+fn estimator_stats_logging_enabled() -> bool {
+    static CACHED: OnceLock<bool> = OnceLock::new();
+    *CACHED.get_or_init(|| {
+        let val = match std::env::var("MASA_ESTIMATOR_STATS_LOG") {
+            Ok(v) => {
+                let v = v.trim().to_ascii_lowercase();
+                matches!(v.as_str(), "1" | "true" | "on" | "yes")
+            }
+            Err(_) => false,
+        };
+        log::info!("MASA_ESTIMATOR_STATS_LOG = {}", val);
+        val
+    })
 }
 
 // ═════════════════════════════════════════════════════════════��════════════
@@ -50,6 +193,9 @@ pub(crate) struct AfterChildEstimates {
 #[derive(Debug)]
 pub(crate) struct LatencyEstimatorsInner<E: LatencyEstimator + Default + 'static> {
     /// Remaining wall-clock time after each child RPC completes (parent→child key).
+    /// Used by the admission-control feasibility check; now updated with the
+    /// fanout-corrected post-join time (`parent_end - max(group.end)`) so
+    /// siblings on the critical path do not pollute it.
     after_child_wallclock: LatencyMap<ParentToChildKey, E>,
     /// Wall-clock duration of child RPC calls (parent→child key).
     child_wallclock: LatencyMap<ParentToChildKey, E>,
@@ -57,6 +203,14 @@ pub(crate) struct LatencyEstimatorsInner<E: LatencyEstimator + Default + 'static
     subtree_compute: LatencyMap<MethodKey, E>,
     /// Total wall-clock latency per method (root API type → local method key).
     method_wallclock: LatencyMap<RootToLocalKey, E>,
+    /// Fanout-group post-join estimates, keyed on (parent_method, sorted
+    /// multiset of sibling child_methods). Read at child-issue time for
+    /// deadline tightening.
+    fanout_patterns: FanoutPatternTable<E>,
+    /// Coarser fanout-group estimates keyed on child service multisets.
+    /// This is a low-cardinality fallback for traces whose exact child method
+    /// signatures are too sparse to estimate reliably.
+    service_fanout_patterns: FanoutPatternTable<E>,
     /// Counter for periodic logging.
     print_counter: AtomicUsize,
 }
@@ -96,6 +250,8 @@ impl<E: LatencyEstimator + Default + 'static> LatencyEstimators<E> {
             child_wallclock: LatencyMap::new(),
             subtree_compute: LatencyMap::new(),
             method_wallclock: LatencyMap::new(),
+            fanout_patterns: FanoutPatternTable::new(),
+            service_fanout_patterns: FanoutPatternTable::new(),
             print_counter: AtomicUsize::new(0),
         });
 
@@ -108,6 +264,9 @@ impl<E: LatencyEstimator + Default + 'static> LatencyEstimators<E> {
 
     /// Estimated wall-clock time from child RPC completion to parent end, capped at `cap`.
     /// Returns all three estimate flavors (full, mean, floor).
+    /// Used by the admission feasibility check; the estimation/scheduling
+    /// path uses the fanout-aware variant below.
+    #[allow(dead_code)]
     pub(crate) fn est_after_child_wallclock(
         &self,
         key: ParentToChildKey,
@@ -132,9 +291,82 @@ impl<E: LatencyEstimator + Default + 'static> LatencyEstimators<E> {
         }
     }
 
+    /// Lookup an after-child wall-clock estimate for the child being
+    /// issued. When the runtime toggle [`fanout_aware_enabled`] is true
+    /// (default), use the fanout-group pattern table keyed on the observable
+    /// path prefix plus `base_signature`; otherwise fall back to the legacy
+    /// per-edge map keyed on `(parent, new_child_id)`.
+    pub(crate) fn est_after_child_wallclock_for_group(
+        &self,
+        root: MethodId,
+        parent: MethodId,
+        path_prefix: PathPrefix,
+        base_signature: &[MethodId],
+        service_path_prefix: PathPrefix,
+        base_service_signature: &[MethodId],
+        new_child_id: MethodId,
+        cap: u64,
+    ) -> AfterChildEstimates {
+        let key = ParentToChildKey::root_rpc_method(root)
+            .parent_rpc_method(parent)
+            .child_rpc_method(new_child_id);
+        let legacy = self.est_after_child_wallclock(key, cap);
+        if !fanout_enabled_for_parent(root, parent) || base_signature.len() <= 1 {
+            return legacy;
+        }
+
+        let min_samples = PolicyParams::global().pred.fanout_min_samples;
+        let fanout = self.fanout_patterns.lookup_estimate(
+            root,
+            parent,
+            path_prefix,
+            base_signature,
+            min_samples,
+            cap,
+        );
+        let fanout = if fanout.is_empty() {
+            self.service_fanout_patterns.lookup_estimate(
+                root,
+                parent,
+                service_path_prefix,
+                base_service_signature,
+                min_samples,
+                cap,
+            )
+        } else {
+            fanout
+        };
+
+        fanout.merge_with_legacy_priority(
+            legacy,
+            PolicyParams::global().pred.fanout_deadline_legacy_fraction,
+        )
+    }
+
     /// Estimated wall-clock duration of a child RPC call.
     pub(crate) fn est_child_wallclock(&self, key: ParentToChildKey) -> Option<u64> {
         self.child_wallclock.get_estimate(key)
+    }
+
+    /// Single-lookup pack of (mean, floor, last_observation_us) for the child
+    /// wall-clock estimator. Used by the time-decay-aware BCF feasibility check.
+    #[allow(dead_code)]
+    pub(crate) fn child_wallclock_pack(
+        &self,
+        key: ParentToChildKey,
+    ) -> Option<super::latency_map::EstimatesPack> {
+        self.child_wallclock.get_estimates_pack(key)
+    }
+
+    /// Wall-clock timestamp of the most recent observation for the after-child
+    /// remaining-wall-clock estimator on a given (root, parent, child) edge.
+    /// Used by the BCF check to gauge how stale `remaining.floor` is.
+    #[allow(dead_code)]
+    pub(crate) fn after_child_wallclock_last_obs(&self, key: ParentToChildKey) -> u64 {
+        self.after_child_wallclock
+            .get_estimates_pack(key)
+            .map(|p| p.last_observation_us)
+            .unwrap_or(0)
     }
 
     /// Estimated accumulated CPU compute cost for a request subtree (root API key).
@@ -149,6 +381,47 @@ impl<E: LatencyEstimator + Default + 'static> LatencyEstimators<E> {
     /// Track wall-clock time from child RPC completion to parent request end.
     pub(crate) fn track_after_child_wallclock(&self, key: ParentToChildKey, duration_us: u64) {
         self.after_child_wallclock.track(key, duration_us);
+    }
+
+    /// Track one observed fanout group's post-join time.
+    pub(crate) fn track_fanout_group(
+        &self,
+        root: MethodId,
+        parent: MethodId,
+        path_prefix: PathPrefix,
+        signature: Vec<MethodId>,
+        service_path_prefix: PathPrefix,
+        service_signature: Vec<MethodId>,
+        post_join_us: u64,
+    ) {
+        self.fanout_patterns.update(
+            root,
+            parent,
+            PatternScope::Path(path_prefix),
+            signature.clone(),
+            post_join_us,
+        );
+        self.fanout_patterns.update(
+            root,
+            parent,
+            PatternScope::Aggregate,
+            signature,
+            post_join_us,
+        );
+        self.service_fanout_patterns.update(
+            root,
+            parent,
+            PatternScope::Path(service_path_prefix),
+            service_signature.clone(),
+            post_join_us,
+        );
+        self.service_fanout_patterns.update(
+            root,
+            parent,
+            PatternScope::Aggregate,
+            service_signature,
+            post_join_us,
+        );
     }
 
     /// Track wall-clock duration of a child RPC call.
@@ -200,6 +473,10 @@ fn spawn_latency_estimators_stats_printer<E>(shared: Arc<LatencyEstimatorsInner<
 where
     E: LatencyEstimator + Default + Send + 'static,
 {
+    if !estimator_stats_logging_enabled() {
+        return;
+    }
+
     if let Ok(handle) = tokio::runtime::Handle::try_current() {
         handle.spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_secs(5));
@@ -213,12 +490,17 @@ where
                 log_pair_map_if_non_empty("Est Child Wallclock", &shared.child_wallclock);
                 log_method_map_if_non_empty("Est Subtree Compute", &shared.subtree_compute);
                 log_pair_map_if_non_empty("Est Method Wallclock", &shared.method_wallclock);
+                log_fanout_patterns_if_non_empty("Est Fanout Groups", &shared.fanout_patterns);
+                log_fanout_patterns_if_non_empty(
+                    "Est Service Fanout Groups",
+                    &shared.service_fanout_patterns,
+                );
             }
         });
     }
 }
 
-fn log_pair_map_if_non_empty<K, E>(_label: &'static str, map: &LatencyMap<K, E>)
+fn log_pair_map_if_non_empty<K, E>(label: &'static str, map: &LatencyMap<K, E>)
 where
     K: Copy + Eq + Hash + fmt::Display + 'static,
     E: LatencyEstimator + Default + 'static,
@@ -234,7 +516,40 @@ where
             parts.push(format!("{}: (no estimate)", key));
         }
     });
-    // log::info!("{}: {}", label, parts.join(", "));
+    log::info!("{}: {}", label, parts.join(", "));
+}
+
+fn log_fanout_patterns_if_non_empty<E: LatencyEstimator + Default + 'static>(
+    label: &'static str,
+    table: &FanoutPatternTable<E>,
+) {
+    if table.is_empty() {
+        return;
+    }
+    let mut parts = Vec::new();
+    table.for_each_pattern(|root, parent, scope, signature, est, count| {
+        let root_name = super::latency_map::format_method_name(root);
+        let parent_name = super::latency_map::format_method_name(parent);
+        let scope_name = match scope {
+            PatternScope::Aggregate => "agg".to_string(),
+            PatternScope::Path(prefix) => format!("p={}", prefix.label()),
+        };
+        let sig_str = signature
+            .iter()
+            .map(|id| super::latency_map::format_method_name(*id))
+            .collect::<Vec<_>>()
+            .join(",");
+        let est_str = if est.can_estimate() {
+            format!("{} us", est.estimate())
+        } else {
+            "(no estimate)".to_string()
+        };
+        parts.push(format!(
+            "[{}]{}|{}|[{}] n={}: {}",
+            root_name, parent_name, scope_name, sig_str, count, est_str
+        ));
+    });
+    log::info!("{}: {}", label, parts.join(" ;; "));
 }
 
 fn log_method_map_if_non_empty<E: LatencyEstimator + Default + 'static>(
@@ -260,13 +575,53 @@ fn log_method_map_if_non_empty<E: LatencyEstimator + Default + 'static>(
 // Per-request estimation lifecycle
 // ══════════════════════════════════════════════════════════════════════════
 
+/// Per-parent invocation state for deriving non-invasive fanout path prefixes.
+#[derive(Debug, Default)]
+struct FanoutInvocationState {
+    /// All child RPCs issued under this handler invocation, in issue order.
+    children: Vec<ChildRecord>,
+    /// Prefix formed by completed fanout groups before the current open group.
+    path_prefix: PathPrefix,
+    /// Service-shape version of `path_prefix`.
+    service_path_prefix: PathPrefix,
+    /// Number of leading child records already folded into `path_prefix`.
+    incorporated_child_count: usize,
+}
+
+impl FanoutInvocationState {
+    fn refresh_path_prefix_before_open_group(&mut self, now: Instant) {
+        if self.incorporated_child_count >= self.children.len() {
+            return;
+        }
+
+        let pending = &self.children[self.incorporated_child_count..];
+        let terminal_prefix_len = pending
+            .iter()
+            .position(|c| !c.terminal)
+            .unwrap_or(pending.len());
+        if terminal_prefix_len == 0 {
+            return;
+        }
+
+        for group in recover_path_groups(&pending[..terminal_prefix_len], now) {
+            self.path_prefix = self.path_prefix.append_signature(&group.signature);
+            self.service_path_prefix = self
+                .service_path_prefix
+                .append_signature(&group.service_signature);
+        }
+        self.incorporated_child_count += terminal_prefix_len;
+    }
+}
+
 /// Per-request estimation state: tracks observations and queries estimates.
 #[derive(Debug)]
 pub(crate) struct EstimationTracker<E: LatencyEstimator + Default + 'static> {
     pub(crate) resolved_method_id: MethodId,
     pub(crate) root_method_id: Option<MethodId>,
     pub(crate) est: LatencyEstimators<E>,
-    child_end_times: Mutex<Vec<(ParentToChildKey, Instant)>>,
+    /// Child RPC observations and the observable path prefix for the current
+    /// in-flight fanout group.
+    fanout: Mutex<FanoutInvocationState>,
     request_start: Instant,
 }
 
@@ -280,17 +635,82 @@ impl<E: LatencyEstimator + Default + 'static> EstimationTracker<E> {
             resolved_method_id,
             root_method_id,
             est,
-            child_end_times: Mutex::new(Vec::new()),
+            fanout: Mutex::new(FanoutInvocationState::default()),
             request_start: Instant::now(),
         }
     }
 
     /// Create a child RPC tracker for the given child method.
+    ///
+    /// Records the child's start and computes a `base_signature`: the sorted
+    /// multiset of still-open earlier children plus this child. That set is
+    /// guaranteed to be a multiset-subset of the eventual fanout group, so
+    /// it is the issue-time lower bound used to look up a group estimate.
     pub(crate) fn begin_child(&self, child_method: &CowGrpcMethod) -> ChildRPCTracker {
-        let child_id = MethodRegistry::global().get_or_register(child_method.clone());
-        let key =
-            ParentToChildKey::parent_rpc_method(self.resolved_method_id).child_rpc_method(child_id);
-        ChildRPCTracker::new(key)
+        let (child_id, child_service_id) =
+            MethodRegistry::global().get_or_register_with_service(child_method.clone());
+        let root = self.root_or_self();
+        let key = ParentToChildKey::root_rpc_method(root)
+            .parent_rpc_method(self.resolved_method_id)
+            .child_rpc_method(child_id);
+        let now = Instant::now();
+        let mut fanout = self.fanout.lock().unwrap();
+        let (path_prefix, base_signature, service_path_prefix, base_service_signature) =
+            if fanout_enabled_for_parent(root, self.resolved_method_id) {
+                let has_open_siblings = fanout.children.iter().any(|c| !c.terminal);
+                if has_open_siblings {
+                    fanout.refresh_path_prefix_before_open_group(now);
+                }
+                let path_prefix = fanout.path_prefix;
+                let service_path_prefix = fanout.service_path_prefix;
+                let mut base_signature: Vec<MethodId> = fanout
+                    .children
+                    .iter()
+                    .filter(|c| !c.terminal)
+                    .map(|c| c.child_id)
+                    .collect();
+                base_signature.push(child_id);
+                base_signature.sort();
+                let mut base_service_signature: Vec<MethodId> = fanout
+                    .children
+                    .iter()
+                    .filter(|c| !c.terminal)
+                    .map(|c| c.child_service_id)
+                    .collect();
+                base_service_signature.push(child_service_id);
+                base_service_signature.sort();
+                (
+                    path_prefix,
+                    base_signature,
+                    service_path_prefix,
+                    base_service_signature,
+                )
+            } else {
+                (
+                    PathPrefix::root(),
+                    vec![child_id],
+                    PathPrefix::root(),
+                    vec![child_service_id],
+                )
+            };
+        let index = fanout.children.len();
+        fanout.children.push(ChildRecord {
+            child_id,
+            child_service_id,
+            start: now,
+            end: None,
+            terminal: false,
+        });
+        ChildRPCTracker::new(
+            key,
+            child_id,
+            index,
+            path_prefix,
+            base_signature,
+            service_path_prefix,
+            base_service_signature,
+            now,
+        )
     }
 
     /// Record a completed child RPC: track child wallclock on success, or inject
@@ -302,46 +722,90 @@ impl<E: LatencyEstimator + Default + 'static> EstimationTracker<E> {
     ) {
         if is_early_return_response(response) {
             self.est.track_er_feedback(tracker.key);
+            let mut fanout = self.fanout.lock().unwrap();
+            if let Some(record) = fanout.children.get_mut(tracker.child_index) {
+                // Leave end=None so it is excluded from group recovery, but
+                // mark it terminal so later groups can advance the path prefix.
+                record.terminal = true;
+            }
         } else if is_signaled_response(response) {
             // Child returned Ok but signaled at some hop in its subtree under
             // signal_slack — its wallclock includes signal-but-continue
-            // runtime. Skip child_wallclock track so the estimator doesn't
-            // over-tighten this parent->child key in subsequent requests.
-            // Still record the child end-time so this parent's
-            // after_child_wallclock can be measured normally.
-            self.child_end_times
-                .lock()
-                .unwrap()
-                .push((tracker.key, Instant::now()));
+            // runtime. Skip track_child_wallclock so the estimator doesn't
+            // over-tighten this parent->child key. Still mark the fanout
+            // record end so after_child_wallclock is recorded normally if
+            // this parent's flush runs.
+            let mut fanout = self.fanout.lock().unwrap();
+            if let Some(record) = fanout.children.get_mut(tracker.child_index) {
+                record.end = Some(Instant::now());
+                record.terminal = true;
+            }
         } else {
             self.est
                 .track_child_wallclock(tracker.key, tracker.elapsed_us());
-            self.child_end_times
-                .lock()
-                .unwrap()
-                .push((tracker.key, Instant::now()));
+            let now = Instant::now();
+            let mut fanout = self.fanout.lock().unwrap();
+            if let Some(record) = fanout.children.get_mut(tracker.child_index) {
+                record.end = Some(now);
+                record.terminal = true;
+            }
         }
     }
 
     /// Flush deferred observations at request finalization.
     ///
-    /// Tracks remaining-wallclock (time from child end to parent end) and
-    /// method-wallclock (total request duration).
+    /// Always refreshes the legacy per-child delta `parent_end - child.end`
+    /// for admission checks and as a fanout fallback. When fanout-aware
+    /// estimation is enabled, also recovers fanout groups from observed
+    /// intervals and updates the fanout pattern table. Lookup takes the
+    /// smaller of the fanout and legacy estimates, so fanout correction can
+    /// remove sibling-wait noise without making hard deadlines tighter than
+    /// the legacy estimator.
     pub(crate) fn flush(&self) {
         let parent_end = Instant::now();
 
-        let child_end_times = std::mem::take(&mut *self.child_end_times.lock().unwrap());
-        for (key, child_end) in child_end_times {
-            self.est.track_after_child_wallclock(
-                key,
-                parent_end.duration_since(child_end).as_micros() as u64,
-            );
+        let root = self.root_or_self();
+        let fanout = std::mem::take(&mut *self.fanout.lock().unwrap());
+        let children = fanout.children;
+        for c in &children {
+            let Some(end) = c.end else {
+                continue;
+            };
+            let key = ParentToChildKey::root_rpc_method(root)
+                .parent_rpc_method(self.resolved_method_id)
+                .child_rpc_method(c.child_id);
+            let after = parent_end.saturating_duration_since(end).as_micros() as u64;
+            self.est.track_after_child_wallclock(key, after);
+        }
+
+        if fanout_enabled_for_parent(root, self.resolved_method_id) {
+            let groups = recover_path_groups(&children, parent_end);
+            for group in &groups {
+                if group.signature.len() <= 1 {
+                    continue;
+                }
+                self.est.track_fanout_group(
+                    root,
+                    self.resolved_method_id,
+                    group.path_prefix,
+                    group.signature.clone(),
+                    group.service_path_prefix,
+                    group.service_signature.clone(),
+                    group.post_join_us,
+                );
+            }
         }
 
         if let Some(key) = self.method_wallclock_key() {
             let total_wall_clock = self.request_start.elapsed().as_micros() as u64;
             self.est.track_method_wallclock(key, total_wall_clock);
         }
+    }
+
+    /// Root API id, falling back to the resolved local method when the
+    /// context did not carry one (ingress-only requests, tests).
+    fn root_or_self(&self) -> MethodId {
+        self.root_method_id.unwrap_or(self.resolved_method_id)
     }
 
     /// Compound key for tracking into `method_wallclock`.
@@ -362,14 +826,41 @@ impl<E: LatencyEstimator + Default + 'static> EstimationTracker<E> {
 #[derive(Debug, Clone)]
 pub(crate) struct ChildRPCTracker {
     pub key: ParentToChildKey,
+    /// Index into the parent EstimationTracker's `children` vec.
+    pub(crate) child_index: usize,
+    /// Observable path prefix before this child's fanout group.
+    pub(crate) path_prefix: PathPrefix,
+    /// Sorted multiset of still-open earlier children + this child at issue
+    /// time. Lower bound on the eventual fanout-group signature; used by
+    /// the estimation layer to look up the matching group's EMA.
+    pub(crate) base_signature: Vec<MethodId>,
+    pub(crate) service_path_prefix: PathPrefix,
+    pub(crate) base_service_signature: Vec<MethodId>,
+    #[allow(dead_code)]
+    pub(crate) child_id: MethodId,
     start_time: Instant,
 }
 
 impl ChildRPCTracker {
-    fn new(key: ParentToChildKey) -> Self {
+    fn new(
+        key: ParentToChildKey,
+        child_id: MethodId,
+        child_index: usize,
+        path_prefix: PathPrefix,
+        base_signature: Vec<MethodId>,
+        service_path_prefix: PathPrefix,
+        base_service_signature: Vec<MethodId>,
+        start_time: Instant,
+    ) -> Self {
         Self {
             key,
-            start_time: Instant::now(),
+            child_index,
+            path_prefix,
+            base_signature,
+            service_path_prefix,
+            base_service_signature,
+            child_id,
+            start_time,
         }
     }
 
@@ -597,6 +1088,17 @@ pub(crate) fn is_signaled_response<T>(response: &Result<Response<T>, Status>) ->
 #[cfg(test)]
 mod tests {
     use super::*;
+    use masa_core::LatencyEwma;
+    use tonic_core::CowGrpcMethod;
+
+    fn mid(service: &str, method: &str) -> MethodId {
+        MethodRegistry::global()
+            .get_or_register(CowGrpcMethod::new(service.to_string(), method.to_string()))
+    }
+
+    fn sid(service: &str) -> MethodId {
+        MethodRegistry::global().get_or_register_service(service.to_string())
+    }
 
     #[test]
     fn compute_tracker_accumulates_across_polls() {
@@ -622,6 +1124,268 @@ mod tests {
         let tracker = ComputeTracker::new();
         tracker.stop();
         assert_eq!(tracker.compute_us(), 0);
+    }
+
+    #[test]
+    fn fanout_deadline_blend_moves_lower_estimates_toward_legacy() {
+        assert_eq!(blend_toward_legacy(1_000, 5_000, 0.0), 1_000);
+        assert_eq!(blend_toward_legacy(1_000, 5_000, 0.5), 3_000);
+        assert_eq!(blend_toward_legacy(1_000, 5_000, 1.0), 5_000);
+        assert_eq!(blend_toward_legacy(6_000, 5_000, 0.5), 5_000);
+    }
+
+    #[test]
+    fn fanout_state_advances_observable_prefix_before_open_group() {
+        let a = mid("StateFanout", "a");
+        let b = mid("StateFanout", "b");
+        let c = mid("StateFanout", "c");
+        let t0 = Instant::now();
+        let mut state = FanoutInvocationState::default();
+        state.children.push(ChildRecord {
+            child_id: a,
+            child_service_id: sid("StateFanout"),
+            start: t0,
+            end: Some(t0 + Duration::from_millis(10)),
+            terminal: true,
+        });
+        state.children.push(ChildRecord {
+            child_id: b,
+            child_service_id: sid("StateFanout"),
+            start: t0 + Duration::from_millis(1),
+            end: Some(t0 + Duration::from_millis(20)),
+            terminal: true,
+        });
+        state.children.push(ChildRecord {
+            child_id: c,
+            child_service_id: sid("StateFanout"),
+            start: t0 + Duration::from_millis(30),
+            end: None,
+            terminal: false,
+        });
+
+        state.refresh_path_prefix_before_open_group(t0 + Duration::from_millis(30));
+
+        let mut sig = vec![a, b];
+        sig.sort();
+        assert_eq!(state.path_prefix, PathPrefix::root().append_signature(&sig));
+        assert_eq!(state.incorporated_child_count, 2);
+    }
+
+    #[test]
+    fn estimation_tracker_issues_open_group_with_completed_prefix() {
+        let root = mid("StateTracker", "root");
+        let parent = mid("StateTracker", "parent");
+        let child_a = CowGrpcMethod::new("StateTracker", "child_a");
+        let child_b = CowGrpcMethod::new("StateTracker", "child_b");
+        let child_c = CowGrpcMethod::new("StateTracker", "child_c");
+        let child_a_id = MethodRegistry::global().get_or_register(child_a.clone());
+        let child_b_id = MethodRegistry::global().get_or_register(child_b.clone());
+        let child_service_id = MethodRegistry::global().get_or_register_service("StateTracker");
+        let est = LatencyEstimators::<LatencyEwma>::new();
+        let tracker = EstimationTracker::new(parent, Some(root), est);
+
+        let first = tracker.begin_child(&child_a);
+        let response: Result<Response<()>, Status> = Ok(Response::new(()));
+        tracker.record_child_complete(&first, &response);
+
+        let second = tracker.begin_child(&child_b);
+        assert_eq!(second.path_prefix, PathPrefix::root());
+
+        let third = tracker.begin_child(&child_c);
+        assert_eq!(
+            third.path_prefix,
+            PathPrefix::root().append_signature(&[child_a_id])
+        );
+        assert_eq!(third.base_signature, {
+            let mut sig = vec![child_b_id, third.child_id];
+            sig.sort();
+            sig
+        });
+        assert_eq!(third.base_service_signature, {
+            let mut sig = vec![child_service_id, child_service_id];
+            sig.sort();
+            sig
+        });
+    }
+
+    #[test]
+    fn fanout_lookup_clamps_to_legacy_when_fanout_is_higher() {
+        let root = mid("StateLookupClamp", "root");
+        let parent = mid("StateLookupClamp", "parent");
+        let child = mid("StateLookupClamp", "child");
+        let sibling = mid("StateLookupClamp", "sibling");
+        let service = sid("StateLookupClamp");
+        let est = LatencyEstimators::<LatencyEwma>::new();
+        let mut signature = vec![child, sibling];
+        signature.sort();
+        let mut service_signature = vec![service, service];
+        service_signature.sort();
+        let key = ParentToChildKey::root_rpc_method(root)
+            .parent_rpc_method(parent)
+            .child_rpc_method(child);
+
+        est.track_after_child_wallclock(key, 1_000);
+        for _ in 0..3 {
+            est.track_fanout_group(
+                root,
+                parent,
+                PathPrefix::root(),
+                signature.clone(),
+                PathPrefix::root(),
+                service_signature.clone(),
+                5_000,
+            );
+        }
+
+        let estimate = est.est_after_child_wallclock_for_group(
+            root,
+            parent,
+            PathPrefix::root(),
+            &signature,
+            PathPrefix::root(),
+            &service_signature,
+            child,
+            u64::MAX,
+        );
+
+        assert_eq!(estimate.full, 1_000);
+        assert_eq!(estimate.mean, 1_000);
+        assert_eq!(estimate.floor, 1_000);
+    }
+
+    #[test]
+    fn fanout_lookup_uses_fanout_when_lower_than_legacy() {
+        let root = mid("StateLookupMin", "root");
+        let parent = mid("StateLookupMin", "parent");
+        let child = mid("StateLookupMin", "child");
+        let sibling = mid("StateLookupMin", "sibling");
+        let service = sid("StateLookupMin");
+        let est = LatencyEstimators::<LatencyEwma>::new();
+        let mut signature = vec![child, sibling];
+        signature.sort();
+        let mut service_signature = vec![service, service];
+        service_signature.sort();
+        let key = ParentToChildKey::root_rpc_method(root)
+            .parent_rpc_method(parent)
+            .child_rpc_method(child);
+
+        est.track_after_child_wallclock(key, 5_000);
+        for _ in 0..3 {
+            est.track_fanout_group(
+                root,
+                parent,
+                PathPrefix::root(),
+                signature.clone(),
+                PathPrefix::root(),
+                service_signature.clone(),
+                1_000,
+            );
+        }
+
+        let estimate = est.est_after_child_wallclock_for_group(
+            root,
+            parent,
+            PathPrefix::root(),
+            &signature,
+            PathPrefix::root(),
+            &service_signature,
+            child,
+            u64::MAX,
+        );
+
+        assert_eq!(estimate.full, 5_000);
+        assert_eq!(estimate.mean, 1_000);
+        assert_eq!(estimate.floor, 1_000);
+    }
+
+    #[test]
+    fn fanout_lookup_falls_back_to_service_shape_when_exact_is_sparse() {
+        let root = mid("StateLookupCoarseRoot", "root");
+        let parent = mid("StateLookupCoarseParent", "parent");
+        let a1 = mid("StateLookupCoarseA", "a1");
+        let a2 = mid("StateLookupCoarseA", "a2");
+        let a3 = mid("StateLookupCoarseA", "a3");
+        let b1 = mid("StateLookupCoarseB", "b1");
+        let b2 = mid("StateLookupCoarseB", "b2");
+        let b3 = mid("StateLookupCoarseB", "b3");
+        let service_a = sid("StateLookupCoarseA");
+        let service_b = sid("StateLookupCoarseB");
+        let est = LatencyEstimators::<LatencyEwma>::new();
+        let mut service_signature = vec![service_a, service_b];
+        service_signature.sort();
+        let key = ParentToChildKey::root_rpc_method(root)
+            .parent_rpc_method(parent)
+            .child_rpc_method(a1);
+
+        est.track_after_child_wallclock(key, 5_000);
+        for (left, right) in [(a1, b1), (a2, b2), (a3, b3)] {
+            let mut exact_signature = vec![left, right];
+            exact_signature.sort();
+            est.track_fanout_group(
+                root,
+                parent,
+                PathPrefix::root(),
+                exact_signature,
+                PathPrefix::root(),
+                service_signature.clone(),
+                1_000,
+            );
+        }
+
+        let mut cold_exact = vec![a1, b1];
+        cold_exact.sort();
+        let estimate = est.est_after_child_wallclock_for_group(
+            root,
+            parent,
+            PathPrefix::root(),
+            &cold_exact,
+            PathPrefix::root(),
+            &service_signature,
+            a1,
+            u64::MAX,
+        );
+
+        assert_eq!(estimate.full, 5_000);
+        assert_eq!(estimate.mean, 1_000);
+        assert_eq!(estimate.floor, 1_000);
+    }
+
+    #[test]
+    fn fanout_lookup_ignores_single_child_groups() {
+        let root = mid("StateLookupSingle", "root");
+        let parent = mid("StateLookupSingle", "parent");
+        let child = mid("StateLookupSingle", "child");
+        let service = sid("StateLookupSingle");
+        let est = LatencyEstimators::<LatencyEwma>::new();
+        let key = ParentToChildKey::root_rpc_method(root)
+            .parent_rpc_method(parent)
+            .child_rpc_method(child);
+
+        est.track_after_child_wallclock(key, 5_000);
+        est.track_fanout_group(
+            root,
+            parent,
+            PathPrefix::root(),
+            vec![child],
+            PathPrefix::root(),
+            vec![service],
+            1_000,
+        );
+
+        let estimate = est.est_after_child_wallclock_for_group(
+            root,
+            parent,
+            PathPrefix::root(),
+            &[child],
+            PathPrefix::root(),
+            &[service],
+            child,
+            u64::MAX,
+        );
+
+        assert_eq!(estimate.full, 5_000);
+        assert_eq!(estimate.mean, 5_000);
+        assert_eq!(estimate.floor, 5_000);
     }
 
     #[test]

@@ -225,6 +225,10 @@ class MssimApp(AppPlugin):
         extra_env = cfg.get("extra_env") or {}
         for k, v in extra_env.items():
             env[str(k)] = str(v)
+        if extra_env:
+            env["MSSIM_SERVICE_EXTRA_ENV_KEYS"] = ",".join(
+                sorted(str(k) for k in extra_env)
+            )
 
         return env
 

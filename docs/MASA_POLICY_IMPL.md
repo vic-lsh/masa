@@ -12,6 +12,7 @@ Policy is configured along three composable dimensions:
 - `sched_fifo`: First-In-First-Out ordering (baseline).
 - `sched_slo`: Priority by end-to-end SLO deadline (implies tokio priority queue).
 - `sched_tailclipper`: Priority by request arrival time (oldest first), implementing the TailClipper paper (implies tokio priority queue).
+- `sched_oracle`: Perfect-information child deadline/priority assignment for deterministic synthetic experiments (implies tokio priority queue).
 - `sched_pred`: Priority by per-RPC predicted deadline with deadline tightening and dynamic reprioritization (implies `sched_slo` and `estimator`).
 
 **Admission control** (mutually exclusive — pick at most one):
@@ -35,7 +36,7 @@ Application Cargo.toml (e.g., apps/hotel --features sched_slo)
        └─ libs/tokio/tokio/Cargo.toml: sched_prio = ["masa/sched_prio"]  (tokio-internal flag)
 ```
 
-Note: `sched_prio` remains as a tokio-internal flag that controls the priority queue implementation. User-facing flags (`sched_slo`, `sched_pred`, `sched_tailclipper`) activate it internally.
+Note: `sched_prio` remains as a tokio-internal flag that controls the priority queue implementation. User-facing flags (`sched_slo`, `sched_pred`, `sched_tailclipper`, `sched_oracle`) activate it internally.
 
 The root `Cargo.toml` `[patch.crates-io]` section replaces 8 upstream crates (`tokio`, `tokio-util`, `tokio-stream`, `tokio-test`, `tokio-macros`, `hyper`, `tower`, `tower-service`, `tower-layer`) with local modified versions. All must be built from local copies.
 
@@ -43,7 +44,7 @@ The root `Cargo.toml` `[patch.crates-io]` section replaces 8 upstream crates (`t
 
 The `DefaultHooks` type alias (in `libs/tonic/tonic/src/masa_ext/mod.rs`) is resolved by feature flag:
 
-- Any scheduling feature (`sched_fifo`, `sched_slo`, `sched_tailclipper`) → `masa_policy::PolicyHooks`
+- Any scheduling feature (`sched_fifo`, `sched_slo`, `sched_tailclipper`, `sched_oracle`) → `masa_policy::PolicyHooks`
 - No scheduling features → `NoopHooks`
 
 `PolicyHooks` uses composable layers selected at compile time:
@@ -82,7 +83,7 @@ The `masa` crate defines the fundamental types shared across the system.
 
 `Context` also provides `e2e_deadline()`, computed as `gateway_entry + slo`, which is the absolute end-to-end deadline.
 
-`ContextBuilder` creates `Context` instances. If no explicit `prio_hint` is provided, it defaults to `PriorityHint::new(deadline)` — using the per-hop deadline as the priority value.
+`ContextBuilder` creates `Context` instances. If no explicit `prio_hint` is provided, it defaults to `PriorityHint::new(deadline)` — using the per-hop deadline as the priority value. Under `sched_pred`, the default is converted to relative time-left (`deadline - time_now()`) so initial H2 stream priority uses the same scale as dynamic reprioritization.
 
 Serialization:
 *   `to_json()` / `from_json()`: JSON format (used for logging/debugging).
@@ -185,9 +186,19 @@ Masa modifies `hyper` to be priority-aware on the server side.
 ### Server-Side Request Handling
 In `libs/hyper/src/proto/h2/server.rs`, when `hyper` receives a new HTTP/2 stream (request):
 1.  It checks for the `ctx` header.
-2.  **If present**: It calls `.to_str().unwrap()`, then `MasaContext::from_header_string()` (base64 decode → bincode deserialize) to extract the `prio_hint`. Note: these `.unwrap()` calls will **panic** on malformed input (see `docs/MASA_IMPROVEMENTS.md`).
+2.  **If present**: It calls `.to_str().unwrap()`, then `MasaContext::from_header_string()` (base64 decode → bincode deserialize) to extract the propagated priority hint. Note: these `.unwrap()` calls will **panic** on malformed input (see `docs/MASA_IMPROVEMENTS.md`).
 3.  It calls `exec.execute_h2stream_with_prio(future, prio)`.
 4.  **If absent**: It calls `exec.execute_h2stream(future)`, which defaults to `PriorityHint::infra()` (highest priority, value 0). This means requests without a `ctx` header are treated as infrastructure and always execute first.
+
+Hyper intentionally consumes the serialized `ctx.prio_hint()` directly. The context/policy
+layer is responsible for putting this value on the same relative time-left scale used by
+`sched_pred` reprioritization (`ctx.deadline() - time_now()`). `ContextBuilder` handles the
+root/default case; `EstimationLayer::child_deadline_and_prio` handles child RPCs with
+estimated downstream work. Mixing absolute deadline-like values with relative
+reprioritization values makes newly spawned, never-polled streams look much lower priority
+than already-polled tasks, because smaller `PriorityHint` values win. Under overload this
+can delay new streams before their first policy poll, inflate observed child wallclock
+latency, and feed back into more pessimistic admission control.
 
 ### Executor Interface
 The `Exec` enum in `libs/hyper/src/common/exec.rs` has three variants:
