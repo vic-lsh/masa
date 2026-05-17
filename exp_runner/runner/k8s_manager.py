@@ -684,6 +684,12 @@ class K8sManager(DeploymentManager):
         Load docker images into kind cluster.
         """
         for img in image_names:
+            # Pull first in case the image isn't cached locally (e.g. on CI runners).
+            try:
+                self._run_cmd(["docker", "inspect", "--type=image", img])
+            except Exception:
+                logger.info(f"Pulling image {img}...")
+                self._run_cmd(["docker", "pull", img])
             logger.info(f"Loading image {img} into kind cluster {cluster_name}...")
             cmd = ["kind", "load", "docker-image", img, "--name", cluster_name]
             self._run_cmd(cmd)
