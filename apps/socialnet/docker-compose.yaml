@@ -59,7 +59,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "8"
+          cpus: "4"
 
   user-timeline-redis:
     image: redis:7.2
