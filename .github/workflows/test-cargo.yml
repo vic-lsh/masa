@@ -22,7 +22,7 @@ jobs:
           - "sched_pred,abort_slo,ac_pred,est_mean_var"
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@nightly
+      - uses: dtolnay/rust-toolchain@master
       - name: Install protobuf
         run: |
           ulimit -n 4096 || true
