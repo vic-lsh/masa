@@ -1,6 +1,6 @@
 {
   "callgraph_dirs": [
-    "trace-analysis/golden/S_14677443"
+    "trace-analysis/graph_branch/S_14677443"
   ],
   "config_dir": "apps/mssim/simulator/example_config/",
   "slo_ms": 100,

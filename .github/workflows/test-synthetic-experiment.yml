@@ -1,0 +1,45 @@
+name: test-synthetic-experiment
+
+on:
+  workflow_call:
+
+env:
+  CI: "true"
+  CARGO_BUILD_JOBS: "16"
+  EXP_NAME: "ci"
+
+jobs:
+  test-synthetic-experiment:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        deploy-mode: [docker, kind]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Docker login
+        run: echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login docker.io -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+      - name: Install tools
+        run: |
+          ulimit -n 4096 || true
+          mkdir -p $HOME/.local/bin
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          sudo apt-get update -yqq && sudo apt-get install -y graphviz libgraphviz-dev
+          if [[ "${{ matrix.deploy-mode }}" == "kind" ]]; then
+            command -v kind   || { curl -Lo $HOME/.local/bin/kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64 && chmod +x $HOME/.local/bin/kind; }
+            command -v kubectl || { curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" && chmod +x kubectl && mv kubectl $HOME/.local/bin/kubectl; }
+            command -v helm   || { curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 && chmod 700 get_helm.sh && HELM_INSTALL_DIR=$HOME/.local/bin ./get_helm.sh --no-sudo && rm get_helm.sh; }
+          fi
+          uv sync
+          echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
+      - name: Setup Rust
+        run: |
+          if ! command -v cargo &>/dev/null; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+            echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+          fi
+          rustup toolchain install nightly
+          cargo --version
+      - run: groups $(whoami)
+      - run: ./scripts/test_synthetic_experiment.sh $EXP_NAME --deploy-mode ${{ matrix.deploy-mode }}

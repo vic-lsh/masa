@@ -16,6 +16,7 @@ RUN apt-get update && apt-get install -y\
 WORKDIR /usr/src/masa
 
 # Copy source code
+COPY rust-toolchain.toml rust-toolchain.toml
 COPY Cargo.toml Cargo.toml
 COPY Cargo.lock Cargo.lock
 COPY apps apps

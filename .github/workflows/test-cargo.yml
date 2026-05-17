@@ -1,0 +1,36 @@
+name: test-cargo
+
+on:
+  workflow_call:
+
+env:
+  CI: "true"
+  CARGO_BUILD_JOBS: "4"
+
+jobs:
+  cargo-test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        features:
+          - ""
+          - "sched_fifo"
+          - "sched_slo"
+          - "sched_tailclipper,abort_slo"
+          - "sched_slo,ac_rajomon"
+          - "sched_pred,abort_slo,ac_pred,est_mean_var"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly-2026-01-07
+      - name: Install protobuf
+        run: |
+          ulimit -n 4096 || true
+          chmod +x ./scripts/install_protoc.sh
+          ./scripts/install_protoc.sh
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          echo "PROTOC=$HOME/.local/bin/protoc" >> $GITHUB_ENV
+      - run: rustc --version && cargo --version
+      - run: ./scripts/test.sh --feature "${{ matrix.features }}"

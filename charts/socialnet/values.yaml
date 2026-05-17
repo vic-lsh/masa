@@ -23,7 +23,7 @@ defaultServiceResources:
     cpu: "4"
     memory: "4Gi"
   requests:
-    cpu: "200m"
+    cpu: "100m"
     memory: "128Mi"
 
 # Socialnet microservices. Each produces a Deployment and a k8s Service named

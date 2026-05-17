@@ -1,6 +1,6 @@
 {
   "callgraph_dirs": [
-    "trace-analysis/graphs/S_130831269"
+    "trace-analysis/graph_branch/S_130831269"
   ],
   "slo_ms": 11,
   "orchestrator": "localhost:50051",
