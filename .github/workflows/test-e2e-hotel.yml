@@ -16,9 +16,6 @@ jobs:
         deploy-mode: [docker, kind]
     steps:
       - uses: actions/checkout@v4
-      - name: Docker login
-        if: ${{ secrets.DOCKERHUB_TOKEN != '' }}
-        run: echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login docker.io -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
       - name: Install tools
         run: |
           ulimit -n 4096 || true
