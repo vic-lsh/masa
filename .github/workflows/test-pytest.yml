@@ -1,0 +1,24 @@
+name: test-pytest
+
+on:
+  workflow_call:
+
+env:
+  CI: "true"
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install system deps
+        run: sudo apt-get update -yqq && sudo apt-get install -y libgraphviz-dev pkg-config
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+      - run: uv sync --dev
+      - run: ./scripts/test_python.sh
