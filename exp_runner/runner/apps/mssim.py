@@ -466,7 +466,7 @@ class MssimApp(AppPlugin):
             # Match docker-compose deploy.resources.limits: 1 CPU, 10 GB memory per service
             "defaultServiceResources": {
                 "limits": {"cpu": "1", "memory": "10Gi"},
-                "requests": {"cpu": "1", "memory": "1Gi"},
+                "requests": {"cpu": "200m", "memory": "1Gi"},
             },
             "configMaps": {
                 "enabled": True,
