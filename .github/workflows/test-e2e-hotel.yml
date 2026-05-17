@@ -6,6 +6,7 @@ on:
 env:
   CI: "true"
   CARGO_BUILD_JOBS: "16"
+  HOTEL_CONTAINER_CPUS: "2"
 
 jobs:
   test-e2e-hotel:
