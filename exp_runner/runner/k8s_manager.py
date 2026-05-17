@@ -4,6 +4,7 @@ Kubernetes operations manager for deploying and managing experiments on K8s.
 
 import json
 import logging
+import os
 import subprocess
 import tempfile
 import threading
@@ -683,6 +684,17 @@ class K8sManager(DeploymentManager):
         """
         Load docker images into kind cluster.
         """
+        if os.environ.get("CI", "").lower() == "true":
+            logger.info("Pruning Docker build cache before loading images into Kind")
+            for cmd in (
+                ["docker", "builder", "prune", "-af"],
+                ["docker", "system", "prune", "-f"],
+            ):
+                try:
+                    self._run_cmd(cmd)
+                except Exception as exc:
+                    logger.warning("Docker prune command failed: %s", exc)
+
         for img in image_names:
             # Pull first in case the image isn't cached locally (e.g. on CI runners).
             try:

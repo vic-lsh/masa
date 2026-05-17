@@ -6,6 +6,7 @@ on:
 env:
   CI: "true"
   CARGO_BUILD_JOBS: "16"
+  SOCIALNET_CONTAINER_CPUS: "2"
 
 jobs:
   test-socialnet:
