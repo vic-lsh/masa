@@ -1,0 +1,361 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CI: "true"
+
+jobs:
+  # Detect which paths changed so downstream jobs can skip when irrelevant.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      rust: ${{ steps.filter.outputs.rust }}
+      python: ${{ steps.filter.outputs.python }}
+      hotel: ${{ steps.filter.outputs.hotel }}
+      mssim: ${{ steps.filter.outputs.mssim }}
+      socialnet: ${{ steps.filter.outputs.socialnet }}
+      synthetic: ${{ steps.filter.outputs.synthetic }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            rust:
+              - '**/*.rs'
+              - '**/Cargo.toml'
+              - 'Cargo.lock'
+              - 'scripts/**'
+              - '.github/workflows/ci.yml'
+            python:
+              - '**/*.py'
+              - 'pyproject.toml'
+              - 'uv.lock'
+              - 'scripts/**'
+              - '.github/workflows/ci.yml'
+            hotel:
+              - 'libs/**'
+              - 'apps/hotel/**'
+              - 'apps/app-utils/**'
+              - 'apps/app-util-macros/**'
+              - 'charts/hotel/**'
+              - 'exp/hotel/**'
+              - 'exp_runner/**'
+              - 'scripts/**'
+              - 'Cargo.*'
+              - 'pyproject.toml'
+              - 'uv.lock'
+              - '.github/workflows/ci.yml'
+            mssim:
+              - 'libs/**'
+              - 'apps/mssim/**'
+              - 'apps/app-utils/**'
+              - 'apps/app-util-macros/**'
+              - 'exp/mssim/**'
+              - 'exp_runner/**'
+              - 'scripts/**'
+              - 'Cargo.*'
+              - 'pyproject.toml'
+              - 'uv.lock'
+              - '.github/workflows/ci.yml'
+            socialnet:
+              - 'libs/**'
+              - 'apps/socialnet/**'
+              - 'apps/app-utils/**'
+              - 'apps/app-util-macros/**'
+              - 'charts/socialnet/**'
+              - 'exp/socialnet/**'
+              - 'exp_runner/**'
+              - 'scripts/**'
+              - 'Cargo.*'
+              - 'pyproject.toml'
+              - 'uv.lock'
+              - '.github/workflows/ci.yml'
+            synthetic:
+              - 'libs/**'
+              - 'apps/synthetic/**'
+              - 'apps/app-utils/**'
+              - 'apps/app-util-macros/**'
+              - 'exp/synthetic/**'
+              - 'exp_runner/**'
+              - 'scripts/**'
+              - 'Cargo.*'
+              - 'pyproject.toml'
+              - 'uv.lock'
+              - '.github/workflows/ci.yml'
+
+  # ── Quick checks ────────────────────────────────────────────────────────────
+
+  format:
+    needs: changes
+    if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.python == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rustfmt
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+      - run: ./scripts/format.sh --check
+
+  cargo-check:
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        features:
+          - ""
+          - "sched_fifo"
+          - "sched_slo"
+          - "sched_tailclipper,abort_slo"
+          - "sched_slo,ac_rajomon"
+          - "sched_slo,ac_pred,est_mean_var"
+          - "sched_pred,abort_slo,ac_pred,est_mean_var"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - name: Install protobuf
+        run: sudo apt-get update -yqq && sudo apt-get install -y protobuf-compiler
+      - run: ulimit -n 8192 && rustc --version && cargo --version
+      - run: ./scripts/check.sh "${{ matrix.features }}"
+
+  cargo-check-tests:
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - name: Install protobuf
+        run: sudo apt-get update -yqq && sudo apt-get install -y protobuf-compiler
+      - run: ulimit -n 8192 && rustc --version && cargo --version
+      - run: ./scripts/check.sh --tests ""
+
+  lint-python:
+    needs: changes
+    if: needs.changes.outputs.python == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+      - run: ./scripts/lint_python.sh
+
+  pytest:
+    needs: changes
+    if: needs.changes.outputs.python == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install system deps
+        run: sudo apt-get update -yqq && sudo apt-get install -y libgraphviz-dev pkg-config
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+      - run: uv sync --dev
+      - run: ./scripts/test_python.sh
+
+  # ── Tests ───────────────────────────────────────────────────────────────────
+
+  cargo-test:
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        features:
+          - ""
+          - "sched_fifo"
+          - "sched_slo"
+          - "sched_tailclipper,abort_slo"
+          - "sched_slo,ac_rajomon"
+          - "sched_pred,abort_slo,ac_pred,est_mean_var"
+    env:
+      CARGO_BUILD_JOBS: "4"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - name: Install protobuf
+        run: |
+          ulimit -n 4096 || true
+          chmod +x ./scripts/install_protoc.sh
+          ./scripts/install_protoc.sh
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          echo "PROTOC=$HOME/.local/bin/protoc" >> $GITHUB_ENV
+      - run: rustc --version && cargo --version
+      - run: ./scripts/test.sh --feature "${{ matrix.features }}"
+
+  # The following jobs require a self-hosted runner with Docker and the
+  # DOCKERHUB_USERNAME / DOCKERHUB_TOKEN secrets configured in repo settings.
+
+  test-e2e-hotel:
+    needs: changes
+    if: needs.changes.outputs.hotel == 'true'
+    runs-on: self-hosted
+    strategy:
+      fail-fast: false
+      matrix:
+        deploy-mode: [docker, kind]
+    env:
+      CARGO_BUILD_JOBS: "16"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Docker login
+        run: echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login docker.io -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+      - name: Install tools
+        run: |
+          ulimit -n 4096 || true
+          mkdir -p $HOME/.local/bin
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          if [[ "${{ matrix.deploy-mode }}" == "kind" ]]; then
+            command -v kind || { curl -Lo $HOME/.local/bin/kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64 && chmod +x $HOME/.local/bin/kind; }
+            command -v kubectl || { curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" && chmod +x kubectl && mv kubectl $HOME/.local/bin/kubectl; }
+            command -v helm || { curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 && chmod 700 get_helm.sh && HELM_INSTALL_DIR=$HOME/.local/bin ./get_helm.sh --no-sudo && rm get_helm.sh; }
+          fi
+          uv sync
+          echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
+      - name: Setup Rust
+        run: |
+          if ! command -v cargo &>/dev/null; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+            echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+          fi
+          rustup toolchain install nightly
+          cargo --version
+      - run: groups $(whoami)
+      - run: ./scripts/test_e2e_hotel.sh --deploy-mode ${{ matrix.deploy-mode }}
+
+  test-mssim-experiment:
+    needs: changes
+    if: needs.changes.outputs.mssim == 'true'
+    runs-on: self-hosted
+    strategy:
+      fail-fast: false
+      matrix:
+        deploy-mode: [docker, kind]
+    env:
+      CARGO_BUILD_JOBS: "16"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Docker login
+        run: echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login docker.io -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+      - name: Install tools
+        run: |
+          ulimit -n 4096 || true
+          mkdir -p $HOME/.local/bin
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          if [[ "${{ matrix.deploy-mode }}" == "kind" ]]; then
+            command -v kind || { curl -Lo $HOME/.local/bin/kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64 && chmod +x $HOME/.local/bin/kind; }
+            command -v kubectl || { curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" && chmod +x kubectl && mv kubectl $HOME/.local/bin/kubectl; }
+            command -v helm || { curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 && chmod 700 get_helm.sh && HELM_INSTALL_DIR=$HOME/.local/bin ./get_helm.sh --no-sudo && rm get_helm.sh; }
+          fi
+          uv sync
+          echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
+      - name: Setup Rust
+        run: |
+          if ! command -v cargo &>/dev/null; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+            echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+          fi
+          rustup toolchain install nightly
+          cargo --version
+      - run: groups $(whoami)
+      - run: ./scripts/test_mssim_experiment.sh --deploy-mode ${{ matrix.deploy-mode }}
+
+  test-socialnet:
+    needs: changes
+    if: needs.changes.outputs.socialnet == 'true'
+    runs-on: self-hosted
+    strategy:
+      fail-fast: false
+      matrix:
+        deploy-mode: [docker, kind]
+    env:
+      CARGO_BUILD_JOBS: "16"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Docker login
+        run: echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login docker.io -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+      - name: Install tools
+        run: |
+          ulimit -n 4096 || true
+          mkdir -p $HOME/.local/bin
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          if [[ "${{ matrix.deploy-mode }}" == "kind" ]]; then
+            command -v kind || { curl -Lo $HOME/.local/bin/kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64 && chmod +x $HOME/.local/bin/kind; }
+            command -v kubectl || { curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" && chmod +x kubectl && mv kubectl $HOME/.local/bin/kubectl; }
+            command -v helm || { curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 && chmod 700 get_helm.sh && HELM_INSTALL_DIR=$HOME/.local/bin ./get_helm.sh --no-sudo && rm get_helm.sh; }
+          fi
+          uv sync
+          echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
+      - name: Setup Rust
+        run: |
+          if ! command -v cargo &>/dev/null; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+            echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+          fi
+          rustup toolchain install nightly
+          cargo --version
+      - run: groups $(whoami)
+      - run: ./scripts/test_socialnet.sh --deploy-mode ${{ matrix.deploy-mode }}
+
+  test-synthetic-experiment:
+    needs: changes
+    if: needs.changes.outputs.synthetic == 'true'
+    runs-on: self-hosted
+    strategy:
+      fail-fast: false
+      matrix:
+        deploy-mode: [docker, kind]
+    env:
+      CARGO_BUILD_JOBS: "16"
+      EXP_NAME: "ci"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Docker login
+        run: echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login docker.io -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+      - name: Install tools
+        run: |
+          ulimit -n 4096 || true
+          mkdir -p $HOME/.local/bin
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          if [[ "${{ matrix.deploy-mode }}" == "kind" ]]; then
+            command -v kind || { curl -Lo $HOME/.local/bin/kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64 && chmod +x $HOME/.local/bin/kind; }
+            command -v kubectl || { curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" && chmod +x kubectl && mv kubectl $HOME/.local/bin/kubectl; }
+            command -v helm || { curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 && chmod 700 get_helm.sh && HELM_INSTALL_DIR=$HOME/.local/bin ./get_helm.sh --no-sudo && rm get_helm.sh; }
+          fi
+          uv sync
+          echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
+      - name: Setup Rust
+        run: |
+          if ! command -v cargo &>/dev/null; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+            echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+          fi
+          rustup toolchain install nightly
+          cargo --version
+      - run: groups $(whoami)
+      - run: ./scripts/test_synthetic_experiment.sh $EXP_NAME --deploy-mode ${{ matrix.deploy-mode }}
