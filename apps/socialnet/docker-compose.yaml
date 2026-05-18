@@ -12,7 +12,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "4"
+          cpus: "${SOCIALNET_CONTAINER_CPUS:-4}"
 
   post-storage-memcached:
     image: memcached:1.6
@@ -22,7 +22,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "4"
+          cpus: "${SOCIALNET_CONTAINER_CPUS:-4}"
 
   post-storage-service:
     image: post_storage_server:${SOCIALNET_IMAGE_TAG:-latest}
@@ -44,7 +44,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "4"
+          cpus: "${SOCIALNET_CONTAINER_CPUS:-4}"
 
   # -------------------------------------------
   # User Timeline Section
@@ -59,7 +59,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "4"
+          cpus: "${SOCIALNET_CONTAINER_CPUS:-4}"
 
   user-timeline-redis:
     image: redis:7.2
@@ -71,7 +71,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "4"
+          cpus: "${SOCIALNET_CONTAINER_CPUS:-4}"
 
   user-timeline-service:
     image: user_timeline_server:${SOCIALNET_IMAGE_TAG:-latest}
@@ -96,7 +96,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "4"
+          cpus: "${SOCIALNET_CONTAINER_CPUS:-4}"
 
   # -------------------------------------------
   # Home Timeline Section
@@ -111,7 +111,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "4"
+          cpus: "${SOCIALNET_CONTAINER_CPUS:-4}"
 
   home-timeline-service:
     image: home_timeline_server:${SOCIALNET_IMAGE_TAG:-latest}
@@ -143,7 +143,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "4"
+          cpus: "${SOCIALNET_CONTAINER_CPUS:-4}"
 
   write-home-timeline-redis:
     image: redis:7.2
@@ -155,7 +155,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "4"
+          cpus: "${SOCIALNET_CONTAINER_CPUS:-4}"
 
   write-home-timeline-service:
     image: write_home_timeline_server:${SOCIALNET_IMAGE_TAG:-latest}
@@ -182,7 +182,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "4"
+          cpus: "${SOCIALNET_CONTAINER_CPUS:-4}"
 
   # -------------------------------------------
   # User Service Section
@@ -197,7 +197,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "4"
+          cpus: "${SOCIALNET_CONTAINER_CPUS:-4}"
 
   user-redis:
     image: redis:7.2
@@ -209,7 +209,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "4"
+          cpus: "${SOCIALNET_CONTAINER_CPUS:-4}"
 
   user-service:
     image: user_service:${SOCIALNET_IMAGE_TAG:-latest}
@@ -235,7 +235,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "4"
+          cpus: "${SOCIALNET_CONTAINER_CPUS:-4}"
 
   # -------------------------------------------
   # Social Graph Section
@@ -250,7 +250,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "4"
+          cpus: "${SOCIALNET_CONTAINER_CPUS:-4}"
 
   social-graph-redis:
     image: redis:7.2
@@ -262,7 +262,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "4"
+          cpus: "${SOCIALNET_CONTAINER_CPUS:-4}"
 
   social-graph-service:
     image: social_graph_server:${SOCIALNET_IMAGE_TAG:-latest}
@@ -289,7 +289,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "4"
+          cpus: "${SOCIALNET_CONTAINER_CPUS:-4}"
 
   # -------------------------------------------
   # Unique ID Section
@@ -309,7 +309,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "4"
+          cpus: "${SOCIALNET_CONTAINER_CPUS:-4}"
 
   # -------------------------------------------
   # Media Section
@@ -328,7 +328,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "4"
+          cpus: "${SOCIALNET_CONTAINER_CPUS:-4}"
 
   # -------------------------------------------
   # Text Service Section
@@ -359,7 +359,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "4"
+          cpus: "${SOCIALNET_CONTAINER_CPUS:-4}"
 
   # -------------------------------------------
   # User Mention Section
@@ -374,7 +374,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "4"
+          cpus: "${SOCIALNET_CONTAINER_CPUS:-4}"
 
   user-mention-memcached:
     image: memcached:1.6
@@ -384,7 +384,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "4"
+          cpus: "${SOCIALNET_CONTAINER_CPUS:-4}"
 
   user-mention-service:
     image: usermention_server:${SOCIALNET_IMAGE_TAG:-latest}
@@ -405,7 +405,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "4"
+          cpus: "${SOCIALNET_CONTAINER_CPUS:-4}"
 
   # -------------------------------------------
   # URL Shorten Section
@@ -424,7 +424,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "4"
+          cpus: "${SOCIALNET_CONTAINER_CPUS:-4}"
           memory: 4G
 
   url-shorten-service:
@@ -445,7 +445,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "4"
+          cpus: "${SOCIALNET_CONTAINER_CPUS:-4}"
 
   # -------------------------------------------
   # Shared Infrastructure
@@ -460,7 +460,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "4"
+          cpus: "${SOCIALNET_CONTAINER_CPUS:-4}"
 
   # -------------------------------------------
   # Register User / Frontend
@@ -484,7 +484,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "4"
+          cpus: "${SOCIALNET_CONTAINER_CPUS:-4}"
 
   # -------------------------------------------
   # Unified Frontend
@@ -512,7 +512,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "4"
+          cpus: "${SOCIALNET_CONTAINER_CPUS:-4}"
 
   # -------------------------------------------
   # Compose Post / Frontend / Gateway
@@ -577,7 +577,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "4"
+          cpus: "${SOCIALNET_CONTAINER_CPUS:-4}"
 
 volumes:
   home_timeline_redis-data:

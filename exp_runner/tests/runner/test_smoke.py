@@ -3,7 +3,10 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from exp_runner.runner.apps.base import AppPlugin
-from exp_runner.runner.apps.utils import verify_standard_workload
+from exp_runner.runner.apps.utils import (
+    policy_allows_load_shedding,
+    verify_standard_workload,
+)
 from exp_runner.runner.config import ExperimentConfig
 from exp_runner.runner.experiment import Experiment
 
@@ -144,6 +147,41 @@ class TestSmokeTest:
         csv_path = policy_dir / "r100_api1.csv"
         with open(csv_path, "w") as f:
             f.write("0,0,0,0,0,0,/None\n")
+
+        assert verify_standard_workload(mock_config) is False
+
+    def test_verify_standard_workload_allows_load_shedding_policy(
+        self, mock_config, tmp_path
+    ):
+        mock_config.policies = ["sched_pred,abort_slack,est_mean_var,ac_pred"]
+        mock_config.out_dir.mkdir(parents=True)
+        (mock_config.out_dir / "done").touch()
+
+        policy_dir = mock_config.out_dir / "0" / mock_config.policies[0]
+        policy_dir.mkdir(parents=True)
+        (policy_dir / "loadgen.log").touch()
+
+        csv_path = policy_dir / "r100_api1.csv"
+        with open(csv_path, "w") as f:
+            f.write("0,0,0,0,0,0,/None\n")
+
+        assert verify_standard_workload(mock_config) is True
+        assert policy_allows_load_shedding(mock_config.policies[0]) is True
+
+    def test_verify_standard_workload_rejects_zero_goodput_load_shedding_policy(
+        self, mock_config, tmp_path
+    ):
+        mock_config.policies = ["sched_pred,abort_slack,est_mean_var,ac_pred"]
+        mock_config.out_dir.mkdir(parents=True)
+        (mock_config.out_dir / "done").touch()
+
+        policy_dir = mock_config.out_dir / "0" / mock_config.policies[0]
+        policy_dir.mkdir(parents=True)
+        (policy_dir / "loadgen.log").touch()
+
+        csv_path = policy_dir / "r100_api1.csv"
+        with open(csv_path, "w") as f:
+            f.write("0,0,0,0,0,0,/PredAdmissionRej\n")
 
         assert verify_standard_workload(mock_config) is False
 

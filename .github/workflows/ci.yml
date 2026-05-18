@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+  pull-requests: read
+
 jobs:
   # Detect which paths changed so downstream workflows can skip when irrelevant.
   changes:
@@ -12,10 +16,6 @@ jobs:
     outputs:
       rust: ${{ steps.filter.outputs.rust }}
       python: ${{ steps.filter.outputs.python }}
-      hotel: ${{ steps.filter.outputs.hotel }}
-      mssim: ${{ steps.filter.outputs.mssim }}
-      socialnet: ${{ steps.filter.outputs.socialnet }}
-      synthetic: ${{ steps.filter.outputs.synthetic }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -33,56 +33,6 @@ jobs:
               - 'pyproject.toml'
               - 'uv.lock'
               - 'scripts/**'
-              - '.github/workflows/**'
-            hotel:
-              - 'libs/**'
-              - 'apps/hotel/**'
-              - 'apps/app-utils/**'
-              - 'apps/app-util-macros/**'
-              - 'charts/hotel/**'
-              - 'exp/hotel/**'
-              - 'exp_runner/**'
-              - 'scripts/**'
-              - 'Cargo.*'
-              - 'pyproject.toml'
-              - 'uv.lock'
-              - '.github/workflows/**'
-            mssim:
-              - 'libs/**'
-              - 'apps/mssim/**'
-              - 'apps/app-utils/**'
-              - 'apps/app-util-macros/**'
-              - 'exp/mssim/**'
-              - 'exp_runner/**'
-              - 'scripts/**'
-              - 'Cargo.*'
-              - 'pyproject.toml'
-              - 'uv.lock'
-              - '.github/workflows/**'
-            socialnet:
-              - 'libs/**'
-              - 'apps/socialnet/**'
-              - 'apps/app-utils/**'
-              - 'apps/app-util-macros/**'
-              - 'charts/socialnet/**'
-              - 'exp/socialnet/**'
-              - 'exp_runner/**'
-              - 'scripts/**'
-              - 'Cargo.*'
-              - 'pyproject.toml'
-              - 'uv.lock'
-              - '.github/workflows/**'
-            synthetic:
-              - 'libs/**'
-              - 'apps/synthetic/**'
-              - 'apps/app-utils/**'
-              - 'apps/app-util-macros/**'
-              - 'exp/synthetic/**'
-              - 'exp_runner/**'
-              - 'scripts/**'
-              - 'Cargo.*'
-              - 'pyproject.toml'
-              - 'uv.lock'
               - '.github/workflows/**'
 
   fmt-cargo:
@@ -109,27 +59,3 @@ jobs:
     needs: changes
     if: needs.changes.outputs.rust == 'true'
     uses: ./.github/workflows/test-cargo.yml
-
-  test-e2e-hotel:
-    needs: changes
-    if: needs.changes.outputs.hotel == 'true'
-    uses: ./.github/workflows/test-e2e-hotel.yml
-    secrets: inherit
-
-  test-mssim-experiment:
-    needs: changes
-    if: needs.changes.outputs.mssim == 'true'
-    uses: ./.github/workflows/test-mssim-experiment.yml
-    secrets: inherit
-
-  test-socialnet:
-    needs: changes
-    if: needs.changes.outputs.socialnet == 'true'
-    uses: ./.github/workflows/test-socialnet.yml
-    secrets: inherit
-
-  test-synthetic-experiment:
-    needs: changes
-    if: needs.changes.outputs.synthetic == 'true'
-    uses: ./.github/workflows/test-synthetic-experiment.yml
-    secrets: inherit

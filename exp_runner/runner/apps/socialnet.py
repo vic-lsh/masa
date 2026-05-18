@@ -18,6 +18,7 @@ from ..executor import CommandExecutor, SubprocessExecutor
 from ..naming import generate_project_name
 from .base import AppBuilder, AppPlugin, DockerConfig
 from .utils import (
+    default_service_resources_for_k8s,
     get_docker_progress_flag,
     normalize_features_to_tag,
 )
@@ -808,6 +809,7 @@ class SocialnetApp(AppPlugin):
             },
             "logLevel": log_level,
             "service": {"type": "ClusterIP"},
+            "defaultServiceResources": default_service_resources_for_k8s(),
             "services": services,
             "infra": infra,
             "configMaps": {
@@ -911,13 +913,16 @@ class SocialnetApp(AppPlugin):
             "url_shorten_server",
         ]
         images = [f"{b}:{tag}" for b in binaries]
-        # Stateful infra images — loaded into kind so tests work offline.
-        images.extend(
-            [
-                "mongo:7.0",
-                "redis:7.2",
-                "memcached:1.6",
-                "rabbitmq:3.13-management",
-            ]
-        )
+        if os.environ.get("CI", "").lower() != "true":
+            # Stateful infra images are loaded locally for offline Kind runs.
+            # CI lets Kind pull these public images to avoid duplicating them
+            # in Docker plus containerd on the small hosted runner disk.
+            images.extend(
+                [
+                    "mongo:7.0",
+                    "redis:7.2",
+                    "memcached:1.6",
+                    "rabbitmq:3.13-management",
+                ]
+            )
         return images

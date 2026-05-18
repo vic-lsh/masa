@@ -134,6 +134,24 @@ def get_docker_progress_flag() -> str:
     return "--progress=tty"
 
 
+def default_service_resources_for_k8s() -> dict[str, dict[str, str]]:
+    """
+    Return default Helm resources for generated k8s values.
+
+    GitHub-hosted runners expose a small Kind node, so CI lowers requests to
+    let all benchmark pods schedule while preserving the runtime CPU limit.
+    """
+    if os.environ.get("CI", "").lower() in ("true", "1", "yes"):
+        requests = {"cpu": "25m", "memory": "64Mi"}
+    else:
+        requests = {"cpu": "100m", "memory": "128Mi"}
+
+    return {
+        "limits": {"cpu": "4", "memory": "4Gi"},
+        "requests": requests,
+    }
+
+
 def _api_weight_fractions(gen_config: dict, num_apis: int) -> Optional[list[float]]:
     weights = gen_config.get("ApiWeights")
     if weights is None:
@@ -161,6 +179,12 @@ def _api_weight_fractions(gen_config: dict, num_apis: int) -> Optional[list[floa
     return [weight / total_weight for weight in weights]
 
 
+def policy_allows_load_shedding(policy: str) -> bool:
+    """Return true for policies where rejecting/aborting requests is expected."""
+    features = {part.strip() for part in policy.split(",") if part.strip()}
+    return bool(features & {"ac_pred", "ac_rajomon", "abort_slack", "signal_slack"})
+
+
 def verify_standard_workload(config: "ExperimentConfig") -> bool:
     """
     Shared verification logic for standard workloads (hotel, socialnet, synthetic).
@@ -170,7 +194,7 @@ def verify_standard_workload(config: "ExperimentConfig") -> bool:
     - Existence of policy directories
     - Existence of loadgen logs
     - Existence of CSV trace files per API/RPS
-    - Goodput within 20% margin of target RPS
+    - Goodput within 20% margin of target RPS for non-load-shedding policies
 
     Args:
         config: Experiment configuration object
@@ -248,6 +272,23 @@ def verify_standard_workload(config: "ExperimentConfig") -> bool:
 
                     lower = expected_per_api * 0.8
                     upper = expected_per_api * 1.2
+
+                    if policy_allows_load_shedding(policy):
+                        if goodput <= 0:
+                            logger.error(
+                                f"No successful requests in {expected_file.name} "
+                                f"(Policy: {policy}, Iteration: {i})"
+                            )
+                            all_passed = False
+                        elif not (lower <= goodput <= upper):
+                            observed_rps = goodput / duration
+                            expected_rps_per_api = expected_per_api / duration
+                            logger.info(
+                                f"Skipping target-goodput bound for load-shedding policy "
+                                f"{policy} in {expected_file.name}: observed "
+                                f"{observed_rps:.2f} RPS, target {expected_rps_per_api:.2f} RPS"
+                            )
+                        continue
 
                     if not (lower <= goodput <= upper):
                         observed_rps = goodput / duration

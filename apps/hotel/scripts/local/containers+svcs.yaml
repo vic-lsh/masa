@@ -10,7 +10,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "4"
+          cpus: "${HOTEL_CONTAINER_CPUS:-4}"
 
   rate-redis:
     image: redis:7.2
@@ -21,7 +21,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "4"
+          cpus: "${HOTEL_CONTAINER_CPUS:-4}"
 
   rate-service:
     image: hotel_rate:${HOTEL_IMAGE_TAG:-latest}
@@ -42,7 +42,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "4"
+          cpus: "${HOTEL_CONTAINER_CPUS:-4}"
 
   profile-mongo:
     image: mongo:7.0
@@ -55,7 +55,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "4"
+          cpus: "${HOTEL_CONTAINER_CPUS:-4}"
 
   profile-redis:
     image: redis:7.2
@@ -66,7 +66,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "4"
+          cpus: "${HOTEL_CONTAINER_CPUS:-4}"
 
   profile-service:
     image: hotel_profile:${HOTEL_IMAGE_TAG:-latest}
@@ -87,7 +87,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "4"
+          cpus: "${HOTEL_CONTAINER_CPUS:-4}"
 
   reservation-mongo:
     image: mongo:7.0
@@ -100,7 +100,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "4"
+          cpus: "${HOTEL_CONTAINER_CPUS:-4}"
 
   reservation-redis:
     image: redis:7.2
@@ -111,7 +111,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "4"
+          cpus: "${HOTEL_CONTAINER_CPUS:-4}"
 
   reservation-service:
     image: hotel_reservation:${HOTEL_IMAGE_TAG:-latest}
@@ -132,7 +132,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "4"
+          cpus: "${HOTEL_CONTAINER_CPUS:-4}"
 
   user-mongo:
     image: mongo:7.0
@@ -145,7 +145,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "4"
+          cpus: "${HOTEL_CONTAINER_CPUS:-4}"
 
   user-service:
     image: hotel_user:${HOTEL_IMAGE_TAG:-latest}
@@ -165,7 +165,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "4"
+          cpus: "${HOTEL_CONTAINER_CPUS:-4}"
 
   geo-service:
     image: hotel_geo:${HOTEL_IMAGE_TAG:-latest}
@@ -183,7 +183,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "4"
+          cpus: "${HOTEL_CONTAINER_CPUS:-4}"
 
   search-service:
     image: hotel_search:${HOTEL_IMAGE_TAG:-latest}
@@ -204,7 +204,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "4"
+          cpus: "${HOTEL_CONTAINER_CPUS:-4}"
 
   hotel-frontend-service:
     image: hotel_frontend:${HOTEL_IMAGE_TAG:-latest}
@@ -231,7 +231,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "4"
+          cpus: "${HOTEL_CONTAINER_CPUS:-4}"
 volumes:
   rate:
   profile:

@@ -77,6 +77,12 @@ class TestSyntheticConfigGeneration:
         assert services["local-a-service"]["scale"] == 2
         assert services["local-b-service"]["scale"] == 1
         assert services["local-a-service"]["image"] == "synthetic_child:test-tag"
+        assert (
+            services["synthetic-frontend-service"]["deploy"]["resources"]["limits"][
+                "cpus"
+            ]
+            == "${SYNTHETIC_CONTAINER_CPUS:-4}"
+        )
 
     def test_generate_k8s_values(self):
         app = SyntheticApp()

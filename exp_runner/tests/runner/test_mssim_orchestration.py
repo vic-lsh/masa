@@ -3,6 +3,7 @@ import subprocess
 from unittest.mock import MagicMock, patch
 
 import pytest
+import yaml
 
 from exp_runner.runner.apps.mssim import MssimApp
 from exp_runner.runner.config import ExperimentConfig
@@ -178,10 +179,11 @@ def test_mssim_run_workload_orchestration(tmp_path, mock_executor, mock_deployme
     assert task_spec.name == "mssim-loadgen"
 
 
-def test_mssim_orchestration_k8s(tmp_path, mock_executor):
+def test_mssim_orchestration_k8s(tmp_path, mock_executor, monkeypatch):
     """Test orchestration logic when running on K8s (calls _run_k8s_workload)"""
     from exp_runner.runner.k8s_manager import K8sManager
 
+    monkeypatch.setenv("CI", "true")
     app = MssimApp(executor=mock_executor)
     repo_root = tmp_path / "repo"
     repo_root.mkdir()
@@ -287,6 +289,12 @@ def test_mssim_orchestration_k8s(tmp_path, mock_executor):
     task_spec = real_k8s_manager.run_task.call_args[0][0]
     assert task_spec.image == "mssim_load_generator"
     assert task_spec.name == "mssim-loadgen"
+
+    values = yaml.safe_load((output_dir / "values.yaml").read_text())
+    assert values["defaultServiceResources"]["requests"] == {
+        "cpu": "25m",
+        "memory": "64Mi",
+    }
 
     # 4. Should cleanup
     real_k8s_manager.stop.assert_called()

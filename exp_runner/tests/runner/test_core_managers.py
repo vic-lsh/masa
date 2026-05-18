@@ -1,4 +1,5 @@
 import json
+import os
 import subprocess
 from pathlib import Path
 from unittest.mock import patch
@@ -141,3 +142,28 @@ class TestK8sManager:
         assert "my-release" in install_cmd
         assert "--namespace" in install_cmd
         assert "test-ns" in install_cmd
+
+    def test_load_image_to_cluster_prunes_docker_cache_in_ci(
+        self, mock_executor, tmp_path, monkeypatch
+    ):
+        monkeypatch.setenv("CI", "true")
+        monkeypatch.setenv("KIND_LOAD_TMPDIR", str(tmp_path / "kind-tmp"))
+        monkeypatch.delenv("TMPDIR", raising=False)
+        km = K8sManager(repo_root=tmp_path, namespace="test-ns", executor=mock_executor)
+
+        km.load_image_to_cluster("kind-ci", ["app:tag"])
+
+        assert Path(os.environ["TMPDIR"]) == tmp_path / "kind-tmp"
+        commands = [cmd.args for cmd in mock_executor.history]
+        assert ["docker", "builder", "prune", "-af"] in commands
+        assert ["docker", "system", "prune", "-f"] in commands
+        assert ["docker", "inspect", "--type=image", "app:tag"] in commands
+        assert [
+            "kind",
+            "load",
+            "docker-image",
+            "app:tag",
+            "--name",
+            "kind-ci",
+        ] in commands
+        assert ["docker", "image", "rm", "-f", "app:tag"] in commands

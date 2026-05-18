@@ -1,2 +1,1 @@
-sched_fifo
-sched_slo
+sched_pred,abort_slack,est_mean_var,ac_pred
