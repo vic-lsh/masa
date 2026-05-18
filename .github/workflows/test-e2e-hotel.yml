@@ -17,6 +17,13 @@ jobs:
         deploy-mode: [docker, kind]
     steps:
       - uses: actions/checkout@v4
+      - name: Free runner disk space for Kind
+        if: matrix.deploy-mode == 'kind'
+        run: |
+          df -h
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL || true
+          docker system prune -af || true
+          df -h
       - name: Docker login
         run: echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login docker.io -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
       - name: Install tools
