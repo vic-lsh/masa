@@ -680,11 +680,37 @@ class K8sManager(DeploymentManager):
 
         return process
 
+    def _prepare_kind_load_tmpdir_for_ci(self) -> None:
+        candidates: list[Path] = []
+        if override := os.environ.get("KIND_LOAD_TMPDIR"):
+            candidates.append(Path(override))
+        if Path("/mnt").exists():
+            candidates.append(Path("/mnt/kind-load-tmp"))
+        if runner_temp := os.environ.get("RUNNER_TEMP"):
+            candidates.append(Path(runner_temp) / "kind-load-tmp")
+
+        for candidate in candidates:
+            try:
+                candidate.mkdir(parents=True, exist_ok=True)
+            except OSError as exc:
+                logger.warning(
+                    "Unable to create Kind image-load temp dir %s: %s",
+                    candidate,
+                    exc,
+                )
+                continue
+
+            os.environ["TMPDIR"] = str(candidate)
+            logger.info("Using %s for Kind image-load temporary files", candidate)
+            return
+
     def load_image_to_cluster(self, cluster_name: str, image_names: List[str]) -> None:
         """
         Load docker images into kind cluster.
         """
-        if os.environ.get("CI", "").lower() == "true":
+        is_ci = os.environ.get("CI", "").lower() == "true"
+        if is_ci:
+            self._prepare_kind_load_tmpdir_for_ci()
             logger.info("Pruning Docker build cache before loading images into Kind")
             for cmd in (
                 ["docker", "builder", "prune", "-af"],
@@ -705,7 +731,7 @@ class K8sManager(DeploymentManager):
             logger.info(f"Loading image {img} into kind cluster {cluster_name}...")
             cmd = ["kind", "load", "docker-image", img, "--name", cluster_name]
             self._run_cmd(cmd)
-            if os.environ.get("CI", "").lower() == "true":
+            if is_ci:
                 try:
                     self._run_cmd(["docker", "image", "rm", "-f", img])
                 except Exception as exc:

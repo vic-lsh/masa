@@ -1,4 +1,5 @@
 import json
+import os
 import subprocess
 from pathlib import Path
 from unittest.mock import patch
@@ -146,10 +147,13 @@ class TestK8sManager:
         self, mock_executor, tmp_path, monkeypatch
     ):
         monkeypatch.setenv("CI", "true")
+        monkeypatch.setenv("KIND_LOAD_TMPDIR", str(tmp_path / "kind-tmp"))
+        monkeypatch.delenv("TMPDIR", raising=False)
         km = K8sManager(repo_root=tmp_path, namespace="test-ns", executor=mock_executor)
 
         km.load_image_to_cluster("kind-ci", ["app:tag"])
 
+        assert Path(os.environ["TMPDIR"]) == tmp_path / "kind-tmp"
         commands = [cmd.args for cmd in mock_executor.history]
         assert ["docker", "builder", "prune", "-af"] in commands
         assert ["docker", "system", "prune", "-f"] in commands

@@ -911,13 +911,16 @@ class SocialnetApp(AppPlugin):
             "url_shorten_server",
         ]
         images = [f"{b}:{tag}" for b in binaries]
-        # Stateful infra images — loaded into kind so tests work offline.
-        images.extend(
-            [
-                "mongo:7.0",
-                "redis:7.2",
-                "memcached:1.6",
-                "rabbitmq:3.13-management",
-            ]
-        )
+        if os.environ.get("CI", "").lower() != "true":
+            # Stateful infra images are loaded locally for offline Kind runs.
+            # CI lets Kind pull these public images to avoid duplicating them
+            # in Docker plus containerd on the small hosted runner disk.
+            images.extend(
+                [
+                    "mongo:7.0",
+                    "redis:7.2",
+                    "memcached:1.6",
+                    "rabbitmq:3.13-management",
+                ]
+            )
         return images

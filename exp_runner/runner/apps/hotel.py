@@ -5,6 +5,7 @@ Hotel application plugin.
 import copy
 import json
 import logging
+import os
 import re
 import shlex
 import subprocess
@@ -918,6 +919,9 @@ class HotelApp(AppPlugin):
             "hotel_recommendation",
         ]
         images = [f"{b}:{tag}" for b in binaries]
-        # Stateful infra images — loaded into kind so tests work offline.
-        images.extend(["mongo:7.0", "redis:7.2"])
+        if os.environ.get("CI", "").lower() != "true":
+            # Stateful infra images are loaded locally for offline Kind runs.
+            # CI lets Kind pull these public images to avoid duplicating them
+            # in Docker plus containerd on the small hosted runner disk.
+            images.extend(["mongo:7.0", "redis:7.2"])
         return images

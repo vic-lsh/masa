@@ -298,6 +298,16 @@ class TestHotelApp:
 
         assert isinstance(builder, HotelBuilder)
 
+    def test_get_required_images_skips_public_infra_in_ci(self, monkeypatch):
+        app = HotelApp()
+        monkeypatch.setenv("CI", "true")
+
+        images = app.get_required_images("sched_slo")
+
+        assert "mongo:7.0" not in images
+        assert "redis:7.2" not in images
+        assert "hotel_frontend:sched_slo" in images
+
 
 class TestEdgeCases:
     """Test edge cases and error conditions."""

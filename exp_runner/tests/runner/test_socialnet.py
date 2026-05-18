@@ -5,7 +5,7 @@ Tests for the socialnet application module.
 import tempfile
 from pathlib import Path
 
-from exp_runner.runner.apps.socialnet import SocialnetBuilder
+from exp_runner.runner.apps.socialnet import SocialnetApp, SocialnetBuilder
 from exp_runner.runner.cli import create_parser
 from exp_runner.runner.executor import MockCommandExecutor
 
@@ -58,3 +58,16 @@ def test_cli_accepts_socialnet():
     parser = create_parser()
     args = parser.parse_args(["run", "socialnet", "exp1"])
     assert args.app == "socialnet"
+
+
+def test_get_required_images_skips_public_infra_in_ci(monkeypatch):
+    app = SocialnetApp()
+    monkeypatch.setenv("CI", "true")
+
+    images = app.get_required_images("sched_slo")
+
+    assert "mongo:7.0" not in images
+    assert "redis:7.2" not in images
+    assert "memcached:1.6" not in images
+    assert "rabbitmq:3.13-management" not in images
+    assert "frontend_server:sched_slo" in images
