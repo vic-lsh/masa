@@ -162,3 +162,4 @@ class TestK8sManager:
             "--name",
             "kind-ci",
         ] in commands
+        assert ["docker", "image", "rm", "-f", "app:tag"] in commands

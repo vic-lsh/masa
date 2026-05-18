@@ -7,6 +7,7 @@ env:
   CI: "true"
   CARGO_BUILD_JOBS: "16"
   EXP_NAME: "ci"
+  SYNTHETIC_CONTAINER_CPUS: "2"
 
 jobs:
   test-synthetic-experiment:

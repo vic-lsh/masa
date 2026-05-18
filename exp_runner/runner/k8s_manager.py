@@ -705,6 +705,11 @@ class K8sManager(DeploymentManager):
             logger.info(f"Loading image {img} into kind cluster {cluster_name}...")
             cmd = ["kind", "load", "docker-image", img, "--name", cluster_name]
             self._run_cmd(cmd)
+            if os.environ.get("CI", "").lower() == "true":
+                try:
+                    self._run_cmd(["docker", "image", "rm", "-f", img])
+                except Exception as exc:
+                    logger.warning("Docker image cleanup failed for %s: %s", img, exc)
 
     def copy_from_container(
         self, container_name: str, src_path: str, dest_path: Path

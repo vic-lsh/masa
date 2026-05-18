@@ -149,7 +149,9 @@ class SyntheticApp(AppPlugin):
                 "SYNTHETIC_DISABLE_CPU_YIELD=${SYNTHETIC_DISABLE_CPU_YIELD:-0}",
             ],
             "volumes": ["${APP_CONFIG_PATH}:/usr/config.json:ro"],
-            "deploy": {"resources": {"limits": {"cpus": "4"}}},
+            "deploy": {
+                "resources": {"limits": {"cpus": "${SYNTHETIC_CONTAINER_CPUS:-4}"}}
+            },
         }
 
         # Add one service per call graph service

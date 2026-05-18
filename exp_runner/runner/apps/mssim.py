@@ -29,7 +29,7 @@ from ..executor import CommandExecutor, MockCommandExecutor, SubprocessExecutor
 from ..naming import generate_project_name
 from .base import AppBuilder, AppPlugin, DockerConfig
 from .mssim_config import MssimConfigGenerator
-from .utils import normalize_features_to_tag
+from .utils import normalize_features_to_tag, policy_allows_load_shedding
 
 logger = logging.getLogger(__name__)
 
@@ -463,10 +463,13 @@ class MssimApp(AppPlugin):
             "callgraphs": [],  # Populated below
             "services": services_values,
             "logLevel": "info",
-            # Match docker-compose deploy.resources.limits: 1 CPU, 10 GB memory per service
             "defaultServiceResources": {
                 "limits": {"cpu": "1", "memory": "10Gi"},
-                "requests": {"cpu": "200m", "memory": "1Gi"},
+                "requests": (
+                    {"cpu": "25m", "memory": "64Mi"}
+                    if os.environ.get("CI", "").lower() == "true"
+                    else {"cpu": "200m", "memory": "1Gi"}
+                ),
             },
             "configMaps": {
                 "enabled": True,
@@ -733,6 +736,22 @@ class MssimApp(AppPlugin):
                     expected_total = rps * duration
                     lower = expected_total * 0.8
                     upper = expected_total * 1.2
+
+                    if policy_allows_load_shedding(policy):
+                        if current_rps_goodput <= 0:
+                            logger.error(
+                                f"No successful MSSIM requests for {rps} RPS "
+                                f"(Policy: {policy}, Iteration: {i})"
+                            )
+                            all_passed = False
+                        elif not (lower <= current_rps_goodput <= upper):
+                            observed_rps = current_rps_goodput / duration
+                            logger.info(
+                                f"Skipping target-goodput bound for load-shedding "
+                                f"MSSIM policy {policy}: observed "
+                                f"{observed_rps:.2f} RPS, target {rps:.2f} RPS"
+                            )
+                        continue
 
                     if not (lower <= current_rps_goodput <= upper):
                         observed_rps = current_rps_goodput / duration
