@@ -24,6 +24,7 @@ from ..executor import CommandExecutor, MockCommandExecutor, SubprocessExecutor
 from ..naming import generate_project_name
 from .base import AppBuilder, AppPlugin, DockerConfig
 from .utils import (
+    default_service_resources_for_k8s,
     get_docker_progress_flag,
     normalize_features_to_tag,
 )
@@ -807,6 +808,7 @@ class HotelApp(AppPlugin):
             },
             "logLevel": log_level,
             "service": {"type": "ClusterIP"},
+            "defaultServiceResources": default_service_resources_for_k8s(),
             "services": services,
             "infra": infra,
             "pvcs": pvcs,

@@ -134,6 +134,24 @@ def get_docker_progress_flag() -> str:
     return "--progress=tty"
 
 
+def default_service_resources_for_k8s() -> dict[str, dict[str, str]]:
+    """
+    Return default Helm resources for generated k8s values.
+
+    GitHub-hosted runners expose a small Kind node, so CI lowers requests to
+    let all benchmark pods schedule while preserving the runtime CPU limit.
+    """
+    if os.environ.get("CI", "").lower() in ("true", "1", "yes"):
+        requests = {"cpu": "25m", "memory": "64Mi"}
+    else:
+        requests = {"cpu": "100m", "memory": "128Mi"}
+
+    return {
+        "limits": {"cpu": "4", "memory": "4Gi"},
+        "requests": requests,
+    }
+
+
 def _api_weight_fractions(gen_config: dict, num_apis: int) -> Optional[list[float]]:
     weights = gen_config.get("ApiWeights")
     if weights is None:

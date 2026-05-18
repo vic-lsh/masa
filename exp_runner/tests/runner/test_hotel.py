@@ -10,6 +10,7 @@ This module tests the hotel app functionality including:
 
 import pytest
 import tempfile
+import yaml
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -307,6 +308,32 @@ class TestHotelApp:
         assert "mongo:7.0" not in images
         assert "redis:7.2" not in images
         assert "hotel_frontend:sched_slo" in images
+
+    def test_prepare_k8s_workload_uses_low_ci_resource_requests(
+        self, tmp_path, monkeypatch
+    ):
+        app = HotelApp()
+        monkeypatch.setenv("CI", "true")
+        policy_params_path = tmp_path / "policy_param.json"
+        policy_params_path.write_text("{}")
+        env_vars = {}
+
+        app._prepare_k8s_workload(
+            output_dir=tmp_path,
+            project_name="hotel-ci",
+            hotel_config={},
+            policy_params_path=policy_params_path,
+            image_tag="test-tag",
+            log_level="info",
+            env_vars=env_vars,
+        )
+
+        values = yaml.safe_load((tmp_path / "values.yaml").read_text())
+        assert values["defaultServiceResources"]["requests"] == {
+            "cpu": "25m",
+            "memory": "64Mi",
+        }
+        assert env_vars["HELM_VALUES_FILE"] == str((tmp_path / "values.yaml").resolve())
 
 
 class TestEdgeCases:

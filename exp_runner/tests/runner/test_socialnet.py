@@ -3,6 +3,7 @@ Tests for the socialnet application module.
 """
 
 import tempfile
+import yaml
 from pathlib import Path
 
 from exp_runner.runner.apps.socialnet import SocialnetApp, SocialnetBuilder
@@ -71,3 +72,29 @@ def test_get_required_images_skips_public_infra_in_ci(monkeypatch):
     assert "memcached:1.6" not in images
     assert "rabbitmq:3.13-management" not in images
     assert "frontend_server:sched_slo" in images
+
+
+def test_prepare_k8s_workload_uses_low_ci_resource_requests(tmp_path, monkeypatch):
+    app = SocialnetApp()
+    monkeypatch.setenv("CI", "true")
+    policy_params_path = tmp_path / "policy_param.json"
+    policy_params_path.write_text("{}")
+    env_vars = {}
+
+    app._prepare_k8s_workload(
+        output_dir=tmp_path,
+        project_name="sn-ci",
+        app_config={},
+        policy_params_path=policy_params_path,
+        image_tag="test-tag",
+        log_level="info",
+        jwt_secret="test-secret",
+        env_vars=env_vars,
+    )
+
+    values = yaml.safe_load((tmp_path / "values.yaml").read_text())
+    assert values["defaultServiceResources"]["requests"] == {
+        "cpu": "25m",
+        "memory": "64Mi",
+    }
+    assert env_vars["HELM_VALUES_FILE"] == str((tmp_path / "values.yaml").resolve())
