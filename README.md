@@ -60,7 +60,7 @@ The virtual environment includes all required dependencies (matplotlib, pandas, 
 ### Running an application
 
 Application source lives under `apps/<app>`, and the experiment assets for each app live under `exp/<app>`.
-See `EXPERIMENT_WORKFLOW.md` for a detailed guide on running experiments.
+See `docs/experiments/workflow.md` for a detailed guide on running experiments.
 Masa currently has four applications for experimentation:
 
 - `hotel`: Based on the Hotel application in Deathstarbench. We've ported this application to Rust for Masa compatibility.
