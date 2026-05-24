@@ -33,7 +33,7 @@ Applications
         +-- masa-core              context serialization and priorities
         +-- hyper                  H2 stream priority extraction before spawn
         +-- tokio                  priority task spawn and current-thread scheduler
-        +-- tower                  transport buffering
+        +-- tower                  crates.io transport buffering
 
 tonic-build
   |
@@ -89,6 +89,8 @@ The following Masa logic has already moved out of vendored Tonic or Tower:
 - The fixed-list round-robin balance helper moved out of vendored Tower into
   `libs/masa-core/src/balance.rs`; `LoadBalancedChannel` now imports
   `masa_core::balance::Balance`.
+- Tower crates now come from crates.io rather than the root `[patch.crates-io]`
+  section, so Tower no longer appears in the remaining vendored patch table.
 
 ## Remaining Vendored Patch Surface
 
@@ -141,8 +143,8 @@ Before moving any remaining vendored patch into a Masa-owned crate, validate:
 
 ## Explicit Non-Goals For This Epic
 
-- Do not change Tower-layer semantics or replace the current client-side
-  balancing policy while documenting the extraction.
+- Do not reintroduce Tower-layer semantic changes or replace the current
+  client-side balancing policy while documenting the extraction.
 - Do not rewrite `LoadBalancedChannel` in this epic; document it and move it in
   a separate change after focused tests exist.
 - Do not change the scheduling policy semantics, admission-control behavior, or
