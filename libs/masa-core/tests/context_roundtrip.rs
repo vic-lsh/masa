@@ -52,3 +52,15 @@ fn json_round_trip_matches_header_round_trip() {
         decoded_from_header.queue_latencies.as_ref()
     );
 }
+
+#[test]
+#[should_panic(expected = "invalid MASA context header `ctx`: invalid base64")]
+fn malformed_header_reports_invalid_base64() {
+    let _ = Context::from_header_string("not-base64");
+}
+
+#[test]
+#[should_panic(expected = "invalid MASA context header `ctx`: invalid bincode payload")]
+fn malformed_header_reports_invalid_bincode_payload() {
+    let _ = Context::from_header_string("AA==");
+}

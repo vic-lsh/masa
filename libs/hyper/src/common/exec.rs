@@ -18,6 +18,10 @@ use masa_core::PriorityHint;
 
 #[cfg(feature = "server")]
 pub trait ConnStreamExec<F, B: HttpBody>: Clone {
+    fn requires_masa_context(&self) -> bool {
+        false
+    }
+
     fn execute_h2stream(&mut self, fut: H2Stream<F, B>);
 
     fn execute_h2stream_with_prio(&mut self, fut: H2Stream<F, B>, prio: PriorityHint);
@@ -92,6 +96,10 @@ where
     H2Stream<F, B>: Future<Output = ()> + Send + 'static,
     B: HttpBody,
 {
+    fn requires_masa_context(&self) -> bool {
+        matches!(self, Exec::Masa)
+    }
+
     fn execute_h2stream(&mut self, fut: H2Stream<F, B>) {
         self.execute(fut, PriorityHint::infra())
     }

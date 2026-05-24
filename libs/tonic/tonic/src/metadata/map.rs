@@ -6,7 +6,7 @@ use super::encoding::{Ascii, Binary, ValueEncoding};
 use super::key::{InvalidMetadataKey, MetadataKey};
 use super::value::MetadataValue;
 
-use masa_core::Context;
+use masa_core::{invalid_context_header_metadata_message, Context};
 
 use std::marker::PhantomData;
 
@@ -467,7 +467,10 @@ impl MetadataMap {
     {
         let value = self.get(key);
         if let Some(value) = value {
-            return Some(Context::from_header_string(value.to_str().unwrap()));
+            let ctx_str = value
+                .to_str()
+                .unwrap_or_else(|err| panic!("{}", invalid_context_header_metadata_message(err)));
+            return Some(Context::from_header_string(ctx_str));
         }
         None
     }
@@ -1026,7 +1029,10 @@ impl MetadataMap {
     {
         let value = key.insert(self, val.to_header_string().parse().unwrap());
         if let Some(value) = value {
-            return Some(Context::from_header_string(value.to_str().unwrap()));
+            let ctx_str = value
+                .to_str()
+                .unwrap_or_else(|err| panic!("{}", invalid_context_header_metadata_message(err)));
+            return Some(Context::from_header_string(ctx_str));
         }
         None
     }

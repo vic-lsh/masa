@@ -1,9 +1,37 @@
 use std::collections::HashMap;
+use std::fmt;
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use serde::{Deserialize, Serialize};
 
 use crate::{Api, Latency, PriorityHint, RequestId, Timestamp};
+
+pub const MISSING_CONTEXT_HEADER_MESSAGE: &str =
+    "missing MASA context header `ctx`; MASA-enabled services require clients to attach context via MASA context helpers";
+
+pub fn invalid_context_header_metadata_message(error: impl fmt::Display) -> String {
+    format!(
+        "invalid MASA context header `{}`: invalid ASCII/metadata; MASA-enabled services require clients to attach context via MASA context helpers: {}",
+        crate::MASA_CONTEXT_HEADER,
+        error
+    )
+}
+
+fn invalid_context_header_base64_message(error: impl fmt::Display) -> String {
+    format!(
+        "invalid MASA context header `{}`: invalid base64; MASA-enabled services require clients to attach context via MASA context helpers: {}",
+        crate::MASA_CONTEXT_HEADER,
+        error
+    )
+}
+
+fn invalid_context_header_bincode_message(error: impl fmt::Display) -> String {
+    format!(
+        "invalid MASA context header `{}`: invalid bincode payload; MASA-enabled services require clients to attach context via MASA context helpers: {}",
+        crate::MASA_CONTEXT_HEADER,
+        error
+    )
+}
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(tag = "type", content = "duration")]
@@ -316,8 +344,11 @@ impl Context {
 
     /// Create a new Masa context from Base64 encoded bincode.
     pub fn from_header_string(s: &str) -> Self {
-        let bytes = BASE64.decode(s).unwrap();
-        bincode::deserialize(&bytes).unwrap()
+        let bytes = BASE64
+            .decode(s)
+            .unwrap_or_else(|err| panic!("{}", invalid_context_header_base64_message(err)));
+        bincode::deserialize(&bytes)
+            .unwrap_or_else(|err| panic!("{}", invalid_context_header_bincode_message(err)))
     }
 
     /// Convert a Masa context to Base64 encoded bincode.
