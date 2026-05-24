@@ -1,6 +1,9 @@
 # Masa Implementation Details
 
-This document explains the implementation of Masa's dynamic RPC prioritization system. It covers the data flow from client to server, the libraries involved (`masa`, `tonic`, `hyper`, `tokio`), and how feature flags control the scheduling policies.
+This document explains the implementation of Masa's dynamic RPC prioritization system. It covers the data flow from client to server, the libraries involved (`masa-core`, `masa-tonic-core`, `masa-policy`, `tonic`, `hyper`, `tokio`), and how feature flags control the scheduling policies.
+
+For the dependency graph and remaining vendored-library patch inventory, see
+[`docs/MASA_PATCH_SURFACE.md`](MASA_PATCH_SURFACE.md).
 
 ## 1. Feature Flags and Build Configuration
 
@@ -30,15 +33,23 @@ Features propagate from application crates through a dependency chain:
 
 ```
 Application Cargo.toml (e.g., apps/hotel --features sched_slo)
-  └─ libs/tonic/tonic/Cargo.toml:  sched_slo = ["masa/sched_slo", "tokio/sched_prio"]
-       ├─ libs/masa/Cargo.toml:    sched_slo = []   (forwards to masa-core, tokio, tonic)
-├─ libs/masa-core/Cargo.toml: sched_slo = []   (sets cfg flag)
-       └─ libs/tokio/tokio/Cargo.toml: sched_prio = ["masa/sched_prio"]  (tokio-internal flag)
+  |
+  +-- libs/masa/Cargo.toml:            sched_slo forwards to masa-core, masa-policy,
+  |                                     tonic, and tokio/sched_prio
+  |
+  +-- libs/tonic/tonic/Cargo.toml:     sched_slo = ["masa", "masa-core/sched_slo",
+  |                                                    "masa-policy/sched_slo",
+  |                                                    "tokio/sched_prio"]
+       |
+       +-- libs/masa-tonic-core        hook contracts and runtime bridge
+       +-- libs/masa-core/Cargo.toml   sched_slo sets the core cfg flag
+       +-- libs/masa-policy/Cargo.toml sched_slo selects PolicyHooks layers
+       +-- libs/tokio/tokio/Cargo.toml sched_prio selects the priority queue
 ```
 
 Note: `sched_prio` remains as a tokio-internal flag that controls the priority queue implementation. User-facing flags (`sched_slo`, `sched_pred`, `sched_tailclipper`, `sched_oracle`) activate it internally.
 
-The root `Cargo.toml` `[patch.crates-io]` section replaces 8 upstream crates (`tokio`, `tokio-util`, `tokio-stream`, `tokio-test`, `tokio-macros`, `hyper`, `tower`, `tower-service`, `tower-layer`) with local modified versions. All must be built from local copies.
+The root `Cargo.toml` `[patch.crates-io]` section replaces 9 upstream crates (`tokio`, `tokio-util`, `tokio-stream`, `tokio-test`, `tokio-macros`, `hyper`, `tower`, `tower-service`, `tower-layer`) with local modified versions. All must be built from local copies.
 
 ### `DefaultHooks` Selection
 
@@ -123,7 +134,7 @@ When a service (acting as a client) sends an RPC to a downstream service, the po
 
 ### Three-Level Hook Architecture
 
-`Hooks` (defined in `libs/tonic/tonic-core/src/masa_ext/mod.rs`) is the central trait that associates three context types:
+`Hooks` (defined in `libs/masa-tonic-core/src/lib.rs` and reexported through `tonic::masa_ext`) is the central trait that associates three context types:
 
 ```
 pub trait Hooks: Send + Sync + 'static {
@@ -160,7 +171,8 @@ All scheduling policies are unified into `PolicyHooks` (`libs/masa-policy/src/ho
 *   **`RajomonLayer`** (`layer/admission/rajomon.rs`): Token-bucket admission control with server-side price signals. Enabled by `ac_rajomon` feature.
 *   **`QueueLatencyLayer`** (`layer/queue_latency.rs`): Tracks queue latency across the call graph via `x-queue-latency` headers.
 *   **`NoopLayer`** (`layer/admission/mod.rs`): Zero-cost no-op, used when no admission control layer is active.
-*   **`NoopHooks`** (`tonic-core/src/masa_ext/noop.rs`): Selected when no scheduling feature is active.
+*   **`NoopHooks`** (`libs/masa-tonic-core/src/noop.rs`): Selected when no scheduling feature is active.
+
 ### Client Code Generation
 
 `tonic-build` (`libs/tonic/tonic-build/src/client.rs`) generates client stub methods that integrate with the hook architecture. Each generated unary method:
@@ -170,14 +182,14 @@ All scheduling policies are unified into `PolicyHooks` (`libs/masa-policy/src/ho
 4.  Executes the RPC.
 5.  Calls `child_ctx.after_recv()` and `parent_ctx.after_child_rpc()`.
 
-The parent context is obtained from thread-local storage via `unsafe { tls::client::get_parent_ctx::<M>() }`, which is set by the poll hooks (see Section 6).
+The parent context is obtained from thread-local storage via `unsafe { tonic::masa_ext::client::get_parent_ctx::<M>() }`, which is implemented in `masa-tonic-core` and set by the poll hooks (see Section 6).
 
 ### Header Injection
 The `Context` is serialized using **bincode** (compact binary format) and **base64-encoded**, then added to the HTTP/2 headers with the key `ctx`. This propagates the deadline and priority information to the next hop. The format is not human-readable; use `Context::to_json()` for debugging.
 
 ### Method Name Override
 
-The `x-masa-method-name` header (`libs/tonic/tonic-core/src/masa_ext/mod.rs`) allows overriding the gRPC method name for latency tracking. This is used by applications where a generic endpoint (e.g., `invoke`) handles multiple logical methods (e.g., the synthetic and mssim applications).
+The `x-masa-method-name` header (`libs/masa-tonic-core/src/lib.rs`, reexported through `tonic::masa_ext`) allows overriding the gRPC method name for latency tracking. This is used by applications where a generic endpoint (e.g., `invoke`) handles multiple logical methods (e.g., the synthetic and mssim applications).
 
 ## 4. Transport Layer (`libs/hyper`)
 
@@ -260,12 +272,12 @@ Poll hooks operate at two layers — tonic and tokio — with different responsi
 
 ### Tonic Layer: `ParentHooks` and `AbortableFuture`
 
-The `ParentHooks` trait (`libs/tonic/tonic-core/src/masa_ext/mod.rs`) defines `before_poll` and `after_poll` methods on the per-request `ParentContext`:
+The `ParentHooks` trait (`libs/masa-tonic-core/src/lib.rs`) defines `before_poll` and `after_poll` methods on the per-request `ParentContext`:
 
 *   **`before_poll<Ret>(&self) -> Result<(), Result<Response<Ret>, Status>>`**: Called before the handler future is polled. Returning `Err(response)` short-circuits the poll and immediately resolves the future with that response.
 *   **`after_poll<Ret>(&self, poll: &Poll<...>) -> Result<(), Result<Response<Ret>, Status>>`**: Called after the handler future is polled. Receives the poll result (`Pending` or `Ready`). Can also short-circuit by returning an error response.
 
-In `masa_unary` (`libs/tonic/tonic/src/server/grpc.rs`), the service handler future is wrapped with `AbortableFuture` (`libs/tonic/tonic/src/util.rs`):
+In `masa_unary` (`libs/tonic/tonic/src/server/grpc.rs`), the service handler future is wrapped with `AbortableFuture` (`libs/masa-tonic-core/src/future.rs`, reexported through `libs/tonic/tonic/src/util.rs`):
 
 ```
 service.call(request)
@@ -321,7 +333,7 @@ spawn_inner(future, None, priority)
 
 ### Hook Wiring: Tonic to Tokio
 
-The bridge is `make_child_task_poll_hook` (`libs/tonic/tonic/src/masa_ext/runtime/mod.rs`). It converts the tonic-level `ParentContext` (behind an `Arc`) into a tokio `PollHook`:
+The bridge is `make_child_task_poll_hook` (`libs/masa-tonic-core/src/runtime.rs`, reexported through `tonic::masa_ext::runtime`). It converts the tonic-level `ParentContext` (behind an `Arc`) into a tokio `PollHook`:
 
 *   `before_poll`: Sets the parent context in thread-local storage (`set_parent_ctx`), so child RPCs can discover it.
 *   `after_poll`: Clears the thread-local (`reset_parent_ctx`), preventing context leaking to unrelated tasks.
@@ -391,7 +403,7 @@ The total is injected into the outgoing response in `finalize()`, creating a rec
 5.  **Server Executor**: `Exec::Masa` calls `tokio::task::spawn_with_prio(handler_future, priority)`.
 6.  **Tokio Runtime**: Enqueues task in priority queue (binary heap, round-robin, or FIFO depending on feature flags).
 7.  **CPU**: Picks highest priority task (lowest `PriorityHint` value) to execute.
-8.  **Each poll cycle**: Tonic's `AbortableFuture` runs `before_poll` (sets thread-local context, checks deadline) → polls handler → runs `after_poll` (clears thread-local, checks deadline if `Pending`). Child tasks inherit a tokio `PollHook` that mirrors the thread-local setup/teardown.
+8.  **Each poll cycle**: Tonic's `AbortableFuture` runs `before_poll` (sets thread-local context, checks deadline) -> polls handler -> runs `after_poll` (clears thread-local, checks deadline if `Pending`). Child tasks inherit a tokio `PollHook` that mirrors the thread-local setup/teardown.
 9.  **Response**: `finalize_after_serialization` injects `x-queue-latency` header (if applicable). Response travels back to caller.
 
 ## Migration Guide: Old → New Feature Flags
