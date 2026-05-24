@@ -45,7 +45,7 @@ uv sync
 uv run pytest
 
 # Run experiments (they run for a long time; don't run unless the user asks you to)
-# See EXPERIMENT_WORKFLOW.md for detailed instructions
+# See docs/experiments/workflow.md for detailed instructions
 uv run -m exp_runner run <app> <experiment_name> --plot
 # Run on Kind (Kubernetes in Docker) - supported for synthetic
 uv run -m exp_runner run synthetic <experiment_name> --kind --plot
@@ -172,4 +172,4 @@ Experiment apps in `apps/` with experiment configs in `exp/<app>/data/in/<experi
 
 There is also `apps/benchmark/` for measuring serialization overhead and E2E latency (`cargo bench -p masa-benchmark`).
 
-See `EXPERIMENT_WORKFLOW.md` for running experiments and `EXPERIMENT_ANALYSIS.md` for interpreting results.
+See `docs/experiments/workflow.md` for running experiments and `docs/experiments/analysis.md` for interpreting results.
