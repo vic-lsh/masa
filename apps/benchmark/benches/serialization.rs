@@ -1,6 +1,7 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use masa::Context;
 use std::time::Duration;
+use tonic::masa_ext::{get_masa_context_from_metadata, set_masa_context_in_metadata};
 use tonic::metadata::MetadataMap;
 
 fn bench_serialization(c: &mut Criterion) {
@@ -25,21 +26,21 @@ fn bench_metadata_map(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("MetadataMap");
 
-    group.bench_function("insert_ctx", |b| {
+    group.bench_function("set_masa_context_in_metadata", |b| {
         b.iter_batched(
             || MetadataMap::new(),
             |mut map| {
-                map.insert_ctx("x-masa-context", &ctx);
+                set_masa_context_in_metadata(&mut map, &ctx);
                 map
             },
             criterion::BatchSize::SmallInput,
         )
     });
 
-    group.bench_function("get_ctx", |b| {
+    group.bench_function("get_masa_context_from_metadata", |b| {
         let mut map = MetadataMap::new();
-        map.insert_ctx("x-masa-context", &ctx);
-        b.iter(|| map.get_ctx(black_box("x-masa-context")))
+        set_masa_context_in_metadata(&mut map, &ctx);
+        b.iter(|| get_masa_context_from_metadata(black_box(&map)))
     });
 
     group.finish();

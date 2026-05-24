@@ -6,8 +6,6 @@ use super::encoding::{Ascii, Binary, ValueEncoding};
 use super::key::{InvalidMetadataKey, MetadataKey};
 use super::value::MetadataValue;
 
-use masa_core::{invalid_context_header_metadata_message, Context};
-
 use std::marker::PhantomData;
 
 /// A set of gRPC custom metadata entries.
@@ -458,21 +456,6 @@ impl MetadataMap {
         K: AsMetadataKey<Ascii>,
     {
         key.get(self)
-    }
-
-    /// High-level method to get a Masa context from MetadataMap.
-    pub fn get_ctx<K>(&self, key: K) -> Option<Context>
-    where
-        K: AsMetadataKey<Ascii>,
-    {
-        let value = self.get(key);
-        if let Some(value) = value {
-            let ctx_str = value
-                .to_str()
-                .unwrap_or_else(|err| panic!("{}", invalid_context_header_metadata_message(err)));
-            return Some(Context::from_header_string(ctx_str));
-        }
-        None
     }
 
     /// Like get, but for Binary keys (for example "trace-proto-bin").
@@ -1020,21 +1003,6 @@ impl MetadataMap {
         K: IntoMetadataKey<Ascii>,
     {
         key.insert(self, val)
-    }
-
-    /// High-level method to insert a Masa context into MetadataMap.
-    pub fn insert_ctx<K>(&mut self, key: K, val: &Context) -> Option<Context>
-    where
-        K: IntoMetadataKey<Ascii>,
-    {
-        let value = key.insert(self, val.to_header_string().parse().unwrap());
-        if let Some(value) = value {
-            let ctx_str = value
-                .to_str()
-                .unwrap_or_else(|err| panic!("{}", invalid_context_header_metadata_message(err)));
-            return Some(Context::from_header_string(ctx_str));
-        }
-        None
     }
 
     /// Like insert, but for Binary keys (for example "trace-proto-bin").

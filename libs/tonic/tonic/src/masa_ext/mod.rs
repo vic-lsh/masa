@@ -1,3 +1,9 @@
+//! Masa compatibility surface for tonic users.
+//!
+//! Hook traits come from `masa-tonic-core`, while metadata context helpers and
+//! extension traits are implemented in `masa-policy` and reexported here so
+//! existing `tonic::masa_ext::*` imports keep working.
+
 // Re-export core hook traits and types from masa-tonic-core.
 pub use masa_tonic_core::{
     client, noop, resolve_method_name_from_http, resolve_method_name_from_request, runtime, server,

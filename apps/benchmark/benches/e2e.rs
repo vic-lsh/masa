@@ -1,6 +1,7 @@
 use criterion::{criterion_group, criterion_main, Criterion};
 
 use std::time::Duration;
+use tonic::masa_ext::MasaRequestExt;
 use tonic::{transport::Server, Request, Response, Status};
 
 pub mod frontend {
@@ -71,7 +72,7 @@ fn bench_e2e_reused_client(c: &mut Criterion) {
             let mut req = Request::new(PingRequest {
                 message: "ping".into(),
             });
-            req.metadata_mut().insert_ctx("x-masa-context", &ctx);
+            req.set_masa_context(&ctx);
 
             client.handle_ping(req).await.unwrap();
         })
