@@ -11,6 +11,7 @@ bytes = "1"
 http = "0.2"
 http-body = "0.4"
 hyper = { path = "../../../hyper" }
+masa = { path = "../../../masa" }
 paste = "1.0.12"
 pin-project = "1.0"
 prost = "0.12"

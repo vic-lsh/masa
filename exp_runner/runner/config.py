@@ -54,7 +54,7 @@ class ExperimentConfig:
 
         Args:
             experiment_name: Name of the experiment to run
-            app_name: Name of the application (hotel, synthetic)
+            app_name: Name of the application (hotel, synthbench)
             repo_root: Path to repository root
             app_plugin: Application plugin for loading app-specific config
 

@@ -881,7 +881,7 @@ class HotelApp(AppPlugin):
 
         # In k8s, the pod must stay alive after the load generator exits so
         # that ExpDriver can `kubectl cp` artifacts out of the container —
-        # mirroring what mssim does. The entrypoint script always runs the
+        # mirroring what tracebench does. The entrypoint script always runs the
         # loadgen binary directly, so we override `command` to wrap it.
         command = None
         if use_k8s:

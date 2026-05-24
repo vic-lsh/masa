@@ -35,34 +35,40 @@ class TestExtractServiceName:
             extract_service_name("hotel-test-012345678901-rate-mongo-1") == "rate-mongo"
         )
 
-    def test_mssim_container_names(self):
-        """Test extraction from MSSIM container names."""
-        # MSSIM pattern: mssim-{slug}-{digest}-{service}-{replica}
-        assert extract_service_name("mssim-exp1-abc123def456-frontend-1") == "frontend"
+    def test_tracebench_container_names(self):
+        """Test extraction from Tracebench container names."""
+        # Tracebench pattern: tracebench-{slug}-{digest}-{service}-{replica}
         assert (
-            extract_service_name("mssim-test-012345678901-service-a-2") == "service-a"
+            extract_service_name("tracebench-exp1-abc123def456-frontend-1")
+            == "frontend"
         )
-        assert extract_service_name("mssim-exp2-aabbccddee00-backend-3") == "backend"
+        assert (
+            extract_service_name("tracebench-test-012345678901-service-a-2")
+            == "service-a"
+        )
+        assert (
+            extract_service_name("tracebench-exp2-aabbccddee00-backend-3") == "backend"
+        )
 
-    def test_synthetic_container_names(self):
-        """Test extraction from synthetic container names."""
-        # Synthetic patterns
+    def test_synthbench_container_names(self):
+        """Test extraction from synthbench container names."""
+        # Synthbench patterns
         assert extract_service_name("local-child-service-1") == "child-service"
         assert extract_service_name("local-child-service-10") == "child-service"
-        assert extract_service_name("synthetic_frontend") == "frontend"
-        assert extract_service_name("synthetic-frontend-1") == "frontend"
+        assert extract_service_name("synthbench_frontend") == "frontend"
+        assert extract_service_name("synthbench-frontend-1") == "frontend"
 
-        # Real experiment pattern: synthetic-{slug}-{digest}-{service}-{replica}
+        # Real experiment pattern: synthbench-{slug}-{digest}-{service}-{replica}
         assert (
-            extract_service_name("synthetic-exp1-abc123def456-child-service-1")
+            extract_service_name("synthbench-exp1-abc123def456-child-service-1")
             == "child-service"
         )
         assert (
-            extract_service_name("synthetic-my-exp-123456789abc-frontend-service-2")
+            extract_service_name("synthbench-my-exp-123456789abc-frontend-service-2")
             == "frontend-service"
         )
 
-        # Test syn- prefix (used in synthetic.py)
+        # Test syn- prefix (used in synthbench.py)
         assert (
             extract_service_name("syn-exp1-abc123def456-child-service-1")
             == "child-service"
@@ -94,8 +100,8 @@ class TestExtractServiceName:
     def test_loadgen_containers(self):
         """Test that load generator containers keep their full name."""
         assert "loadgen" in extract_service_name("hotel-exp1-abc-loadgen").lower()
-        assert "client" in extract_service_name("synthetic_client_bench").lower()
-        assert "loadgen" in extract_service_name("mssim-exp-abc-loadgen-1").lower()
+        assert "client" in extract_service_name("synthbench_client_bench").lower()
+        assert "loadgen" in extract_service_name("tracebench-exp-abc-loadgen-1").lower()
 
     def test_network_containers(self):
         """Test that network containers keep their full name."""
@@ -105,7 +111,7 @@ class TestExtractServiceName:
     def test_no_replica_number(self):
         """Test containers without replica numbers."""
         assert extract_service_name("hotel-exp1-abc123def456-service") == "service"
-        assert extract_service_name("synthetic_frontend") == "frontend"
+        assert extract_service_name("synthbench_frontend") == "frontend"
 
     def test_multiple_dashes_in_service_name(self):
         """Test service names with multiple dashes."""
@@ -114,7 +120,7 @@ class TestExtractServiceName:
             == "user-timeline-service"
         )
         assert (
-            extract_service_name("mssim-exp-012345678901-my-long-service-name-5")
+            extract_service_name("tracebench-exp-012345678901-my-long-service-name-5")
             == "my-long-service-name"
         )
 
@@ -138,18 +144,18 @@ class TestExtractServiceName:
         assert hotel_proj.startswith("hotel-")
         assert extract_service_name(f"{hotel_proj}-rate-service-1") == "rate-service"
 
-        # Test MSSIM (with extra suffix)
-        mssim_proj = generate_project_name(
-            prefix="mssim",
-            experiment_name="test-mssim",
+        # Test Tracebench (with extra suffix)
+        tracebench_proj = generate_project_name(
+            prefix="tracebench",
+            experiment_name="test-tracebench",
             iteration=1,
             policy="sched_slo",
             extra_suffix="100.0",
         )
-        assert mssim_proj.startswith("mssim-")
-        assert extract_service_name(f"{mssim_proj}-frontend-1") == "frontend"
+        assert tracebench_proj.startswith("tracebench-")
+        assert extract_service_name(f"{tracebench_proj}-frontend-1") == "frontend"
 
-        # Test Synthetic
+        # Test Synthbench
         syn_proj = generate_project_name(
             prefix="syn",
             experiment_name="test-syn",
@@ -187,9 +193,9 @@ class TestParseContainerName:
 
     def test_no_replica_number(self):
         """Test parsing container without replica number."""
-        result = parse_container_name("synthetic_frontend")
+        result = parse_container_name("synthbench_frontend")
 
-        assert result["full_name"] == "synthetic_frontend"
+        assert result["full_name"] == "synthbench_frontend"
         assert result["service_name"] == "frontend"
         assert result["replica_num"] is None
         assert result["is_loadgen"] is False
@@ -200,10 +206,10 @@ class TestParseContainerName:
         result1 = parse_container_name("hotel_client_bench")
         assert result1["is_loadgen"] is True
 
-        result2 = parse_container_name("mssim-exp-abc-loadgen-1")
+        result2 = parse_container_name("tracebench-exp-abc-loadgen-1")
         assert result2["is_loadgen"] is True
 
-        result3 = parse_container_name("synthetic_client_bench")
+        result3 = parse_container_name("synthbench_client_bench")
         assert result3["is_loadgen"] is True
 
         result4 = parse_container_name("load_generator_container")
@@ -214,7 +220,7 @@ class TestParseContainerName:
         result = parse_container_name("hotel-exp-abc-rate-service-1")
         assert result["is_loadgen"] is False
 
-        result2 = parse_container_name("mssim-exp-abc-frontend-2")
+        result2 = parse_container_name("tracebench-exp-abc-frontend-2")
         assert result2["is_loadgen"] is False
 
     def test_high_replica_numbers(self):
@@ -228,10 +234,10 @@ class TestParseContainerName:
         """Test parsing various container naming patterns."""
         patterns = [
             ("hotel-exp-abc123def456-service-1", "service", 1, False),
-            ("mssim-exp-012345678901-frontend-5", "frontend", 5, False),
+            ("tracebench-exp-012345678901-frontend-5", "frontend", 5, False),
             ("local-child-service-10", "child-service", 10, False),
             ("socialnet-timeline-service-2", "timeline-service", 2, False),
-            ("synthetic_client_bench", "client_bench", None, True),
+            ("synthbench_client_bench", "client_bench", None, True),
         ]
 
         for (
@@ -274,8 +280,8 @@ class TestGroupContainersByService:
         containers = [
             "hotel-exp-abc123def456-rate-service-1",
             "hotel-exp-abc123def456-rate-service-2",
-            "mssim-exp-012345678901-frontend-1",
-            "mssim-exp-012345678901-frontend-2",
+            "tracebench-exp-012345678901-frontend-1",
+            "tracebench-exp-012345678901-frontend-2",
             "local-child-service-1",
         ]
 

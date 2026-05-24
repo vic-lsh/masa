@@ -28,7 +28,7 @@
 //! }
 //! ```
 
-use crate::code_gen::CodeGenBuilder;
+use crate::code_gen::{CodeGenBuilder, DefaultHooksPath};
 
 use proc_macro2::TokenStream;
 use quote::ToTokens;
@@ -355,6 +355,7 @@ impl ServiceGenerator {
             let server = CodeGenBuilder::new()
                 .emit_package(true)
                 .compile_well_known_types(false)
+                .default_hooks_path(self.builder.default_hooks_path.as_path().clone())
                 .generate_server(service, "");
 
             self.servers.extend(server);
@@ -365,6 +366,7 @@ impl ServiceGenerator {
                 .emit_package(true)
                 .compile_well_known_types(false)
                 .build_transport(self.builder.build_transport)
+                .default_hooks_path(self.builder.default_hooks_path.as_path().clone())
                 .generate_client(service, "");
 
             self.clients.extend(client);
@@ -408,6 +410,7 @@ pub struct Builder {
     build_server: bool,
     build_client: bool,
     build_transport: bool,
+    default_hooks_path: DefaultHooksPath,
 
     out_dir: Option<PathBuf>,
 }
@@ -418,6 +421,7 @@ impl Default for Builder {
             build_server: true,
             build_client: true,
             build_transport: true,
+            default_hooks_path: DefaultHooksPath::default(),
             out_dir: None,
         }
     }
@@ -459,6 +463,17 @@ impl Builder {
     /// Defaults to the `OUT_DIR` environment variable.
     pub fn out_dir(mut self, out_dir: impl AsRef<Path>) -> Self {
         self.out_dir = Some(out_dir.as_ref().to_path_buf());
+        self
+    }
+
+    /// Set the default Masa hooks type path emitted in generated clients and servers.
+    ///
+    /// The path must parse as a Rust path. This defaults to
+    /// `masa::DefaultHooks`.
+    pub fn default_hooks_path(mut self, path: impl AsRef<str>) -> Self {
+        self.default_hooks_path = DefaultHooksPath(
+            syn::parse_str(path.as_ref()).expect("default_hooks_path must be a valid Rust path"),
+        );
         self
     }
 

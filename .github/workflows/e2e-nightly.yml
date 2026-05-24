@@ -23,7 +23,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        app: [hotel, mssim, socialnet, synthetic]
+        app: [hotel, tracebench, socialnet, synthbench]
         deploy-mode: [docker, kind]
     steps:
       - uses: actions/checkout@v4
@@ -54,13 +54,13 @@ jobs:
             hotel)
               ./scripts/test_e2e_hotel.sh --deploy-mode "${{ matrix.deploy-mode }}"
               ;;
-            mssim)
-              ./scripts/test_mssim_experiment.sh --deploy-mode "${{ matrix.deploy-mode }}"
+            tracebench)
+              ./scripts/test_tracebench_experiment.sh --deploy-mode "${{ matrix.deploy-mode }}"
               ;;
             socialnet)
               ./scripts/test_socialnet.sh --deploy-mode "${{ matrix.deploy-mode }}"
               ;;
-            synthetic)
-              ./scripts/test_synthetic_experiment.sh ci --deploy-mode "${{ matrix.deploy-mode }}"
+            synthbench)
+              ./scripts/test_synthbench_experiment.sh ci --deploy-mode "${{ matrix.deploy-mode }}"
               ;;
           esac

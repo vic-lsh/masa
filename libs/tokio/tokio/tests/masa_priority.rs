@@ -1,13 +1,13 @@
 #![allow(unknown_lints, unexpected_cfgs)]
 #![cfg(feature = "full")]
 
-use masa_core::PriorityHint;
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
     Arc, Mutex,
 };
 use tokio::runtime::Builder;
 use tokio::sync::Notify;
+use tokio::task::TaskPriority;
 
 thread_local! {
     static HOOK_ACTIVE: std::cell::Cell<bool> = std::cell::Cell::new(false);
@@ -30,7 +30,7 @@ fn spawn_with_prio_orders_tasks_by_hint() {
                     notify.notified().await;
                     order.lock().unwrap().push(label);
                 },
-                PriorityHint::new(prio),
+                TaskPriority::new(prio),
             ));
         }
 
@@ -68,7 +68,7 @@ fn infrastructure_priority_runs_first() {
                 user_notify.notified().await;
                 user_order.lock().unwrap().push("user");
             },
-            PriorityHint::new(50),
+            TaskPriority::new(50),
         );
 
         tokio::task::yield_now().await;

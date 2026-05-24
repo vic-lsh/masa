@@ -540,17 +540,17 @@ class TestCpuPlottingIntegration:
                 assert plot_file.stat().st_size > 1000  # Should be at least 1KB
 
 
-class TestMssimCpuPlotting:
-    """Regression tests for MSSIM CPU plotting."""
+class TestTracebenchCpuPlotting:
+    """Regression tests for Tracebench CPU plotting."""
 
-    def test_mssim_generates_cpu_plots(self):
+    def test_tracebench_generates_cpu_plots(self):
         """
-        Regression test: Verify MSSIM experiments generate CPU plots.
+        Regression test: Verify Tracebench experiments generate CPU plots.
 
-        This test catches the bug where MSSIM plotting bypassed CPU plotting
+        This test catches the bug where Tracebench plotting bypassed CPU plotting
         because it has a separate plotting path in all.py.
         """
-        from exp_runner.runner.plotting.mssim import generate_plots
+        from exp_runner.runner.plotting.tracebench import generate_plots
         from argparse import Namespace
         import json
 
@@ -572,12 +572,12 @@ class TestMssimCpuPlotting:
             with open(config_dir / "gen_config.json", "w") as f:
                 json.dump(gen_config, f)
 
-            # Create mssim.json
-            mssim_config = {
+            # Create tracebench.json
+            tracebench_config = {
                 "slo_ms": 100,
             }
-            with open(config_dir / "mssim.json", "w") as f:
-                json.dump(mssim_config, f)
+            with open(config_dir / "tracebench.json", "w") as f:
+                json.dump(tracebench_config, f)
 
             # Create experiment data structure with CPU stats
             for policy in ["sched_fifo", "sched_slo"]:
@@ -599,8 +599,8 @@ class TestMssimCpuPlotting:
                     writer = csv.DictWriter(f, fieldnames=fieldnames)
                     writer.writeheader()
 
-                    # Write test data for MSSIM services
-                    # Use realistic MSSIM service names (service names don't have replica numbers)
+                    # Write test data for Tracebench services
+                    # Use realistic Tracebench service names (service names don't have replica numbers)
                     base_time = 1000000
                     for time_offset in range(0, 30, 2):
                         for service in [
@@ -612,7 +612,7 @@ class TestMssimCpuPlotting:
                             writer.writerow(
                                 {
                                     "timestamp": base_time + time_offset,
-                                    "container_name": f"mssim-exp-abc123def456-{service}",
+                                    "container_name": f"tracebench-exp-abc123def456-{service}",
                                     "cpu_percent": 20.0 + time_offset,
                                     "memory_usage_mb": 200.0,
                                     "memory_limit_mb": 2000.0,
@@ -620,7 +620,7 @@ class TestMssimCpuPlotting:
                                 }
                             )
 
-                # Create minimal latency CSV files for MSSIM plotting
+                # Create minimal latency CSV files for Tracebench plotting
                 for rps in [200, 400]:
                     latency_file = run_dir / f"root_latencies_{rps}rps.csv"
                     with open(latency_file, "w", newline="") as f:
@@ -630,7 +630,7 @@ class TestMssimCpuPlotting:
                                 f"{50000 + i * 1000},{base_time + i * 1000000},false\n"
                             )
 
-            # Call MSSIM plotting
+            # Call Tracebench plotting
             args = Namespace(
                 config_dir=config_dir,
                 data_dir=data_dir,
@@ -641,7 +641,7 @@ class TestMssimCpuPlotting:
 
             # Verify CPU plots were generated
             cpu_plots = list(output_dir.glob("cpu_*.png"))
-            assert len(cpu_plots) > 0, "MSSIM plotting should generate CPU plots"
+            assert len(cpu_plots) > 0, "Tracebench plotting should generate CPU plots"
 
             # Should have plots for the microservices
             # Note: load_generator is still plotted, it's just filtered from latency metrics
@@ -654,9 +654,9 @@ class TestMssimCpuPlotting:
                 assert plot_file.exists()
                 assert plot_file.stat().st_size > 1000
 
-    def test_mssim_cpu_plots_with_multiple_iterations(self):
-        """Test MSSIM CPU plotting with multiple iterations (averaging)."""
-        from exp_runner.runner.plotting.mssim import generate_plots
+    def test_tracebench_cpu_plots_with_multiple_iterations(self):
+        """Test Tracebench CPU plotting with multiple iterations (averaging)."""
+        from exp_runner.runner.plotting.tracebench import generate_plots
         from argparse import Namespace
         import json
 
@@ -678,9 +678,9 @@ class TestMssimCpuPlotting:
             with open(config_dir / "gen_config.json", "w") as f:
                 json.dump(gen_config, f)
 
-            mssim_config = {"slo_ms": 100}
-            with open(config_dir / "mssim.json", "w") as f:
-                json.dump(mssim_config, f)
+            tracebench_config = {"slo_ms": 100}
+            with open(config_dir / "tracebench.json", "w") as f:
+                json.dump(tracebench_config, f)
 
             # Create data for 2 iterations
             for iteration in [0, 1]:
@@ -709,7 +709,7 @@ class TestMssimCpuPlotting:
                             writer.writerow(
                                 {
                                     "timestamp": base_time + time_offset,
-                                    "container_name": "mssim-exp-abc-service-1",
+                                    "container_name": "tracebench-exp-abc-service-1",
                                     "cpu_percent": 15.0 + time_offset + iteration * 5,
                                     "memory_usage_mb": 150.0,
                                     "memory_limit_mb": 1500.0,

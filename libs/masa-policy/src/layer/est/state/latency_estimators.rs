@@ -109,7 +109,7 @@ pub(super) fn fanout_enabled_for_parent(root: MethodId, parent: MethodId) -> boo
 
 /// Runtime toggle for verbose estimator table dumps.
 ///
-/// The fanout table can contain thousands of method-level signatures on mssim
+/// The fanout table can contain thousands of method-level signatures on tracebench
 /// traces. Walking and formatting that table every few seconds is useful while
 /// debugging, but it is far too expensive for performance experiments, so keep
 /// it opt-in.

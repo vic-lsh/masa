@@ -5,7 +5,7 @@ use std::{
 
 use super::{IntoSchedFlavor, PopError, PushError, Queue, SchedFlavor};
 use crate::runtime::task::{Identifiable, Traceable};
-use masa_core::Prioritize;
+use crate::task::TaskPrioritize;
 
 #[allow(dead_code)]
 static INIT: std::sync::LazyLock<u64> = std::sync::LazyLock::new(time_now);
@@ -31,7 +31,7 @@ pub(crate) struct BinaryHeapQueue<T> {
     // reorder_count: u64,
 }
 
-impl<T: Ord + PartialOrd + Prioritize + Identifiable + Traceable> Queue for BinaryHeapQueue<T> {
+impl<T: Ord + PartialOrd + TaskPrioritize + Identifiable + Traceable> Queue for BinaryHeapQueue<T> {
     type Item = T;
 
     fn with_capacity(cap: usize) -> Self {

@@ -161,11 +161,11 @@ packages=(
     # our evaluation apps test suite
     "hotel"
     "socialnet"
-    "synthetic"
+    "synthbench"
 
-    # simulator
+    # tracebench
     "generic-service"
-    "sim-config"
+    "trace-config"
 )
 
 # Loop through each package and run tests

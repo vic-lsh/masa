@@ -1,5 +1,3 @@
-use masa_core::PriorityHint;
-
 use crate::future::Future;
 use crate::loom::sync::Arc;
 use crate::runtime::scheduler::multi_thread::worker;
@@ -7,6 +5,7 @@ use crate::runtime::{
     blocking, driver,
     task::{self, JoinHandle},
 };
+use crate::task::TaskPriority;
 use crate::util::RngSeedGenerator;
 
 use std::fmt;
@@ -40,7 +39,7 @@ impl Handle {
         me: &Arc<Self>,
         future: F,
         id: task::Id,
-        priority: PriorityHint,
+        priority: TaskPriority,
     ) -> JoinHandle<F::Output>
     where
         F: crate::future::Future + Send + 'static,
@@ -57,7 +56,7 @@ impl Handle {
         me: &Arc<Self>,
         future: T,
         id: task::Id,
-        priority: PriorityHint,
+        priority: TaskPriority,
     ) -> JoinHandle<T::Output>
     where
         T: Future + Send + 'static,

@@ -10,10 +10,10 @@ def extract_service_name(container_name: str) -> str:
     Container naming patterns:
     - Hotel: hotel-{slug}-{digest}-{service}-{replica}
              e.g., "hotel-exp1-abc123def456-rate-service-1" -> "rate-service"
-    - Synthetic: {service}-{replica} or local-{service}-{replica}
+    - Synthbench: {service}-{replica} or local-{service}-{replica}
                  e.g., "local-child-service-1" -> "child-service"
-    - MSSIM: mssim-{slug}-{digest}-{service}-{replica}
-             e.g., "mssim-exp1-abc123-frontend-1" -> "frontend"
+    - Tracebench: tracebench-{slug}-{digest}-{service}-{replica}
+             e.g., "tracebench-exp1-abc123-frontend-1" -> "frontend"
     - Socialnet: {prefix}-{service}-{replica} or {prefix}_{service}
                  e.g., "socialnet-ci2-9d93f9cef14a-compose-post-service-1" -> "compose-post-service"
     - Generic: {prefix}-{slug}-{digest}-{service}-{replica} (digest is 12 hex chars)
@@ -35,10 +35,10 @@ def extract_service_name(container_name: str) -> str:
         if match:
             name = match.group(1)
 
-    # Handle mssim prefix: mssim-{slug}-{digest}-
-    elif name.startswith("mssim-"):
-        # Match pattern: mssim-{slug}-{hexdigest}-{service}-{replica}
-        match = re.match(r"mssim-[a-z0-9-]+-[a-f0-9]{12}-(.*)", name)
+    # Handle tracebench prefix: tracebench-{slug}-{digest}-
+    elif name.startswith("tracebench-"):
+        # Match pattern: tracebench-{slug}-{hexdigest}-{service}-{replica}
+        match = re.match(r"tracebench-[a-z0-9-]+-[a-f0-9]{12}-(.*)", name)
         if match:
             name = match.group(1)
 
@@ -59,25 +59,25 @@ def extract_service_name(container_name: str) -> str:
             # Fallback: Remove the bare prefix
             name = re.sub(r"^(?:sn|socialnet)[-_]", "", name)
 
-    # Handle synthetic local prefix
+    # Handle synthbench local prefix
     elif name.startswith("local-"):
         name = name[6:]  # Remove "local-"
 
-    # Handle synthetic prefix
-    elif name.startswith("synthetic-"):
-        # Match pattern: synthetic-{slug}-{hexdigest}-{service}-{replica}
-        match = re.match(r"synthetic-[a-z0-9-]+-[a-f0-9]{12}-(.*)", name)
+    # Handle synthbench prefix
+    elif name.startswith("synthbench-"):
+        # Match pattern: synthbench-{slug}-{hexdigest}-{service}-{replica}
+        match = re.match(r"synthbench-[a-z0-9-]+-[a-f0-9]{12}-(.*)", name)
         if match:
             name = match.group(1)
         else:
-            name = name[10:]  # Remove "synthetic-"
+            name = name[len("synthbench-") :]
 
-    elif name.startswith("synthetic_"):
-        name = name[10:]  # Remove "synthetic_"
+    elif name.startswith("synthbench_"):
+        name = name[len("synthbench_") :]
 
     # Generic fallback: Match pattern with 12-char hex digest
     # e.g., {prefix}-{slug}-{digest}-{service}-{replica}
-    # This handles any app using the _safe_project_name convention (e.g., syn-, mssim-, etc.)
+    # This handles any app using the _safe_project_name convention (e.g., syn-, tracebench-, etc.)
     # if it wasn't caught by specific prefixes above.
     else:
         # Look for -{digest}- where digest is exactly 12 hex chars

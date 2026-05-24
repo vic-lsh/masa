@@ -1,8 +1,7 @@
-use masa_core::PriorityHint;
-
 use crate::future::Future;
 use crate::runtime::task::core::{Core, Trailer};
 use crate::runtime::task::{Cell, Harness, Header, Id, Schedule, State};
+use crate::task::TaskPriority;
 
 use std::ptr::NonNull;
 use std::task::{Poll, Waker};
@@ -159,7 +158,7 @@ const fn get_id_offset(
 }
 
 impl RawTask {
-    pub(super) fn new<T, S>(task: T, scheduler: S, id: Id, priority: PriorityHint) -> RawTask
+    pub(super) fn new<T, S>(task: T, scheduler: S, id: Id, priority: TaskPriority) -> RawTask
     where
         T: Future,
         S: Schedule,

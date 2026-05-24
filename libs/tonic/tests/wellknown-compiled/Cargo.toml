@@ -12,6 +12,7 @@ version = "0.1.0"
 doctest = false
 
 [dependencies]
+masa = { path = "../../../masa" }
 prost = "0.12"
 tonic = {path = "../../tonic"}
 masa-core = { path = "../../../masa-core" }

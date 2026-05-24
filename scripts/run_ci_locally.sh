@@ -152,16 +152,16 @@ if [ "$RUN_E2E" = "true" ]; then
     ./scripts/test_socialnet.sh --deploy-mode docker
     log_success "SocialNet Test Passed"
 
-    log_info "Running Synthetic Experiment (Docker)..."
-    ./scripts/test_synthetic_experiment.sh ci --deploy-mode docker
-    log_success "Synthetic Experiment Passed"
+    log_info "Running Synthbench Experiment (Docker)..."
+    ./scripts/test_synthbench_experiment.sh ci --deploy-mode docker
+    log_success "Synthbench Experiment Passed"
 
-    log_info "Running MSSIM Experiment (Docker)..."
-    ./scripts/test_mssim_experiment.sh --deploy-mode docker
-    log_success "MSSIM Experiment Passed"
+    log_info "Running Tracebench Experiment (Docker)..."
+    ./scripts/test_tracebench_experiment.sh --deploy-mode docker
+    log_success "Tracebench Experiment Passed"
 
     if [ "$RUN_K8S" = "true" ]; then
-        for app in hotel socialnet synthetic mssim; do
+        for app in hotel socialnet synthbench tracebench; do
             log_info "Running $app E2E (Kind)..."
             case "$app" in
                 hotel)
@@ -170,11 +170,11 @@ if [ "$RUN_E2E" = "true" ]; then
                 socialnet)
                     ./scripts/test_socialnet.sh --deploy-mode kind
                     ;;
-                synthetic)
-                    ./scripts/test_synthetic_experiment.sh ci --deploy-mode kind
+                synthbench)
+                    ./scripts/test_synthbench_experiment.sh ci --deploy-mode kind
                     ;;
-                mssim)
-                    ./scripts/test_mssim_experiment.sh --deploy-mode kind
+                tracebench)
+                    ./scripts/test_tracebench_experiment.sh --deploy-mode kind
                     ;;
             esac
         done

@@ -85,14 +85,14 @@ class AppPlugin(ABC):
     """
     Abstract base class for application-specific experiment behavior.
 
-    Each application (hotel, synthetic) implements this interface to provide
+    Each application (hotel, synthbench) implements this interface to provide
     custom configuration parsing, environment variable generation, and
     container management.
     """
 
     @abstractmethod
     def get_app_name(self) -> str:
-        """Return the application name (e.g., 'hotel', 'synthetic')."""
+        """Return the application name (e.g., 'hotel', 'synthbench')."""
         pass
 
     @abstractmethod
@@ -282,8 +282,8 @@ class AppPlugin(ABC):
         """
         Return the list of required fields in gen_config.json for this application.
 
-        The default runner apps (hotel/synthetic) expect an address to parse the frontend port.
-        Apps with different orchestration (e.g., MSSIM) can override this.
+        The default runner apps (hotel/synthbench) expect an address to parse the frontend port.
+        Apps with different orchestration (e.g., Tracebench) can override this.
         """
         return ["Repeats", "Addr"]
 
@@ -346,7 +346,7 @@ class AppPlugin(ABC):
     # libs/masa-policy/src/policy_params.rs reads MASA_POLICY_PARAMS_PATH
     # from the env. Hotel/socialnet rely on the shared entrypoint
     # (exp_runner/common/docker-build/entrypoint.sh) to set the env var from
-    # the mounted file; mssim's Dockerfile bypasses that entrypoint and must
+    # the mounted file; tracebench's Dockerfile bypasses that entrypoint and must
     # set MASA_POLICY_PARAMS_PATH directly on each service.
 
     POLICY_PARAMS_CONTAINER_PATH = "/usr/policy_params.json"

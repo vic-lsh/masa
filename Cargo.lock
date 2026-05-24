@@ -60,6 +60,7 @@ checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
 name = "ambiguous_methods"
 version = "0.1.0"
 dependencies = [
+ "masa",
  "masa-core",
  "prost",
  "tonic",
@@ -960,6 +961,7 @@ dependencies = [
  "http",
  "http-body",
  "hyper",
+ "masa",
  "masa-core",
  "paste",
  "pin-project",
@@ -1298,6 +1300,7 @@ dependencies = [
 name = "default_stubs"
 version = "0.1.0"
 dependencies = [
+ "masa",
  "masa-core",
  "prost",
  "tokio",
@@ -1407,6 +1410,7 @@ dependencies = [
 name = "disable-comments"
 version = "0.1.0"
 dependencies = [
+ "masa",
  "masa-core",
  "prost",
  "prost-build",
@@ -1637,6 +1641,7 @@ dependencies = [
  "hyper",
  "hyper-rustls",
  "listenfd",
+ "masa",
  "masa-core",
  "prost",
  "prost-types",
@@ -1991,11 +1996,11 @@ dependencies = [
  "rand_distr 0.5.1",
  "serde",
  "serde_json",
- "sim-config",
  "tempfile",
  "tokio",
  "tonic",
  "tonic-build",
+ "trace-config",
  "tracing",
  "tracing-subscriber",
 ]
@@ -2592,6 +2597,7 @@ dependencies = [
 name = "included_service"
 version = "0.1.0"
 dependencies = [
+ "masa",
  "masa-core",
  "prost",
  "tonic",
@@ -2650,6 +2656,7 @@ dependencies = [
  "base64 0.21.7",
  "bytes",
  "hyper",
+ "masa",
  "masa-core",
  "prost",
  "tokio",
@@ -2668,6 +2675,7 @@ dependencies = [
  "http",
  "http-body",
  "hyper",
+ "masa",
  "masa-core",
  "prost",
  "tokio",
@@ -2690,6 +2698,7 @@ dependencies = [
  "http",
  "http-body",
  "hyper",
+ "masa",
  "masa-core",
  "pico-args",
  "prost",
@@ -2989,6 +2998,7 @@ version = "0.1.0"
 dependencies = [
  "masa-core",
  "masa-policy",
+ "masa-tonic-core",
  "tokio",
  "tonic",
 ]
@@ -3029,6 +3039,7 @@ version = "0.1.0"
 dependencies = [
  "http",
  "hyper",
+ "masa",
  "masa-core",
  "masa-policy",
  "prost",
@@ -3273,6 +3284,7 @@ checksum = "1d87ecb2933e8aeadb3e3a02b828fed80a7528047e68b4f424523a0981a3a084"
 name = "my_application"
 version = "0.1.0"
 dependencies = [
+ "masa",
  "prost",
  "tonic",
  "tonic-build",
@@ -4485,6 +4497,7 @@ dependencies = [
 name = "root-crate-path"
 version = "0.1.0"
 dependencies = [
+ "masa",
  "masa-core",
  "prost",
  "tonic",
@@ -4731,6 +4744,7 @@ dependencies = [
 name = "same_name"
 version = "0.1.0"
 dependencies = [
+ "masa",
  "masa-core",
  "prost",
  "tonic",
@@ -4933,6 +4947,7 @@ dependencies = [
 name = "service_named_result"
 version = "0.1.0"
 dependencies = [
+ "masa",
  "masa-core",
  "prost",
  "tonic",
@@ -4943,6 +4958,7 @@ dependencies = [
 name = "service_named_service"
 version = "0.1.0"
 dependencies = [
+ "masa",
  "masa-core",
  "prost",
  "tonic",
@@ -5011,23 +5027,6 @@ checksum = "c4db69cba1110affc0e9f7bcd48bbf87b3f4fc7c61fc9155afd4c469eb3d6c1b"
 dependencies = [
  "errno",
  "libc",
-]
-
-[[package]]
-name = "sim-config"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "csv",
- "masa",
- "ordered-float 5.1.0",
- "rand 0.9.2",
- "rand_distr 0.5.1",
- "serde",
- "serde_json",
- "tempfile",
- "tokio",
- "tracing",
 ]
 
 [[package]]
@@ -5192,6 +5191,7 @@ checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 name = "stream_conflict"
 version = "0.1.0"
 dependencies = [
+ "masa",
  "masa-core",
  "prost",
  "tonic",
@@ -5319,7 +5319,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "synthetic"
+name = "synthbench"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -5590,7 +5590,6 @@ dependencies = [
  "futures",
  "libc",
  "loom",
- "masa-core",
  "mio",
  "mio-aio",
  "mockall",
@@ -5954,6 +5953,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "trace-config"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "csv",
+ "masa",
+ "ordered-float 5.1.0",
+ "rand 0.9.2",
+ "rand_distr 0.5.1",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "tracing"
 version = "0.1.44"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6199,6 +6215,7 @@ checksum = "daf8dba3b7eb870caf1ddeed7bc9d2a049f3cfdfae7cb521b087cc33ae4c49da"
 name = "use_arc_self"
 version = "0.1.0"
 dependencies = [
+ "masa",
  "masa-core",
  "prost",
  "tokio-stream",
@@ -6465,6 +6482,7 @@ dependencies = [
 name = "wellknown"
 version = "0.1.0"
 dependencies = [
+ "masa",
  "masa-core",
  "prost",
  "prost-types",
@@ -6476,6 +6494,7 @@ dependencies = [
 name = "wellknown-compiled"
 version = "0.1.0"
 dependencies = [
+ "masa",
  "masa-core",
  "prost",
  "prost-build",

@@ -18,7 +18,7 @@ use tracing::{debug, trace};
 
 use super::client::Ver;
 use crate::common::exec::Exec;
-use masa_core::PriorityHint;
+use tokio::task::TaskPriority;
 
 // FIXME: allow() required due to `impl Trait` leaking types to this lint
 #[allow(missing_debug_implementations)]
@@ -427,7 +427,7 @@ impl<T: Poolable> PoolInner<T> {
             pool_drop_notifier: rx,
         };
 
-        self.exec.execute(interval, PriorityHint::infra());
+        self.exec.execute(interval, TaskPriority::infra());
     }
 }
 

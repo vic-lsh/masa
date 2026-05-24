@@ -1456,7 +1456,7 @@ def plot_goodput_timeline(
     duration_sec: float,
     window_sec: float = 5.0,
 ) -> None:
-    """Plot per-second goodput over time for real apps (hotel, socialnet, synthetic).
+    """Plot per-second goodput over time for real apps (hotel, socialnet, synthbench).
 
     Stitches RPS periods in their original run order, using a sliding window.
     SLO is per-row (``df["slo"]`` in microseconds), matching real-app mixed-SLO data.
@@ -1755,19 +1755,19 @@ def _parse_loadgen_client_shed(
       intervals — this parser maps `secs` directly onto the plot's
       wallclock x-axis, so any other interval would offset ClientShed
       points relative to the server-side abort rates (which are
-      resampled in wallclock time). Configure mssim's
+      resampled in wallclock time). Configure tracebench's
       `stats_interval_sec` to 1; hotel/socialnet are hard-coded to 1s.
 
       `client_shed` is the **client-side admission shed rate for the tick,
       in requests per second**. Hotel/socialnet log the raw delta; with
-      a 1s tick that equals rate. mssim explicitly emits delta/interval
+      a 1s tick that equals rate. tracebench explicitly emits delta/interval
       so the value is always rate regardless of interval drift.
 
       Values may be integers or decimals. Separator between key and
       value may be ":", "=", or whitespace; other fields on the line are
       ignored. See:
         - apps/app-utils/src/load_gen.rs (hotel/socialnet stats_logger)
-        - apps/mssim/generic-service/src/loadgen.rs (mssim print_stats_task)
+        - apps/tracebench/generic-service/src/loadgen.rs (tracebench print_stats_task)
     """
     import re
 

@@ -15,7 +15,7 @@ Policy is configured along three composable dimensions:
 - `sched_fifo`: First-In-First-Out ordering (baseline).
 - `sched_slo`: Priority by end-to-end SLO deadline (implies tokio priority queue).
 - `sched_tailclipper`: Priority by request arrival time (oldest first), implementing the TailClipper paper (implies tokio priority queue).
-- `sched_oracle`: Perfect-information child deadline/priority assignment for deterministic synthetic experiments (implies tokio priority queue).
+- `sched_oracle`: Perfect-information child deadline/priority assignment for deterministic synthbench experiments (implies tokio priority queue).
 - `sched_pred`: Priority by per-RPC predicted deadline with deadline tightening and dynamic reprioritization (implies `sched_slo` and `estimator`).
 
 **Admission control** (mutually exclusive — pick at most one):
@@ -53,7 +53,7 @@ The root `Cargo.toml` `[patch.crates-io]` section replaces the upstream Tokio fa
 
 ### `DefaultHooks` Selection
 
-The `DefaultHooks` type alias (in `libs/tonic/tonic/src/masa_ext/mod.rs`) is resolved by feature flag:
+The `masa::DefaultHooks` type alias (in `libs/masa/src/lib.rs`) is resolved by feature flag:
 
 - Any scheduling feature (`sched_fifo`, `sched_slo`, `sched_tailclipper`, `sched_oracle`) → `masa_policy::PolicyHooks`
 - No scheduling features → `NoopHooks`
@@ -189,7 +189,7 @@ The `Context` is serialized using **bincode** (compact binary format) and **base
 
 ### Method Name Override
 
-The `x-masa-method-name` header (`libs/masa-tonic-core/src/lib.rs`, reexported through `tonic::masa_ext`) allows overriding the gRPC method name for latency tracking. This is used by applications where a generic endpoint (e.g., `invoke`) handles multiple logical methods (e.g., the synthetic and mssim applications).
+The `x-masa-method-name` header (`libs/masa-tonic-core/src/lib.rs`, reexported through `tonic::masa_ext`) allows overriding the gRPC method name for latency tracking. This is used by applications where a generic endpoint (e.g., `invoke`) handles multiple logical methods (e.g., the synthbench and tracebench applications).
 
 ## 4. Transport Layer (`libs/hyper`)
 
@@ -227,16 +227,16 @@ The core scheduling logic resides in a modified version of `tokio`.
 **Critical**: The priority scheduler is implemented **only** in the `current_thread` (single-threaded) scheduler. The `multi_thread` scheduler has **no** priority-aware modifications. Applications **must** use `#[tokio::main(flavor = "current_thread")]`. Using `multi_thread` will silently ignore all priorities and revert to FIFO scheduling.
 
 ### `spawn_with_prio`
-`tokio` exposes a `spawn_with_prio` function (`libs/tokio/tokio/src/task/spawn.rs`). This function accepts a `Future` and a `PriorityHint`.
+`tokio` exposes a `spawn_with_prio` function (`libs/tokio/tokio/src/task/spawn.rs`). This function accepts a `Future` and a neutral runtime `TaskPriority`.
 
-The standard `tokio::spawn()` calls `spawn_with_prio(future, PriorityHint::infra())` — meaning all non-Masa tasks (connection management, timers, channel workers, etc.) run at the **highest priority** by default. Only request-processing tasks spawned via `execute_h2stream_with_prio` receive a lower (deadline-based) priority.
+The standard `tokio::spawn()` calls `spawn_with_prio(future, TaskPriority::infra())` — meaning all non-Masa tasks (connection management, timers, channel workers, etc.) run at the **highest priority** by default. Only request-processing tasks spawned via `execute_h2stream_with_prio` receive a lower (deadline-based) priority converted from Masa's `PriorityHint` at the runtime boundary.
 
 `spawn_with_prio` also handles **poll hook inheritance**: it clones the calling task's poll hook (if any) and wraps the child future with it, ensuring thread-local context propagation (see Section 6).
 
 ### Task Header
 
 Each tokio task header (`libs/tokio/tokio/src/runtime/task/core.rs`) is extended with three Masa-specific fields:
-*   `priority: UnsafeCell<PriorityHint>` — the task's scheduling priority.
+*   `priority: UnsafeCell<TaskPriority>` — the task's scheduling priority.
 *   `poll_hook: UnsafeCell<Option<PollHook>>` — optional before/after poll callbacks.
 *   `timer: UnsafeCell<TraceTimer>` — queue latency measurement (see below).
 

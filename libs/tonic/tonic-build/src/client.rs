@@ -15,6 +15,7 @@ pub(crate) fn generate_internal<T: Service>(
     compile_well_known_types: bool,
     build_transport: bool,
     enable_parent_rpc_ctx: bool,
+    default_hooks_path: &syn::Path,
     attributes: &Attributes,
     disable_comments: &HashSet<String>,
 ) -> TokenStream {
@@ -29,7 +30,7 @@ pub(crate) fn generate_internal<T: Service>(
         disable_comments,
     );
 
-    let connect = generate_connect(&service_ident, build_transport);
+    let connect = generate_connect(&service_ident, build_transport, default_hooks_path);
 
     let package = if emit_package { service.package() } else { "" };
     let service_name = format_service_name(service, emit_package);
@@ -72,7 +73,7 @@ pub(crate) fn generate_internal<T: Service>(
             #[derive(Debug)]
             pub struct #service_ident<
                 T,
-                M: tonic::masa_ext::Hooks = tonic::masa_ext::DefaultHooks,
+                M: tonic::masa_ext::Hooks = #default_hooks_path,
             > {
                 inner: tonic::client::Grpc<T>,
                 _ctx_ty: std::marker::PhantomData<M>,
@@ -93,7 +94,7 @@ pub(crate) fn generate_internal<T: Service>(
 
             #connect
 
-            impl<T> #service_ident<T, tonic::masa_ext::DefaultHooks>
+            impl<T> #service_ident<T, #default_hooks_path>
             where
                 T: tonic::client::GrpcService<tonic::body::BoxBody>,
                 T::Error: Into<StdError>,
@@ -203,11 +204,15 @@ fn generate_get_parent_rpc_ctx(_service: &impl Service) -> TokenStream {
 }
 
 #[cfg(feature = "transport")]
-fn generate_connect(service_ident: &syn::Ident, enabled: bool) -> TokenStream {
+fn generate_connect(
+    service_ident: &syn::Ident,
+    enabled: bool,
+    default_hooks_path: &syn::Path,
+) -> TokenStream {
     let connect_impl = quote! {
         impl #service_ident<
             tonic::transport::Channel,
-            tonic::masa_ext::DefaultHooks,
+            #default_hooks_path,
         > {
             /// Attempt to create a new client by connecting to a given endpoint.
             pub async fn connect<D>(dst: D) -> Result<Self, tonic::transport::Error>
@@ -244,7 +249,11 @@ fn generate_connect(service_ident: &syn::Ident, enabled: bool) -> TokenStream {
 }
 
 #[cfg(not(feature = "transport"))]
-fn generate_connect(_service_ident: &syn::Ident, _enabled: bool) -> TokenStream {
+fn generate_connect(
+    _service_ident: &syn::Ident,
+    _enabled: bool,
+    _default_hooks_path: &syn::Path,
+) -> TokenStream {
     TokenStream::new()
 }
 

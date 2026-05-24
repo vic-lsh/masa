@@ -28,7 +28,7 @@ use crate::proto::Dispatched;
 use crate::upgrade::Upgraded;
 use crate::{Body, Request, Response};
 use h2::client::ResponseFuture;
-use masa_core::PriorityHint;
+use tokio::task::TaskPriority;
 
 type ClientRx<B> = crate::client::dispatch::Receiver<Request<B>, Response<Body>>;
 
@@ -172,7 +172,7 @@ where
 
     exec.execute(
         conn_task(conn, conn_drop_rx, cancel_tx),
-        PriorityHint::infra(),
+        TaskPriority::infra(),
     );
 
     Ok(ClientTask {
@@ -274,7 +274,7 @@ where
                             x
                         });
                         // Clear send task
-                        self.executor.execute(pipe, PriorityHint::infra());
+                        self.executor.execute(pipe, TaskPriority::infra());
                     }
                 }
             }
@@ -332,7 +332,7 @@ where
             }
         });
         self.executor
-            .execute(f.cb.send_when(fut), PriorityHint::infra());
+            .execute(f.cb.send_when(fut), TaskPriority::infra());
     }
 }
 
