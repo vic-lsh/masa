@@ -123,12 +123,12 @@ if [ "$CHECK_TESTS" = true ]; then
         FAILED_COMBOS+=("tests")
     fi
 
-    # If we only specified --tests and no specific flags, and no --all,
-    # we might want to stop here?
-    # The requirement is ambiguous, but typically flags are additive.
-    # However, if checking tests is the only intention, running the full matrix is annoying.
-    # Given the script structure, if I run `check.sh --tests`, it enters the "Otherwise" block below.
-    # Let's assume that's desired behavior for a full "check".
+    if [ "$HAS_SPECIFIC_FLAGS" = false ]; then
+        if [ "$FAILED" = true ]; then
+            exit 1
+        fi
+        exit 0
+    fi
 fi
 
 # If specific flags are provided, run only that check
