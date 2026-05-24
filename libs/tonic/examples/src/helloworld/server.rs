@@ -150,7 +150,7 @@ where
     F: std::future::Future + Send + 'static,
     F::Output: Send,
 {
-    fn execute(&self, fut: F, _ddl: TaskPriority) {
+    fn execute(&self, fut: F) {
         // let bt = std::backtrace::Backtrace::capture();
         // println!("{}", bt);
 

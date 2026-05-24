@@ -20,7 +20,6 @@ use crate::common::{exec::BoxSendFuture, lazy as hyper_lazy, sync_wrapper::SyncW
 #[cfg(feature = "http2")]
 use crate::ext::Protocol;
 use crate::rt::Executor;
-use tokio::task::TaskPriority;
 
 use super::conn;
 use super::connect::{self, sealed::Connect, Alpn, Connected, Connection};
@@ -340,18 +339,14 @@ where
             });
 
             #[cfg_attr(feature = "deprecated", allow(deprecated))]
-            self.conn_builder
-                .exec
-                .execute(on_idle, TaskPriority::infra());
+            self.conn_builder.exec.execute(on_idle);
         } else {
             // There's no body to delay, but the connection isn't
             // ready yet. Only re-insert when it's ready
             let on_idle = future::poll_fn(move |cx| pooled.poll_ready(cx)).map(|_| ());
 
             #[cfg_attr(feature = "deprecated", allow(deprecated))]
-            self.conn_builder
-                .exec
-                .execute(on_idle, TaskPriority::infra());
+            self.conn_builder.exec.execute(on_idle);
         }
 
         Ok(res)
@@ -405,7 +400,7 @@ where
                     // An execute error here isn't important, we're just trying
                     // to prevent a waste of a socket...
                     #[cfg_attr(feature = "deprecated", allow(deprecated))]
-                    self.conn_builder.exec.execute(bg, TaskPriority::infra());
+                    self.conn_builder.exec.execute(bg);
                 }
                 Ok(checked_out)
             }
@@ -515,7 +510,6 @@ where
                             executor.execute(
                                 conn.map_err(|e| debug!("client connection error: {}", e))
                                     .map(|_| ()),
-                                TaskPriority::infra(),
                             );
 
                             // Wait for 'conn' to ready up before we
