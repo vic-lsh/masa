@@ -24,7 +24,7 @@ use crate::config::HotelConfig;
 use std::time::Instant;
 
 use masa::transport::LoadBalancedChannel;
-use tonic::masa_ext::{MasaRequestExt, MasaResponseExt};
+use masa::{MasaRequestExt, MasaResponseExt};
 use tonic::{Request, Response, Status};
 
 use hotel_tonic::{

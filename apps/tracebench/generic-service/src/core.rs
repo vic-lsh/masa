@@ -6,13 +6,13 @@ use crate::service_replay::ReplaySpanExecutor;
 use crate::service_stubs::{InvokeRequest, ReplayRequest};
 use crate::RpcClient;
 use anyhow::Result;
+use masa::MasaRequestExt;
 use masa::MethodId;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Once};
 use tokio::sync::RwLockReadGuard;
 use tokio::task::JoinSet;
-use tonic::masa_ext::MasaRequestExt;
 use tonic::{Request, Status};
 use trace_config::deployment::Deployment;
 use trace_config::svc::call_sequence::{
@@ -461,12 +461,11 @@ mod tests {
     use super::*;
     use crate::service_stubs::{self, InvokeRequest, InvokeResponse};
     use masa::transport::LoadBalancedChannel;
-    use masa::MethodId;
+    use masa::{
+        MasaRequestExt, MethodId, METHOD_NAME_OVERRIDE_HEADER, SERVICE_NAME_OVERRIDE_HEADER,
+    };
     use std::collections::HashMap;
     use tonic::async_trait;
-    use tonic::masa_ext::{
-        MasaRequestExt, METHOD_NAME_OVERRIDE_HEADER, SERVICE_NAME_OVERRIDE_HEADER,
-    };
     use tonic::transport::Server;
     use tonic::Request;
     use trace_config::svc::{

@@ -16,8 +16,8 @@ use app_utils::{
     timing::time_now,
 };
 use frontend::frontend_client::FrontendClient;
+use masa::MasaRequestExt;
 use masa::{Context, ContextBuilder};
-use tonic::masa_ext::MasaRequestExt;
 
 struct SynthbenchClient;
 

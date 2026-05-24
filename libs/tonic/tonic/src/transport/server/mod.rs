@@ -71,11 +71,7 @@ type TraceInterceptor = Arc<dyn Fn(&http::Request<()>) -> tracing::Span + Send +
 const DEFAULT_HTTP2_KEEPALIVE_TIMEOUT_SECS: u64 = 20;
 
 fn masa_h2_stream_priority(headers: &http::HeaderMap) -> TaskPriority {
-    TaskPriority::new(
-        masa_policy::context_ext::read_context_from_headers(headers)
-            .prio_hint()
-            .value(),
-    )
+    TaskPriority::new(masa_core::read_priority_from_headers(headers).value())
 }
 
 /// A default batteries included `transport` server.

@@ -6,10 +6,10 @@ use crate::distribution::LatencyDistribution;
 use crate::tonic::{child, child::child_client::ChildClient, child::child_server::ChildServer};
 use app_utils::timing::time_now;
 use masa::ContextBuilder;
+use masa::{MasaRequestExt, METHOD_NAME_OVERRIDE_HEADER, SERVICE_NAME_OVERRIDE_HEADER};
 use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio_stream::wrappers::TcpListenerStream;
-use tonic::masa_ext::{MasaRequestExt, METHOD_NAME_OVERRIDE_HEADER, SERVICE_NAME_OVERRIDE_HEADER};
 use tonic::transport::Server;
 use tonic::Request;
 
