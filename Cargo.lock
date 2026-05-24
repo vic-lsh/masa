@@ -2389,7 +2389,6 @@ dependencies = [
  "itoa",
  "libc",
  "log",
- "masa-core",
  "matches",
  "num_cpus",
  "pin-project-lite",

@@ -14,10 +14,7 @@ use crate::rt::Executor;
 use crate::server::server::{new_svc::NewSvcTask, Watcher};
 #[cfg(all(feature = "server", any(feature = "http1", feature = "http2")))]
 use crate::service::HttpService;
-#[cfg(feature = "server")]
 use http::HeaderMap;
-#[cfg(feature = "server")]
-use masa_core::Context as MasaContext;
 use tokio::task::TaskPriority;
 
 #[cfg(feature = "server")]
@@ -27,21 +24,6 @@ pub trait ConnStreamExec<F, B: HttpBody>: Clone {
     }
 
     fn execute_h2stream_with_prio(&mut self, fut: H2Stream<F, B>, prio: TaskPriority);
-}
-
-#[cfg(feature = "server")]
-fn masa_priority_from_headers(headers: &HeaderMap) -> TaskPriority {
-    let ctx = headers
-        .get(masa_core::MASA_CONTEXT_HEADER)
-        .unwrap_or_else(|| panic!("{}", masa_core::MISSING_CONTEXT_HEADER_MESSAGE));
-    let ctx_str = ctx.to_str().unwrap_or_else(|err| {
-        panic!(
-            "{}",
-            masa_core::invalid_context_header_metadata_message(err)
-        )
-    });
-
-    TaskPriority::new(MasaContext::from_header_string(ctx_str).prio_hint().value())
 }
 
 #[cfg(all(feature = "server", any(feature = "http1", feature = "http2")))]
@@ -59,7 +41,7 @@ pub enum Exec {
     /// Use tokio by default.
     Default,
     /// Use masa-specific runtime.
-    Masa,
+    Masa(fn(&HeaderMap) -> TaskPriority),
     /// Use custom executor.
     Executor(Arc<dyn Executor<BoxSendFuture> + Send + Sync>),
 }
@@ -68,9 +50,15 @@ pub enum Exec {
 
 impl Exec {
     #[cfg(feature = "server")]
+    /// Use the Masa runtime with an HTTP/2 stream priority extractor.
+    pub fn masa(h2_stream_priority: fn(&HeaderMap) -> TaskPriority) -> Self {
+        Exec::Masa(h2_stream_priority)
+    }
+
+    #[cfg(feature = "server")]
     pub(crate) fn h2_stream_priority(&self, headers: &HeaderMap) -> TaskPriority {
         match self {
-            Exec::Masa => masa_priority_from_headers(headers),
+            Exec::Masa(extract) => extract(headers),
             Exec::Default | Exec::Executor(_) => TaskPriority::infra(),
         }
     }
@@ -91,7 +79,7 @@ impl Exec {
                     panic!("executor must be set")
                 }
             }
-            Exec::Masa => {
+            Exec::Masa(_) => {
                 {
                     tokio::task::spawn_with_prio(fut, prio);
                 }
@@ -170,13 +158,11 @@ where
 }
 
 #[cfg(all(test, feature = "server"))]
-mod masa_context_tests {
+mod h2_priority_extractor_tests {
     use super::*;
-    use http::HeaderValue;
-    use masa_core::{ContextBuilder, PriorityHint};
 
     #[test]
-    fn default_executor_ignores_missing_context() {
+    fn default_executor_uses_infra_priority() {
         let headers = HeaderMap::new();
 
         assert_eq!(
@@ -186,43 +172,27 @@ mod masa_context_tests {
     }
 
     #[test]
-    #[should_panic(expected = "missing MASA context header `ctx`")]
-    fn masa_executor_requires_context() {
-        let headers = HeaderMap::new();
+    fn masa_executor_uses_configured_priority_extractor() {
+        let mut headers = HeaderMap::new();
+        headers.insert("x-test-priority", "42".parse().unwrap());
+        let exec = Exec::masa(|headers| {
+            headers
+                .get("x-test-priority")
+                .and_then(|value| value.to_str().ok())
+                .and_then(|value| value.parse().ok())
+                .map(TaskPriority::new)
+                .unwrap_or_else(TaskPriority::infra)
+        });
 
-        let _ = Exec::Masa.h2_stream_priority(&headers);
+        assert_eq!(exec.h2_stream_priority(&headers), TaskPriority::new(42));
     }
 
     #[test]
-    #[should_panic(expected = "invalid MASA context header `ctx`: invalid ASCII/metadata")]
-    fn masa_executor_panics_on_invalid_ascii_context() {
-        let mut headers = HeaderMap::new();
-        headers.insert(
-            masa_core::MASA_CONTEXT_HEADER,
-            HeaderValue::from_bytes(b"\xff").unwrap(),
-        );
+    #[should_panic(expected = "extractor panic")]
+    fn masa_executor_preserves_extractor_panic_behavior() {
+        let exec = Exec::masa(|_| panic!("extractor panic"));
 
-        let _ = Exec::Masa.h2_stream_priority(&headers);
-    }
-
-    #[test]
-    fn masa_executor_uses_context_priority_hint() {
-        let ctx = ContextBuilder::new("test.Service", 9)
-            .slo(100)
-            .gateway_entry(10)
-            .deadline(110)
-            .prio_hint(PriorityHint::new(42))
-            .build();
-        let mut headers = HeaderMap::new();
-        headers.insert(
-            masa_core::MASA_CONTEXT_HEADER,
-            HeaderValue::from_str(&ctx.to_header_string()).unwrap(),
-        );
-
-        assert_eq!(
-            Exec::Masa.h2_stream_priority(&headers),
-            TaskPriority::new(42)
-        );
+        let _ = exec.h2_stream_priority(&HeaderMap::new());
     }
 }
 
