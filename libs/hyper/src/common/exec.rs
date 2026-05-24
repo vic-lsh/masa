@@ -41,7 +41,7 @@ pub enum Exec {
     /// Use tokio by default.
     Default,
     /// Use masa-specific runtime.
-    Masa(Arc<dyn Fn(&HeaderMap) -> TaskPriority + Send + Sync>),
+    Masa(fn(&HeaderMap) -> TaskPriority),
     /// Use custom executor.
     Executor(Arc<dyn Executor<BoxSendFuture> + Send + Sync>),
 }
@@ -51,10 +51,8 @@ pub enum Exec {
 impl Exec {
     #[cfg(feature = "server")]
     /// Use the Masa runtime with an HTTP/2 stream priority extractor.
-    pub fn masa(
-        h2_stream_priority: impl Fn(&HeaderMap) -> TaskPriority + Send + Sync + 'static,
-    ) -> Self {
-        Exec::Masa(Arc::new(h2_stream_priority))
+    pub fn masa(h2_stream_priority: fn(&HeaderMap) -> TaskPriority) -> Self {
+        Exec::Masa(h2_stream_priority)
     }
 
     #[cfg(feature = "server")]
