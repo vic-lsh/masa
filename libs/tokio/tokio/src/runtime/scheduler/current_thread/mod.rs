@@ -112,6 +112,12 @@ pub(crate) struct Context {
     pub(crate) defer: Defer,
 }
 
+impl Context {
+    pub(crate) fn queue_len(&self) -> Option<usize> {
+        self.core.borrow().as_ref().map(|core| core.tasks.len())
+    }
+}
+
 type Notified = task::Notified<Arc<Handle>>;
 
 /// Initial queue capacity.
