@@ -5,6 +5,12 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
+env:
+  CI: "true"
+
 jobs:
   # Detect which paths changed so downstream workflows can skip when irrelevant.
   changes:
@@ -31,27 +37,183 @@ jobs:
               - 'scripts/**'
               - '.github/workflows/**'
 
-  fmt-cargo:
+  format:
     needs: changes
     if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.python == 'true'
-    uses: ./.github/workflows/fmt-cargo.yml
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly-2026-01-07
+          components: rustfmt
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - run: ./scripts/format.sh --check
 
-  check-cargo:
+  cargo-check:
     needs: changes
     if: needs.changes.outputs.rust == 'true'
-    uses: ./.github/workflows/check-cargo.yml
+    name: cargo check (${{ matrix.label }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: default
+            features: ""
+            cache_key: default
+          - label: sched_fifo
+            features: "sched_fifo"
+            cache_key: sched-fifo
+          - label: sched_fifo_abort_slo
+            features: "sched_fifo,abort_slo"
+            cache_key: sched-fifo-abort-slo
+          - label: sched_slo
+            features: "sched_slo"
+            cache_key: sched-slo
+          - label: sched_slo_abort_slo
+            features: "sched_slo,abort_slo"
+            cache_key: sched-slo-abort-slo
+          - label: sched_tailclipper_abort_slo
+            features: "sched_tailclipper,abort_slo"
+            cache_key: sched-tailclipper-abort-slo
+          - label: sched_oracle
+            features: "sched_oracle"
+            cache_key: sched-oracle
+          - label: sched_slo_ac_rajomon
+            features: "sched_slo,ac_rajomon"
+            cache_key: sched-slo-ac-rajomon
+          - label: sched_slo_ac_pred_est_mean_var
+            features: "sched_slo,ac_pred,est_mean_var"
+            cache_key: sched-slo-ac-pred-est-mean-var
+          - label: sched_pred_abort_slo_ac_pred_est_mean_var
+            features: "sched_pred,abort_slo,ac_pred,est_mean_var"
+            cache_key: sched-pred-abort-slo-ac-pred-est-mean-var
+          - label: sched_pred_abort_slack_est_mean_var
+            features: "sched_pred,abort_slack,est_mean_var"
+            cache_key: sched-pred-abort-slack-est-mean-var
+          - label: sched_pred_signal_slack_ac_pred_est_mean_var
+            features: "sched_pred,signal_slack,ac_pred,est_mean_var"
+            cache_key: sched-pred-signal-slack-ac-pred-est-mean-var
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly-2026-01-07
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.cache_key }}
+          cache-on-failure: true
+      - name: Install protoc
+        run: |
+          ulimit -n 8192 || true
+          ./scripts/install_protoc.sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          echo "PROTOC=$HOME/.local/bin/protoc" >> "$GITHUB_ENV"
+      - run: rustc --version && cargo --version && protoc --version
+      - run: ./scripts/check.sh "${{ matrix.features }}"
+
+  cargo-check-tests:
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly-2026-01-07
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: check-tests
+          cache-on-failure: true
+      - name: Install protoc
+        run: |
+          ulimit -n 8192 || true
+          ./scripts/install_protoc.sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          echo "PROTOC=$HOME/.local/bin/protoc" >> "$GITHUB_ENV"
+      - run: rustc --version && cargo --version && protoc --version
+      - run: ./scripts/check.sh --tests
 
   lint-python:
     needs: changes
     if: needs.changes.outputs.python == 'true'
-    uses: ./.github/workflows/lint-python.yml
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - run: ./scripts/lint_python.sh
 
-  test-pytest:
+  pytest:
     needs: changes
     if: needs.changes.outputs.python == 'true'
-    uses: ./.github/workflows/test-pytest.yml
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install system deps
+        run: sudo apt-get update -yqq && sudo apt-get install -y libgraphviz-dev pkg-config
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - run: uv sync --dev
+      - run: ./scripts/test_python.sh
 
   test-cargo:
     needs: changes
     if: needs.changes.outputs.rust == 'true'
-    uses: ./.github/workflows/test-cargo.yml
+    name: cargo test (${{ matrix.label }})
+    runs-on: ubuntu-latest
+    env:
+      CARGO_BUILD_JOBS: "4"
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: default
+            features: ""
+            cache_key: default
+          - label: sched_slo_trace_queue_latency
+            features: "sched_slo,trace_queue_latency"
+            cache_key: sched-slo-trace-queue-latency
+          - label: sched_slo_abort_slo
+            features: "sched_slo,abort_slo"
+            cache_key: sched-slo-abort-slo
+          - label: sched_slo_ac_rajomon
+            features: "sched_slo,ac_rajomon"
+            cache_key: sched-slo-ac-rajomon
+          - label: sched_pred_abort_slo_ac_pred_est_mean_var
+            features: "sched_pred,abort_slo,ac_pred,est_mean_var"
+            cache_key: sched-pred-abort-slo-ac-pred-est-mean-var
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly-2026-01-07
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.cache_key }}
+          cache-on-failure: true
+      - name: Install protoc
+        run: |
+          ulimit -n 4096 || true
+          ./scripts/install_protoc.sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          echo "PROTOC=$HOME/.local/bin/protoc" >> "$GITHUB_ENV"
+      - run: rustc --version && cargo --version && protoc --version
+      - run: ./scripts/test.sh --feature "${{ matrix.features }}"

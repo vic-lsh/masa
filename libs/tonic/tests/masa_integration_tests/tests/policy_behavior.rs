@@ -4,6 +4,7 @@
     all(feature = "sched_slo", feature = "ac_rajomon")
 ))]
 
+use std::net::{SocketAddr, TcpListener};
 use std::time::Duration;
 
 #[cfg(any(feature = "abort_slo", feature = "ac_rajomon"))]
@@ -26,6 +27,11 @@ use tonic::{Request, Response, Status};
 
 #[cfg(any(feature = "abort_slo", feature = "ac_rajomon"))]
 use tonic::Code;
+
+fn unused_local_addr() -> SocketAddr {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind ephemeral test port");
+    listener.local_addr().expect("read ephemeral test port")
+}
 
 /// Install test-local Rajomon params before the process-wide `PolicyParams`
 /// `OnceLock` is initialized. The production default (`init_price=0`,
@@ -72,7 +78,7 @@ async fn queue_latency_metadata_is_attached() {
         }
     }
 
-    let addr = "127.0.0.1:60070".parse().unwrap();
+    let addr = unused_local_addr();
     let server = tokio::spawn(async move {
         Server::builder()
             .add_service(
@@ -133,7 +139,7 @@ async fn expired_context_triggers_early_return() {
         }
     }
 
-    let addr = "127.0.0.1:60071".parse().unwrap();
+    let addr = unused_local_addr();
     let executed = Arc::new(AtomicBool::new(false));
     let svc = SlowSvc {
         executed: executed.clone(),
@@ -196,7 +202,7 @@ async fn sufficient_tokens_executes_and_piggybacks_price() {
         }
     }
 
-    let addr = "127.0.0.1:60073".parse().unwrap();
+    let addr = unused_local_addr();
     let svc = FastSvc;
 
     let server = tokio::spawn(async move {
@@ -266,7 +272,7 @@ async fn insufficient_tokens_triggers_early_return() {
         }
     }
 
-    let addr = "127.0.0.1:60072".parse().unwrap();
+    let addr = unused_local_addr();
     let executed = Arc::new(AtomicBool::new(false));
     let svc = SlowSvc {
         executed: executed.clone(),

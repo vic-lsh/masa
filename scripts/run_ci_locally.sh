@@ -24,13 +24,33 @@ log_warn() {
     echo -e "${YELLOW}WARNING: $1${NC}"
 }
 
+RUN_E2E=false
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --e2e)
+            RUN_E2E=true
+            shift
+            ;;
+        *)
+            log_error "Unknown argument: $1"
+            echo "Usage: $0 [--e2e]"
+            exit 1
+            ;;
+    esac
+done
+
 # Check for required core tools
-for tool in cargo uv docker; do
+for tool in cargo uv; do
     if ! command -v $tool &> /dev/null; then
         log_error "$tool is required but not installed."
         exit 1
     fi
 done
+
+if [ "$RUN_E2E" = "true" ] && ! command -v docker &> /dev/null; then
+    log_error "docker is required for --e2e but not installed."
+    exit 1
+fi
 
 if ! command -v protoc &> /dev/null; then
     log_error "protoc is required but not installed."
@@ -41,17 +61,19 @@ fi
 # Check for K8s tools
 RUN_K8S=true
 MISSING_K8S_TOOLS=()
-for tool in kind kubectl helm; do
-    if ! command -v $tool &> /dev/null; then
-        MISSING_K8S_TOOLS+=("$tool")
-        RUN_K8S=false
-    fi
-done
+if [ "$RUN_E2E" = "true" ]; then
+    for tool in kind kubectl helm; do
+        if ! command -v $tool &> /dev/null; then
+            MISSING_K8S_TOOLS+=("$tool")
+            RUN_K8S=false
+        fi
+    done
 
-if [ "$RUN_K8S" = "false" ]; then
-    log_warn "The following tools are missing: ${MISSING_K8S_TOOLS[*]}"
-    log_warn "Kubernetes (Kind) tests will be SKIPPED."
-    log_warn "Install them to run the full suite."
+    if [ "$RUN_K8S" = "false" ]; then
+        log_warn "The following tools are missing: ${MISSING_K8S_TOOLS[*]}"
+        log_warn "Kubernetes (Kind) tests will be SKIPPED."
+        log_warn "Install them to run the full E2E suite."
+    fi
 fi
 
 # Ensure we are in the project root
@@ -74,7 +96,20 @@ log_success "Python Lint Passed"
 
 # 3. Cargo Checks (Matrix)
 log_info "Running Cargo Checks..."
-FEATURES_LIST=("" "sched_fifo" "sched_prio" "sched_prio,abort_slo" "sched_prio,pred_sched" "sched_prio,tailclipper,abort_slo")
+FEATURES_LIST=(
+    ""
+    "sched_fifo"
+    "sched_fifo,abort_slo"
+    "sched_slo"
+    "sched_slo,abort_slo"
+    "sched_tailclipper,abort_slo"
+    "sched_oracle"
+    "sched_slo,ac_rajomon"
+    "sched_slo,ac_pred,est_mean_var"
+    "sched_pred,abort_slo,ac_pred,est_mean_var"
+    "sched_pred,abort_slack,est_mean_var"
+    "sched_pred,signal_slack,ac_pred,est_mean_var"
+)
 
 for features in "${FEATURES_LIST[@]}"; do
     echo "  Checking features: '$features'"
@@ -92,47 +127,68 @@ log_info "Running Python Tests..."
 ./scripts/test_python.sh
 log_success "Python Tests Passed"
 
-# 6. Cargo Tests
+# 6. Cargo Tests (Matrix)
 log_info "Running Cargo Tests..."
-./scripts/test.sh --parallel 8
+TEST_FEATURES_LIST=(
+    ""
+    "sched_slo,trace_queue_latency"
+    "sched_slo,abort_slo"
+    "sched_slo,ac_rajomon"
+    "sched_pred,abort_slo,ac_pred,est_mean_var"
+)
+
+for features in "${TEST_FEATURES_LIST[@]}"; do
+    echo "  Testing features: '$features'"
+    ./scripts/test.sh --feature "$features"
+done
 log_success "Cargo Tests Passed"
 
-# 7. E2E Hotel Test
-log_info "Running E2E Hotel Test..."
-./scripts/test_e2e_hotel.sh
-log_success "E2E Hotel Test Passed"
+if [ "$RUN_E2E" = "true" ]; then
+    log_info "Running E2E Hotel Test (Docker)..."
+    ./scripts/test_e2e_hotel.sh --deploy-mode docker
+    log_success "E2E Hotel Test Passed"
 
-# 8. SocialNet Test
-log_info "Running SocialNet Test..."
-./scripts/test_socialnet.sh
-log_success "SocialNet Test Passed"
+    log_info "Running SocialNet Test (Docker)..."
+    ./scripts/test_socialnet.sh --deploy-mode docker
+    log_success "SocialNet Test Passed"
 
-# 9. Synthbench Experiment (Docker)
-log_info "Running Synthbench Experiment (Docker)..."
-./scripts/test_synthbench_experiment.sh ci --deploy-mode docker
-log_success "Synthbench Experiment Passed"
+    log_info "Running Synthbench Experiment (Docker)..."
+    ./scripts/test_synthbench_experiment.sh ci --deploy-mode docker
+    log_success "Synthbench Experiment Passed"
 
-# 10. Tracebench Experiment (Docker)
-log_info "Running Tracebench Experiment (Docker)..."
-./scripts/test_tracebench_experiment.sh --deploy-mode docker
-log_success "Tracebench Experiment Passed"
+    log_info "Running Tracebench Experiment (Docker)..."
+    ./scripts/test_tracebench_experiment.sh --deploy-mode docker
+    log_success "Tracebench Experiment Passed"
 
-# 11. K8s Tests (Conditional)
-if [ "$RUN_K8S" = "true" ]; then
-    log_info "Running Synthbench Experiment (Kind)..."
-    ./scripts/test_synthbench_experiment.sh ci --deploy-mode kind
-    log_success "Synthbench Experiment (Kind) Passed"
-
-    log_info "Running Tracebench Experiment (Kind)..."
-    ./scripts/test_tracebench_experiment.sh --deploy-mode kind
-    log_success "Tracebench Experiment (Kind) Passed"
+    if [ "$RUN_K8S" = "true" ]; then
+        for app in hotel socialnet synthbench tracebench; do
+            log_info "Running $app E2E (Kind)..."
+            case "$app" in
+                hotel)
+                    ./scripts/test_e2e_hotel.sh --deploy-mode kind
+                    ;;
+                socialnet)
+                    ./scripts/test_socialnet.sh --deploy-mode kind
+                    ;;
+                synthbench)
+                    ./scripts/test_synthbench_experiment.sh ci --deploy-mode kind
+                    ;;
+                tracebench)
+                    ./scripts/test_tracebench_experiment.sh --deploy-mode kind
+                    ;;
+            esac
+        done
+    fi
 fi
 
 echo -e "${GREEN}=======================================${NC}"
-if [ "$RUN_K8S" = "true" ]; then
+if [ "$RUN_E2E" = "true" ] && [ "$RUN_K8S" = "true" ]; then
     echo -e "${GREEN}   ALL CI CHECKS PASSED LOCALLY!   ${NC}"
-else
+elif [ "$RUN_E2E" = "true" ]; then
     echo -e "${GREEN}   ALL CHECKS PASSED LOCALLY!      ${NC}"
     echo -e "${YELLOW}   (Kind tests were skipped)       ${NC}"
+else
+    echo -e "${GREEN}   ALL PR CHECKS PASSED LOCALLY!   ${NC}"
+    echo -e "${YELLOW}   (E2E tests were skipped)        ${NC}"
 fi
 echo -e "${GREEN}=======================================${NC}"
