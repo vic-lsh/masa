@@ -16,6 +16,7 @@ pub(crate) fn generate_internal<T: Service>(
     proto_path: &str,
     compile_well_known_types: bool,
     _enable_parent_rpc_ctx: bool,
+    default_hooks_path: &syn::Path,
     attributes: &Attributes,
     disable_comments: &HashSet<String>,
     use_arc_self: bool,
@@ -118,7 +119,7 @@ pub(crate) fn generate_internal<T: Service>(
             #[derive(Debug)]
             pub struct #server_service<
                     T: #server_trait,
-                    M: tonic::masa_ext::Hooks = tonic::masa_ext::DefaultHooks
+                    M: tonic::masa_ext::Hooks = #default_hooks_path
                 > {
                 inner: _Inner<T>,
                 ctx: Arc<M::ServerContext>,

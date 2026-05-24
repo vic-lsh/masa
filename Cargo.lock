@@ -3029,6 +3029,7 @@ version = "0.1.0"
 dependencies = [
  "http",
  "hyper",
+ "masa",
  "masa-core",
  "masa-policy",
  "prost",

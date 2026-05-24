@@ -1,8 +1,33 @@
 use std::collections::HashSet;
 
 use proc_macro2::TokenStream;
+use quote::ToTokens;
 
 use crate::{Attributes, Service};
+
+/// Parsed path to the default Masa hooks type emitted in generated clients and servers.
+#[derive(Clone)]
+pub(crate) struct DefaultHooksPath(pub(crate) syn::Path);
+
+impl DefaultHooksPath {
+    pub(crate) fn as_path(&self) -> &syn::Path {
+        &self.0
+    }
+}
+
+impl Default for DefaultHooksPath {
+    fn default() -> Self {
+        Self(syn::parse_quote!(tonic::masa_ext::DefaultHooks))
+    }
+}
+
+impl std::fmt::Debug for DefaultHooksPath {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("DefaultHooksPath")
+            .field(&self.0.to_token_stream().to_string())
+            .finish()
+    }
+}
 
 /// Builder for the generic code generation of server and clients.
 #[derive(Debug)]
@@ -18,6 +43,7 @@ pub struct CodeGenBuilder {
     /// Toggles whether we enable RPC clients to know if they're being used
     /// in a RPC handler -- their parent RPC.
     enable_parent_rpc_ctx: bool,
+    default_hooks_path: DefaultHooksPath,
 }
 
 impl CodeGenBuilder {
@@ -82,6 +108,14 @@ impl CodeGenBuilder {
         self
     }
 
+    /// Set the default Masa hooks type path emitted in generated clients and servers.
+    ///
+    /// This defaults to `tonic::masa_ext::DefaultHooks`.
+    pub fn default_hooks_path(&mut self, default_hooks_path: syn::Path) -> &mut Self {
+        self.default_hooks_path = DefaultHooksPath(default_hooks_path);
+        self
+    }
+
     /// Generate client code based on `Service`.
     ///
     /// This takes some `Service` and will generate a `TokenStream` that contains
@@ -94,6 +128,7 @@ impl CodeGenBuilder {
             self.compile_well_known_types,
             self.build_transport,
             self.enable_parent_rpc_ctx,
+            self.default_hooks_path.as_path(),
             &self.attributes,
             &self.disable_comments,
         )
@@ -110,6 +145,7 @@ impl CodeGenBuilder {
             proto_path,
             self.compile_well_known_types,
             self.enable_parent_rpc_ctx,
+            self.default_hooks_path.as_path(),
             &self.attributes,
             &self.disable_comments,
             self.use_arc_self,
@@ -129,6 +165,7 @@ impl Default for CodeGenBuilder {
             use_arc_self: false,
             generate_default_stubs: false,
             enable_parent_rpc_ctx: false,
+            default_hooks_path: DefaultHooksPath::default(),
         }
     }
 }
