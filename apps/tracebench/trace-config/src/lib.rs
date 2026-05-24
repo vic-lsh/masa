@@ -1,0 +1,14 @@
+//! Parsing trace replay configuration.
+
+#![allow(dead_code)]
+
+pub mod deployment;
+pub mod dist;
+pub mod replica;
+pub mod run;
+pub mod svc;
+pub mod trace;
+
+pub use run::ReplayConfig;
+
+pub const PROJECT_NAME: &str = "tracebench";

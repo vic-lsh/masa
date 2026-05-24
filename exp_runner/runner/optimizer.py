@@ -108,7 +108,7 @@ def compute_objective(
     Args:
         out_dir: Experiment output directory (contains 0/<policy>/r<RPS>_<API>.csv)
         policy: Policy string (feature flags)
-        apis: API names to aggregate over (per-trace name for mssim)
+        apis: API names to aggregate over (per-trace name for tracebench)
         slos: Parallel list of SLOs in microseconds, one per API
         rps_values: RPS levels swept in the experiment
         penalty_weight: Multiplier for worst p99 SLO violation (in seconds)
@@ -364,11 +364,11 @@ class RajomonOptimizer:
         """Return (apis, slos_us) for the current app.
 
         hotel/socialnet: read from gen_config Apis/Slos.
-        mssim: derive one api per callgraph_dir basename, with a single
+        tracebench: derive one api per callgraph_dir basename, with a single
         global slo from app_config["slo_ms"] (converted to microseconds).
         """
         app_name = self.app_plugin.get_app_name()
-        if app_name == "mssim":
+        if app_name == "tracebench":
             app_config = self.base_config.app_config
             apis = [Path(d).name for d in app_config["callgraph_dirs"]]
             slo_us = int(app_config["slo_ms"]) * 1000

@@ -9,7 +9,7 @@ Masa is an RPC system that improves goodput (throughput for requests under SLO) 
 ## Repository Structure
 
 - `libs/`: Core Rust libraries - modified `tonic`, `hyper`, `tokio`, `tower`, and Masa-specific `masa` crate
-- `apps/`: Microservice applications for evaluation (`hotel`, `socialnet`, `synthetic`, `mssim`)
+- `apps/`: Microservice applications for evaluation (`hotel`, `socialnet`, `synthbench`, `tracebench`)
 - `exp/`: Python-based experiment orchestration and analysis tools
 - `scripts/`: Shell scripts for CI/CD (test, check, format)
 
@@ -47,10 +47,10 @@ uv run pytest
 # Run experiments (they run for a long time; don't run unless the user asks you to)
 # See docs/experiments/workflow.md for detailed instructions
 uv run -m exp_runner run <app> <experiment_name> --plot
-# Run on Kind (Kubernetes in Docker) - supported for synthetic
-uv run -m exp_runner run synthetic <experiment_name> --kind --plot
+# Run on Kind (Kubernetes in Docker) - supported for synthbench
+uv run -m exp_runner run synthbench <experiment_name> --kind --plot
 # Run on generic Kubernetes
-uv run -m exp_runner run synthetic <experiment_name> --k8s --plot
+uv run -m exp_runner run synthbench <experiment_name> --k8s --plot
 uv run -m exp_runner plot <app> <experiment_name>
 ```
 
@@ -168,8 +168,8 @@ See `docs/MASA_POLICY_IMPL.md` for detailed implementation walkthrough covering 
 Experiment apps in `apps/` with experiment configs in `exp/<app>/data/in/<experiment>/`:
 - `hotel`: Rust port of Deathstarbench Hotel application
 - `socialnet`: Social network microservice benchmark
-- `synthetic`: Configurable synthetic workload
-- `mssim`: Trace-driven microservice simulator
+- `synthbench`: Configurable synthbench workload
+- `tracebench`: Trace-driven trace-driven RPC benchmark
 
 There is also `apps/benchmark/` for measuring serialization overhead and E2E latency (`cargo bench -p masa-benchmark`).
 

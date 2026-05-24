@@ -314,7 +314,7 @@ pub struct TraceRecord {
 
 /// Read the Rajomon `x-masa-rajomon-price` header from response metadata and
 /// update the client-side cached price for `api`. Shared between
-/// `Handler::send_request` and bespoke loadgens (e.g. mssim) so the same
+/// `Handler::send_request` and bespoke loadgens (e.g. tracebench) so the same
 /// Ok+Err-aware parsing is applied everywhere. See
 /// `apps/app-utils/src/load_gen.rs:406-418` for the reasoning behind reading
 /// from error responses too.

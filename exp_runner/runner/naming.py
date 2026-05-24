@@ -2,7 +2,7 @@
 Centralized utilities for experiment runner naming conventions.
 
 This module provides consistent logic for generating project names and extracting
-service names, ensuring all applications (hotel, mssim, synthetic, socialnet)
+service names, ensuring all applications (hotel, tracebench, synthbench, socialnet)
 follow the same conventions.
 """
 
@@ -25,12 +25,12 @@ def generate_project_name(
     Format: {prefix}-{slug}-{digest}
 
     Args:
-        prefix: Application prefix (e.g., "hotel", "mssim", "syn", "socialnet")
+        prefix: Application prefix (e.g., "hotel", "tracebench", "syn", "socialnet")
         experiment_name: Name of the experiment
         iteration: Iteration number
         policy: Policy string (can contain special chars)
         extra_suffix: Optional extra string to include in the digest calculation
-                      (e.g., RPS value for MSSIM)
+                      (e.g., RPS value for Tracebench)
 
     Returns:
         A project name safe for Docker Compose usage.

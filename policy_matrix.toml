@@ -57,8 +57,8 @@ test = [
 paths = [
   "apps/hotel/Cargo.toml",
   "apps/socialnet/Cargo.toml",
-  "apps/synthetic/Cargo.toml",
-  "apps/mssim/generic-service/Cargo.toml",
+  "apps/synthbench/Cargo.toml",
+  "apps/tracebench/generic-service/Cargo.toml",
 ]
 
 [app_crates.features]

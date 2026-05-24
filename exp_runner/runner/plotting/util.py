@@ -100,7 +100,7 @@ def _repair_row_parts(parts: list[str], *, expected_fields: int) -> list[str]:
     """
     Best-effort repair for malformed request CSV rows.
 
-    We expect synthetic request CSVs to have:
+    We expect synthbench request CSVs to have:
       api, request_id, slo, start_at, deadline, latency, error, <7 optional numeric latencies>
 
     Some rows are malformed in two common ways:
@@ -168,7 +168,7 @@ def _read_request_csv(file_path: str) -> pd.DataFrame:
         # trailing latency fields, resulting in the *correct* number of tokens while still
         # shifting data into latency columns.
         #
-        # For the expected synthetic schema:
+        # For the expected synthbench schema:
         #   fixed(6) + error(1) + optional numeric latencies(N)
         # the optional latency columns should be either empty or plain integers.
         if expected_fields < 7:

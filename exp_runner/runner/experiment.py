@@ -227,7 +227,7 @@ class Experiment:
             logger.warning(f"Output directory does not exist: {output_dir}")
             return
 
-        # Include nested logs (e.g., MSSIM stores orchestrator.log under per-RPS subdirectories)
+        # Include nested logs (e.g., Tracebench stores orchestrator.log under per-RPS subdirectories)
         log_files = list(output_dir.rglob("*.log"))
         if not log_files:
             logger.warning(f"No log files found in {output_dir}")

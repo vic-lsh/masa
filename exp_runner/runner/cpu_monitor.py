@@ -34,7 +34,7 @@ class CPUMonitor:
         Args:
             output_path: Path to save the CPU stats CSV file
             poll_interval: Seconds between docker stats polling (default: 2.0)
-            container_prefix: Optional prefix to filter containers (e.g., "mssim-exp1-abc123")
+            container_prefix: Optional prefix to filter containers (e.g., "tracebench-exp1-abc123")
                             If provided, only containers with names starting with this prefix will be monitored
             container_names: Optional list of specific container names to monitor
                             If provided, only containers with names in this list will be monitored
