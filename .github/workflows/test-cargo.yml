@@ -25,6 +25,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: nightly-2026-01-07
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
       - name: Install protobuf
         run: |
           ulimit -n 4096 || true
