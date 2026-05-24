@@ -1,0 +1,30 @@
+name: e2e-nightly
+
+on:
+  schedule:
+    - cron: "0 9 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-nightly
+  cancel-in-progress: false
+
+jobs:
+  test-e2e-hotel:
+    uses: ./.github/workflows/test-e2e-hotel.yml
+    secrets: inherit
+
+  test-mssim-experiment:
+    uses: ./.github/workflows/test-mssim-experiment.yml
+    secrets: inherit
+
+  test-socialnet:
+    uses: ./.github/workflows/test-socialnet.yml
+    secrets: inherit
+
+  test-synthetic-experiment:
+    uses: ./.github/workflows/test-synthetic-experiment.yml
+    secrets: inherit
