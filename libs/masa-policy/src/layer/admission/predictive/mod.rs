@@ -15,7 +15,7 @@ use masa_core::Context;
 use tonic_core::{Code, CowGrpcMethod, Response, Status};
 
 use super::super::{ChildRpcContext, Layer, LayerChild, LayerServer};
-use crate::layer::est::estimator::DefaultLatencyEstimator;
+use crate::layer::est::default_estimator::DefaultLatencyEstimator;
 use crate::layer::est::latency_map::{MethodKey, ParentToChildKey};
 use crate::layer::est::state::{is_early_return_response, LatencyEstimators};
 use crate::policy_params::PolicyParams;
@@ -713,7 +713,7 @@ mod tests {
     //   - shed_path:  overshoot triggers the probabilistic shed (worst case)
     // ──────────────────────────────────────────────────────────────────────
 
-    use crate::layer::est::estimator::DefaultLatencyEstimator;
+    use crate::layer::est::default_estimator::DefaultLatencyEstimator;
     use crate::layer::est::state::LatencyEstimators;
     use std::time::Instant;
 

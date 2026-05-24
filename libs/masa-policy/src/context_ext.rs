@@ -2,7 +2,8 @@
 //!
 //! These were originally in `tonic::masa_ext` but are moved here to avoid
 //! a circular dependency between tonic and masa-policy. They depend on
-//! `masa_core::Context` for serialization.
+//! `masa_core::Context` for serialization and are reexported through
+//! `tonic::masa_ext` for compatibility with existing application imports.
 
 use masa_core::Context;
 use tonic_core::metadata::{Ascii, MetadataValue};

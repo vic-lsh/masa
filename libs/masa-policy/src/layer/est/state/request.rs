@@ -6,7 +6,7 @@ use tonic_core::{CowGrpcMethod, Response, Status};
 
 use super::super::fanout::{recover_path_groups, ChildRecord, PathPrefix};
 use super::super::latency_map::{ParentToChildKey, RootToLocalKey};
-use super::estimators::{fanout_enabled_for_parent, LatencyEstimators};
+use super::latency_estimators::{fanout_enabled_for_parent, LatencyEstimators};
 use super::metadata::{is_early_return_response, is_signaled_response};
 use crate::registry::MethodId;
 use crate::MethodRegistry;
