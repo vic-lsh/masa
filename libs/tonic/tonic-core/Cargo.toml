@@ -2,7 +2,7 @@
 name = "tonic-core"
 version = "0.1.0"
 edition = "2021"
-description = "Core types for tonic gRPC — Request, Response, Status, metadata, and hook traits."
+description = "Core types for tonic gRPC — Request, Response, Status, and metadata."
 
 [dependencies]
 base64 = "0.21"

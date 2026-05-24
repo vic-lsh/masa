@@ -1,0 +1,8 @@
+[package]
+name = "masa-tonic-core"
+version = "0.1.0"
+edition = "2021"
+description = "Runtime-neutral Masa hook traits and no-op hooks for tonic integration."
+
+[dependencies]
+tonic-core = { path = "../tonic/tonic-core" }

@@ -1,8 +1,8 @@
 //! Core types for the tonic gRPC framework.
 //!
 //! This crate contains the fundamental types used across tonic: `Request`, `Response`,
-//! `Status`, metadata, and the Masa hook trait definitions. It exists as a separate
-//! crate to break circular dependencies between `tonic` and `masa-policy`.
+//! `Status`, and metadata. It exists as a separate crate to break circular dependencies
+//! between `tonic` and `masa-policy`.
 
 #![warn(missing_debug_implementations, missing_docs, rust_2018_idioms)]
 // Many items are pub for tonic to access but not re-exported at the crate root.
@@ -10,9 +10,6 @@
 
 pub mod body;
 pub mod metadata;
-
-/// Masa-related modules.
-pub mod masa_ext;
 
 #[doc(hidden)]
 pub mod extensions;

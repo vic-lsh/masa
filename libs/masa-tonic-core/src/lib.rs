@@ -1,7 +1,15 @@
+//! Runtime-neutral Masa hook traits for tonic integration.
+//!
+//! This crate keeps Masa hook contracts and no-op implementations outside of
+//! vendored tonic while still using tonic-core request, response, status, and
+//! method types in the public API.
+
+#![warn(missing_debug_implementations, missing_docs, rust_2018_idioms)]
+
 use std::{sync::Arc, task::Poll};
 
-use crate::body::BoxBody;
-use crate::{CowGrpcMethod, GrpcMethod, Request, Response, Status};
+use tonic_core::body::BoxBody;
+use tonic_core::{http, CowGrpcMethod, GrpcMethod, Request, Response, Status};
 
 /// No-op Masa hooks implementation for when no scheduling features are enabled.
 pub mod noop;
@@ -190,4 +198,89 @@ pub fn resolve_method_name_from_request<T>(
         meta_to_str(METHOD_NAME_OVERRIDE_HEADER),
         meta_to_str(SERVICE_NAME_OVERRIDE_HEADER),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        noop, resolve_method_name_from_http, resolve_method_name_from_request, ClientHooks,
+        ParentHooks, ServerHooks, METHOD_NAME_OVERRIDE_HEADER, SERVICE_NAME_OVERRIDE_HEADER,
+    };
+    use std::sync::Arc;
+    use tonic_core::metadata::MetadataValue;
+    use tonic_core::{http, GrpcMethod, Request, Response};
+
+    #[test]
+    fn resolves_method_name_from_http_with_overrides() {
+        let method = GrpcMethod::new("TestService", "TestMethod");
+        let mut req = http::Request::new(());
+
+        let resolved = resolve_method_name_from_http(method, &req);
+        assert_eq!(resolved.service(), "TestService");
+        assert_eq!(resolved.method(), "TestMethod");
+
+        req.headers_mut().insert(
+            METHOD_NAME_OVERRIDE_HEADER,
+            http::HeaderValue::from_static("OverriddenMethod"),
+        );
+        let resolved = resolve_method_name_from_http(method, &req);
+        assert_eq!(resolved.service(), "TestService");
+        assert_eq!(resolved.method(), "OverriddenMethod");
+
+        req.headers_mut().insert(
+            SERVICE_NAME_OVERRIDE_HEADER,
+            http::HeaderValue::from_static("OverriddenService"),
+        );
+        let resolved = resolve_method_name_from_http(method, &req);
+        assert_eq!(resolved.service(), "OverriddenService");
+        assert_eq!(resolved.method(), "OverriddenMethod");
+    }
+
+    #[test]
+    fn resolves_method_name_from_request_with_overrides() {
+        let method = GrpcMethod::new("TestService", "TestMethod");
+        let mut req = Request::new(());
+
+        let resolved = resolve_method_name_from_request(method, &req);
+        assert_eq!(resolved.service(), "TestService");
+        assert_eq!(resolved.method(), "TestMethod");
+
+        req.metadata_mut().insert(
+            METHOD_NAME_OVERRIDE_HEADER,
+            MetadataValue::from_static("OverriddenMethod"),
+        );
+        let resolved = resolve_method_name_from_request(method, &req);
+        assert_eq!(resolved.service(), "TestService");
+        assert_eq!(resolved.method(), "OverriddenMethod");
+
+        req.metadata_mut().insert(
+            SERVICE_NAME_OVERRIDE_HEADER,
+            MetadataValue::from_static("OverriddenService"),
+        );
+        let resolved = resolve_method_name_from_request(method, &req);
+        assert_eq!(resolved.service(), "OverriddenService");
+        assert_eq!(resolved.method(), "OverriddenMethod");
+    }
+
+    #[test]
+    fn noop_hooks_keep_default_lifecycle_empty() {
+        let method = GrpcMethod::new("TestService", "TestMethod");
+        let server_ctx = Arc::new(noop::ServerContext::new("TestService"));
+        let req = http::Request::new(());
+        let parent = noop::ParentContext::begin(method, &req, server_ctx);
+        let mut child_req = Request::new(());
+        let mut child = noop::ChildContext::new(method, &child_req);
+
+        parent
+            .before_child_rpc(method, &mut child_req, &mut child)
+            .unwrap();
+
+        let mut response = Ok(Response::new(()));
+        parent
+            .after_child_rpc(method, &mut response, child)
+            .expect("noop after_child_rpc should not fail");
+        parent
+            .before_poll::<()>()
+            .expect("noop before_poll should not fail");
+    }
 }

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use super::{ClientHooks, Hooks, ParentHooks, ServerHooks};
-use crate::{GrpcMethod, Request};
+use tonic_core::{http, GrpcMethod, Request};
 
 /// No-op hooks implementation used when no scheduling features are enabled.
 #[derive(Debug)]
