@@ -97,6 +97,9 @@ tower-service = { path = "../../../libs/tower/tower-service" }
 # Core types shared between tonic and masa-policy
 tonic-core = { path = "../tonic-core" }
 
+# Runtime-neutral Masa hook traits and no-op hooks.
+masa-tonic-core = { path = "../../masa-tonic-core" }
+
 # Needed for context serialization and transport priority
 masa-core = { path = "../../masa-core" }
 

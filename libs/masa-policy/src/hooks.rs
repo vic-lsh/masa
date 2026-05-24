@@ -18,9 +18,9 @@ use crate::layer::{
     LayerServer, OracleLayer, QueueLatencyLayer,
 };
 use masa_core::{Context, ContextBuilder};
-use tonic_core::masa_ext::resolve_method_name_from_http;
-use tonic_core::masa_ext::resolve_method_name_from_request;
-use tonic_core::masa_ext::{ClientHooks, Hooks, ParentHooks, ServerHooks};
+use masa_tonic_core::resolve_method_name_from_http;
+use masa_tonic_core::resolve_method_name_from_request;
+use masa_tonic_core::{ClientHooks, Hooks, ParentHooks, ServerHooks};
 use tonic_core::{CowGrpcMethod, GrpcMethod, Request, Response, Status};
 
 /// Invoke `$body` for each layer in field order
@@ -292,9 +292,9 @@ mod tests {
         use crate::layer::est::state::LatencyEstimators;
         use crate::MethodRegistry;
         use masa_core::{ContextBuilder, LatencyRms};
+        use masa_tonic_core::resolve_method_name_from_http;
+        use masa_tonic_core::{ClientHooks, ParentHooks, ServerHooks};
         use std::sync::Arc;
-        use tonic_core::masa_ext::resolve_method_name_from_http;
-        use tonic_core::masa_ext::{ClientHooks, ParentHooks, ServerHooks};
         use tonic_core::{CowGrpcMethod, GrpcMethod, Request, Response};
 
         #[test]
@@ -334,7 +334,7 @@ mod tests {
         #[test]
         fn test_resolve_method_name_from_http_with_overrides() {
             use http::HeaderValue;
-            use tonic_core::masa_ext::{METHOD_NAME_OVERRIDE_HEADER, SERVICE_NAME_OVERRIDE_HEADER};
+            use masa_tonic_core::{METHOD_NAME_OVERRIDE_HEADER, SERVICE_NAME_OVERRIDE_HEADER};
 
             let method = GrpcMethod::new("TestService", "TestMethod");
             let mut req = http::Request::new(());
@@ -362,7 +362,7 @@ mod tests {
 
         #[test]
         fn test_resolve_method_name_from_request_with_overrides() {
-            use tonic_core::masa_ext::{
+            use masa_tonic_core::{
                 resolve_method_name_from_request, METHOD_NAME_OVERRIDE_HEADER,
                 SERVICE_NAME_OVERRIDE_HEADER,
             };
