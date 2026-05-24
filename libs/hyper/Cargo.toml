@@ -35,7 +35,6 @@ pin-project-lite = "0.2.4"
 tower-service = "0.3"
 tokio = { path = "../tokio/tokio", features = ["sync"] }
 want = "0.3"
-masa-core = { path = "../../libs/masa-core" }
 log = "0.4"
 
 # Optional

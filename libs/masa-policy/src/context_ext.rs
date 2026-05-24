@@ -36,10 +36,9 @@ pub fn set_masa_context_in_metadata(
     metadata.insert(MASA_CONTEXT_HEADER, value);
 }
 
-/// Read the MASA context from the HTTP request headers.
-pub fn read_context<B>(req: &http::Request<B>) -> Context {
-    let ctx = req
-        .headers()
+/// Read the MASA context from HTTP headers.
+pub fn read_context_from_headers(headers: &http::HeaderMap) -> Context {
+    let ctx = headers
         .get(MASA_CONTEXT_HEADER)
         .unwrap_or_else(|| panic!("{}", masa_core::MISSING_CONTEXT_HEADER_MESSAGE));
     let ctx_str = ctx.to_str().unwrap_or_else(|err| {
@@ -49,6 +48,11 @@ pub fn read_context<B>(req: &http::Request<B>) -> Context {
         )
     });
     Context::from_header_string(ctx_str)
+}
+
+/// Read the MASA context from the HTTP request headers.
+pub fn read_context<B>(req: &http::Request<B>) -> Context {
+    read_context_from_headers(req.headers())
 }
 
 /// Extension trait for `Request<T>` to set the method name override header.
@@ -168,7 +172,7 @@ impl MasaStatusExt for Status {
 mod tests {
     use super::*;
     use http::HeaderValue;
-    use masa_core::ContextBuilder;
+    use masa_core::{ContextBuilder, PriorityHint};
 
     #[test]
     #[should_panic(expected = "missing MASA context header `ctx`")]
@@ -217,5 +221,45 @@ mod tests {
         assert_eq!(decoded.api(), ctx.api());
         assert_eq!(decoded.request_id(), ctx.request_id());
         assert_eq!(decoded.deadline(), ctx.deadline());
+    }
+
+    #[test]
+    #[should_panic(expected = "missing MASA context header `ctx`")]
+    fn read_context_from_headers_panics_with_explicit_message_when_missing() {
+        let headers = http::HeaderMap::new();
+
+        let _ = read_context_from_headers(&headers);
+    }
+
+    #[test]
+    #[should_panic(expected = "invalid MASA context header `ctx`: invalid ASCII/metadata")]
+    fn read_context_from_headers_panics_with_explicit_message_for_invalid_ascii() {
+        let mut headers = http::HeaderMap::new();
+        headers.insert(
+            MASA_CONTEXT_HEADER,
+            HeaderValue::from_bytes(b"\xff").unwrap(),
+        );
+
+        let _ = read_context_from_headers(&headers);
+    }
+
+    #[test]
+    fn read_context_from_headers_preserves_priority_hint() {
+        let ctx = ContextBuilder::new("test.Service", 9)
+            .slo(100)
+            .gateway_entry(10)
+            .deadline(110)
+            .prio_hint(PriorityHint::new(42))
+            .build();
+        let mut headers = http::HeaderMap::new();
+        headers.insert(
+            MASA_CONTEXT_HEADER,
+            HeaderValue::from_str(&ctx.to_header_string()).unwrap(),
+        );
+
+        assert_eq!(
+            read_context_from_headers(&headers).prio_hint(),
+            PriorityHint::new(42)
+        );
     }
 }

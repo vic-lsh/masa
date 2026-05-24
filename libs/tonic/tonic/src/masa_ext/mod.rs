@@ -14,6 +14,7 @@ pub use masa_tonic_core::{
 
 // Re-export context extension traits and helpers from masa-policy.
 pub use masa_policy::context_ext::{
-    get_masa_context_from_metadata, read_context, set_masa_context_in_metadata, MasaRequestExt,
-    MasaResponseExt, MasaStatusExt, MASA_CONTEXT_HEADER,
+    get_masa_context_from_metadata, read_context, read_context_from_headers,
+    set_masa_context_in_metadata, MasaRequestExt, MasaResponseExt, MasaStatusExt,
+    MASA_CONTEXT_HEADER,
 };
