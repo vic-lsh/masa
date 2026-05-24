@@ -7,7 +7,6 @@ use crate::transport::{Endpoint, Executor};
 use http::Request;
 use masa_core::balance::Balance;
 use std::task::{Context, Poll};
-use tokio::task::TaskPriority;
 
 use tower::{
     buffer::Buffer,
@@ -56,7 +55,7 @@ impl Channel {
 
         let svc = BoxService::new(svc);
         let (svc, worker) = Buffer::pair(Either::B(svc), DEFAULT_BUFFER_SIZE);
-        SharedExec::tokio().execute(Box::pin(worker), TaskPriority::infra());
+        SharedExec::tokio().execute(Box::pin(worker));
 
         Channel { svc }
     }
