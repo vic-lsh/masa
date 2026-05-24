@@ -18,19 +18,19 @@ use crate::service::HttpService;
 use http::HeaderMap;
 #[cfg(feature = "server")]
 use masa_core::Context as MasaContext;
-use masa_core::PriorityHint;
+use tokio::task::TaskPriority;
 
 #[cfg(feature = "server")]
 pub trait ConnStreamExec<F, B: HttpBody>: Clone {
-    fn h2_stream_priority(&self, _headers: &HeaderMap) -> PriorityHint {
-        PriorityHint::infra()
+    fn h2_stream_priority(&self, _headers: &HeaderMap) -> TaskPriority {
+        TaskPriority::infra()
     }
 
-    fn execute_h2stream_with_prio(&mut self, fut: H2Stream<F, B>, prio: PriorityHint);
+    fn execute_h2stream_with_prio(&mut self, fut: H2Stream<F, B>, prio: TaskPriority);
 }
 
 #[cfg(feature = "server")]
-fn masa_priority_from_headers(headers: &HeaderMap) -> PriorityHint {
+fn masa_priority_from_headers(headers: &HeaderMap) -> TaskPriority {
     let ctx = headers
         .get(masa_core::MASA_CONTEXT_HEADER)
         .unwrap_or_else(|| panic!("{}", masa_core::MISSING_CONTEXT_HEADER_MESSAGE));
@@ -41,7 +41,7 @@ fn masa_priority_from_headers(headers: &HeaderMap) -> PriorityHint {
         )
     });
 
-    MasaContext::from_header_string(ctx_str).prio_hint()
+    TaskPriority::new(MasaContext::from_header_string(ctx_str).prio_hint().value())
 }
 
 #[cfg(all(feature = "server", any(feature = "http1", feature = "http2")))]
@@ -68,14 +68,14 @@ pub enum Exec {
 
 impl Exec {
     #[cfg(feature = "server")]
-    pub(crate) fn h2_stream_priority(&self, headers: &HeaderMap) -> PriorityHint {
+    pub(crate) fn h2_stream_priority(&self, headers: &HeaderMap) -> TaskPriority {
         match self {
             Exec::Masa => masa_priority_from_headers(headers),
-            Exec::Default | Exec::Executor(_) => PriorityHint::infra(),
+            Exec::Default | Exec::Executor(_) => TaskPriority::infra(),
         }
     }
 
-    pub(crate) fn execute<F>(&self, fut: F, prio: PriorityHint)
+    pub(crate) fn execute<F>(&self, fut: F, prio: TaskPriority)
     where
         F: Future<Output = ()> + Send + 'static,
     {
@@ -121,11 +121,11 @@ where
     H2Stream<F, B>: Future<Output = ()> + Send + 'static,
     B: HttpBody,
 {
-    fn h2_stream_priority(&self, headers: &HeaderMap) -> PriorityHint {
+    fn h2_stream_priority(&self, headers: &HeaderMap) -> TaskPriority {
         Exec::h2_stream_priority(self, headers)
     }
 
-    fn execute_h2stream_with_prio(&mut self, fut: H2Stream<F, B>, prio: PriorityHint) {
+    fn execute_h2stream_with_prio(&mut self, fut: H2Stream<F, B>, prio: TaskPriority) {
         self.execute(fut, prio)
     }
 }
@@ -138,7 +138,7 @@ where
     W: Watcher<I, S, E>,
 {
     fn execute_new_svc(&mut self, fut: NewSvcTask<I, N, S, E, W>) {
-        self.execute(fut, PriorityHint::infra())
+        self.execute(fut, TaskPriority::infra())
     }
 }
 
@@ -151,7 +151,7 @@ where
     H2Stream<F, B>: Future<Output = ()>,
     B: HttpBody,
 {
-    fn execute_h2stream_with_prio(&mut self, fut: H2Stream<F, B>, prio: PriorityHint) {
+    fn execute_h2stream_with_prio(&mut self, fut: H2Stream<F, B>, prio: TaskPriority) {
         self.execute(fut, prio)
     }
 }
@@ -165,7 +165,7 @@ where
     W: Watcher<I, S, E>,
 {
     fn execute_new_svc(&mut self, fut: NewSvcTask<I, N, S, E, W>) {
-        self.execute(fut, PriorityHint::infra())
+        self.execute(fut, TaskPriority::infra())
     }
 }
 
@@ -173,7 +173,7 @@ where
 mod masa_context_tests {
     use super::*;
     use http::HeaderValue;
-    use masa_core::ContextBuilder;
+    use masa_core::{ContextBuilder, PriorityHint};
 
     #[test]
     fn default_executor_ignores_missing_context() {
@@ -181,7 +181,7 @@ mod masa_context_tests {
 
         assert_eq!(
             Exec::Default.h2_stream_priority(&headers),
-            PriorityHint::infra()
+            TaskPriority::infra()
         );
     }
 
@@ -221,7 +221,7 @@ mod masa_context_tests {
 
         assert_eq!(
             Exec::Masa.h2_stream_priority(&headers),
-            PriorityHint::new(42)
+            TaskPriority::new(42)
         );
     }
 }

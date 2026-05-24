@@ -6,11 +6,10 @@
 //! The collections can be closed to prevent adding new tasks during shutdown of
 //! the scheduler with the collection.
 
-use masa_core::PriorityHint;
-
 use crate::future::Future;
 use crate::loom::cell::UnsafeCell;
 use crate::runtime::task::{JoinHandle, LocalNotified, Notified, Schedule, Task};
+use crate::task::TaskPriority;
 use crate::util::linked_list::{Link, LinkedList};
 use crate::util::sharded_list;
 
@@ -93,7 +92,7 @@ impl<S: 'static> OwnedTasks<S> {
         task: T,
         scheduler: S,
         id: super::Id,
-        priority: PriorityHint,
+        priority: TaskPriority,
     ) -> (JoinHandle<T::Output>, Option<Notified<S>>)
     where
         S: Schedule,
@@ -235,7 +234,7 @@ impl<S: 'static> LocalOwnedTasks<S> {
         task: T,
         scheduler: S,
         id: super::Id,
-        priority: PriorityHint,
+        priority: TaskPriority,
     ) -> (JoinHandle<T::Output>, Option<Notified<S>>)
     where
         S: Schedule,

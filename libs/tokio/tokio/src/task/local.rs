@@ -17,7 +17,7 @@ use std::pin::Pin;
 use std::rc::Rc;
 use std::task::Poll;
 
-use masa_core::PriorityHint;
+use crate::task::TaskPriority;
 use pin_project_lite::pin_project;
 
 cfg_rt! {
@@ -368,12 +368,16 @@ cfg_rt! {
         F: Future + 'static,
         F::Output: 'static,
     {
-        spawn_local_inner(future, None, PriorityHint::infra())
+        spawn_local_inner(future, None, TaskPriority::infra())
     }
 
 
     #[track_caller]
-    pub(super) fn spawn_local_inner<F>(future: F, name: Option<&str>, priority: masa_core::PriorityHint) -> JoinHandle<F::Output>
+    pub(super) fn spawn_local_inner<F>(
+        future: F,
+        name: Option<&str>,
+        priority: TaskPriority,
+    ) -> JoinHandle<F::Output>
     where F: Future + 'static,
           F::Output: 'static
     {
@@ -646,7 +650,7 @@ impl LocalSet {
         F: Future + 'static,
         F::Output: 'static,
     {
-        let handle = self.context.spawn(future, name, PriorityHint::infra());
+        let handle = self.context.spawn(future, name, TaskPriority::infra());
 
         // Because a task was spawned from *outside* the `LocalSet`, wake the
         // `LocalSet` future to execute the new task, if it hasn't been woken.
@@ -937,7 +941,7 @@ impl Context {
         &self,
         future: F,
         name: Option<&str>,
-        priority: PriorityHint,
+        priority: TaskPriority,
     ) -> JoinHandle<F::Output>
     where
         F: Future + 'static,

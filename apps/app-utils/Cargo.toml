@@ -17,7 +17,7 @@ trace_queue_latency = ["masa/trace_queue_latency", "tonic/trace_queue_latency"]
 masa = { path = "../../libs/masa" }
 tokio = { path = "../../libs/tokio/tokio", features = ["full"] }
 tonic = { path = "../../libs/tonic/tonic" }
-tower = { path = "../../libs/tower/tower" }
+tower = "0.4"
 async-memcached = "0.5.0"
 rand = { version = "0.8" }
 structopt = "0.3.23"

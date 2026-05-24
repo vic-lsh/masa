@@ -187,7 +187,7 @@ mod id;
 pub(crate) use id::Identifiable;
 #[cfg_attr(not(tokio_unstable), allow(unreachable_pub, unused_imports))]
 pub use id::{id, try_id, Id};
-use masa_core::Prioritize;
+use crate::task::{TaskPrioritize, TaskPriority};
 
 #[cfg(feature = "rt")]
 mod abort;
@@ -295,8 +295,8 @@ pub(crate) trait Schedule: Sync + Sized + 'static {
     }
 }
 
-impl<S> Prioritize for Task<S> {
-    fn priority(&self) -> masa_core::PriorityHint {
+impl<S> TaskPrioritize for Task<S> {
+    fn priority(&self) -> TaskPriority {
         self.header().get_priority()
     }
 }
@@ -331,8 +331,8 @@ impl<S: 'static> Identifiable for Task<S> {
     }
 }
 
-impl<S> Prioritize for Notified<S> {
-    fn priority(&self) -> masa_core::PriorityHint {
+impl<S> TaskPrioritize for Notified<S> {
+    fn priority(&self) -> TaskPriority {
         self.0.priority()
     }
 }
@@ -372,7 +372,7 @@ cfg_rt! {
         task: T,
         scheduler: S,
         id: Id,
-        priority: masa_core::PriorityHint
+        priority: TaskPriority
     ) -> (Task<S>, Notified<S>, JoinHandle<T::Output>)
     where
         S: Schedule,
@@ -403,7 +403,7 @@ cfg_rt! {
         T: Send + Future + 'static,
         T::Output: Send + 'static,
     {
-        let (task, notified, join) = new_task(task, scheduler, id, masa_core::PriorityHint::infra());
+        let (task, notified, join) = new_task(task, scheduler, id, TaskPriority::infra());
 
         // This transfers the ref-count of task and notified into an UnownedTask.
         // This is valid because an UnownedTask holds two ref-counts.
