@@ -512,7 +512,7 @@ impl Layer for RajomonLayer {
 impl RajomonLayer {
     /// Build a rejection `Status` carrying a structured `/EarlyReturn?...` message.
     ///
-    /// Mirrors the format used by `predictive.rs` so the experiment plotting code
+    /// Mirrors the format used by predictive admission so the experiment plotting code
     /// (`exp_runner/runner/plotting/util.py::_parse_error_columns`) can extract a
     /// `reason` column for each rejected request.
     fn issue_error(&self, child_method: Option<&CowGrpcMethod>, reason: &str) -> Status {

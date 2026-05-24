@@ -635,7 +635,12 @@ mod tests {
 
         layer.finalize(&mut ctx, &mut result);
 
-        let state = ac.state.lock().unwrap();
+        let root_id =
+            crate::MethodRegistry::global().get_or_register(CowGrpcMethod::new("svc", "method"));
+        let states = ac.states_by_root.lock().unwrap();
+        let state = states
+            .get(&root_id)
+            .expect("deadline signal should record a root outcome");
         assert_eq!(state.window_total, 1);
         assert_eq!(state.er_count, 1);
     }

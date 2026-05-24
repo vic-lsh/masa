@@ -28,7 +28,7 @@ from .plotting.util import _read_request_csv, filter_excluded_errors
 logger = logging.getLogger(__name__)
 
 # Default Rajomon parameter values (from libs/masa-policy/src/policy_params.rs).
-# Only parameters actually used by rajomon.rs are included.
+# Only parameters actually used by Rajomon admission are included.
 DEFAULT_RAJOMON_PARAMS: dict = {
     "latency_threshold_us": 5_000,
     "price_update_rate_ms": 10,

@@ -352,7 +352,7 @@ Conclusion: the gap is not cleanly fixed by global parameter tuning. The remaini
 
 Goal: test whether splitting predictive admission feedback by root API can address the Search/Reservation allocation problem.
 
-Code prototype: `libs/masa-policy/src/layer/admission/predictive.rs`.
+Code prototype: `libs/masa-policy/src/layer/admission/predictive/mod.rs`.
 
 - First version: per-root AIMD state only.
 - Second version: hybrid global + per-root AIMD. Each admitted root outcome updates both the global controller and that root's controller; admission uses the stricter rejection probability. This keeps a shared capacity cap while allowing a root-specific controller to be more protective when one API has worse ER behavior.
