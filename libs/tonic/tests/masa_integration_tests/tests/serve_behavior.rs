@@ -3,6 +3,7 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use masa::MasaRequestExt;
 use masa_core::{time_now, ContextBuilder};
 use masa_integration_tests::pb::{
     child_service_client::ChildServiceClient,
@@ -10,7 +11,6 @@ use masa_integration_tests::pb::{
     Input1, Input2, Output1, Output2,
 };
 use tokio::sync::Barrier;
-use tonic::masa_ext::MasaRequestExt;
 use tonic::metadata::MetadataValue;
 use tonic::transport::Server;
 use tonic::{Request, Response, Status};

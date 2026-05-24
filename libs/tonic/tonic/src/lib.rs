@@ -96,7 +96,7 @@
 #![feature(trait_alias)]
 
 // Re-export core types from tonic-core so that `tonic::Request`, `tonic::Status`, etc.
-// resolve to the same types used by masa-policy.
+// resolve to the same types used by Masa hook implementations.
 pub use tonic_core::body;
 pub use tonic_core::http;
 pub use tonic_core::metadata;

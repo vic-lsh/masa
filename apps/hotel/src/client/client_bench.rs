@@ -27,7 +27,7 @@ use app_utils::{
 use frontend::frontend_client::FrontendClient;
 
 use masa::Context;
-use tonic::masa_ext::MasaRequestExt;
+use masa::MasaRequestExt;
 use tonic::Response;
 use tonic::Status;
 

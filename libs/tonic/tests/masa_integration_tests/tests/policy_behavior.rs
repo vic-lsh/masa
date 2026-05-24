@@ -13,15 +13,15 @@ use std::sync::{
     Arc,
 };
 
+use masa::MasaRequestExt;
+#[cfg(feature = "trace_queue_latency")]
+use masa::MasaResponseExt;
 use masa_core::{time_now, ContextBuilder};
 use masa_integration_tests::pb::{
     child_service_client::ChildServiceClient,
     child_service_server::{ChildService, ChildServiceServer},
     Input1, Input2, Output1, Output2,
 };
-use tonic::masa_ext::MasaRequestExt;
-#[cfg(feature = "trace_queue_latency")]
-use tonic::masa_ext::MasaResponseExt;
 use tonic::transport::Server;
 use tonic::{Request, Response, Status};
 

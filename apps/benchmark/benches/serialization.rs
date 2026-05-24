@@ -1,7 +1,6 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use masa::Context;
+use masa::{get_masa_context_from_metadata, set_masa_context_in_metadata, Context};
 use std::time::Duration;
-use tonic::masa_ext::{get_masa_context_from_metadata, set_masa_context_in_metadata};
 use tonic::metadata::MetadataMap;
 
 fn bench_serialization(c: &mut Criterion) {

@@ -57,17 +57,17 @@ channel = []
 # masa-specific features
 masa = []
 trace_queue_latency = []
-sched_slo = ["masa", "masa-core/sched_slo", "masa-policy/sched_slo", "tokio/sched_prio"]
-sched_tailclipper = ["masa", "masa-core/sched_tailclipper", "masa-policy/sched_tailclipper", "tokio/sched_prio", "tokio/tailclipper"]
-sched_fifo = ["masa", "masa-core/sched_fifo", "masa-policy/sched_fifo", "tokio/sched_fifo"]
-sched_oracle = ["masa", "masa-core/sched_oracle", "masa-policy/sched_oracle", "tokio/sched_prio"]
-abort_slo = ["masa-core/abort_slo", "masa-policy/abort_slo"]
-abort_slack = ["masa-core/abort_slack", "masa-policy/abort_slack"]
-signal_slack = ["masa-core/signal_slack", "masa-policy/signal_slack"]
-estimator = ["masa-core/estimator", "masa-policy/estimator"]
-sched_pred = ["estimator", "sched_slo", "masa-core/sched_pred", "masa-policy/sched_pred"]
-ac_pred = ["estimator", "masa-core/ac_pred", "masa-policy/ac_pred"]
-ac_rajomon = ["masa-core/ac_rajomon", "masa-policy/ac_rajomon"]
+sched_slo = ["masa", "masa-core/sched_slo", "tokio/sched_prio"]
+sched_tailclipper = ["masa", "masa-core/sched_tailclipper", "tokio/sched_prio", "tokio/tailclipper"]
+sched_fifo = ["masa", "masa-core/sched_fifo", "tokio/sched_fifo"]
+sched_oracle = ["masa", "masa-core/sched_oracle", "tokio/sched_prio"]
+abort_slo = ["masa-core/abort_slo"]
+abort_slack = ["masa-core/abort_slack"]
+signal_slack = ["masa-core/signal_slack"]
+estimator = ["masa-core/estimator"]
+sched_pred = ["estimator", "sched_slo", "masa-core/sched_pred"]
+ac_pred = ["estimator", "masa-core/ac_pred"]
+ac_rajomon = ["masa-core/ac_rajomon"]
 est_rms = []
 est_hist = []
 est_mean_var = []
@@ -94,7 +94,7 @@ pin-project = "1.0.11"
 tower-layer = "0.3"
 tower-service = "0.3"
 
-# Core types shared between tonic and masa-policy
+# Core tonic request/response/status types.
 tonic-core = { path = "../tonic-core" }
 
 # Masa hook traits and runtime support.
@@ -102,9 +102,6 @@ masa-tonic-core = { path = "../../masa-tonic-core", features = ["runtime"] }
 
 # Needed for context serialization and transport priority
 masa-core = { path = "../../masa-core" }
-
-# Scheduling policy implementations and context extension traits.
-masa-policy = { path = "../../masa-policy" }
 
 # prost
 prost = { version = "0.12", default-features = false, features = [

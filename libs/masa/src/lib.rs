@@ -2,6 +2,12 @@ pub use masa_core::{
     time_now, Context, ContextBuilder, FutureSpan, LatencyDistribution, MethodId, PriorityHint,
     ORACLE_CHILD_WORK_US_HEADER, ORACLE_REMAINING_AFTER_US_HEADER,
 };
+pub use masa_policy::{
+    get_masa_context_from_metadata, read_context, read_context_from_headers,
+    read_priority_from_headers, set_masa_context_in_metadata, MasaRequestExt, MasaResponseExt,
+    MasaStatusExt, MASA_CONTEXT_HEADER,
+};
+pub use masa_tonic_core::{METHOD_NAME_OVERRIDE_HEADER, SERVICE_NAME_OVERRIDE_HEADER};
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
@@ -78,7 +84,6 @@ pub fn try_create_context(api: &str, slo: std::time::Duration) -> Option<Context
 
 /// Utility function to create and attach a Masa Context to a Request.
 pub fn attach_context<T>(req: &mut tonic::Request<T>, api: &str, slo: Duration) {
-    use masa_policy::context_ext::MasaRequestExt;
     let ctx = create_context(api, slo);
     req.set_masa_context(&ctx);
 }

@@ -8,6 +8,7 @@ use std::{
     time::Duration,
 };
 
+use masa::MasaRequestExt;
 use masa_core::{time_now, ContextBuilder};
 use masa_integration_tests::pb::{
     child_service_client::ChildServiceClient,
@@ -17,7 +18,7 @@ use masa_integration_tests::pb::{
     Input1, Input2, Output1, Output2,
 };
 use tonic::{
-    masa_ext::{ClientHooks, Hooks, MasaRequestExt, ParentHooks, ServerHooks},
+    masa_ext::{ClientHooks, Hooks, ParentHooks, ServerHooks},
     transport::Server,
     GrpcMethod, Request, Response, Status,
 };
