@@ -198,6 +198,10 @@ Note: When using `--k8s` without `--kind`, you must ensure the container images 
 ## List of policies
 
 Each key in the following list corresponds to a feature flag in the codebase.
+`policy_matrix.toml` is the canonical source for the supported policy flags,
+their implications, and the check/test matrices. Run
+`python3 scripts/validate_policy_matrix.py` to check local drift before changing
+policy features.
 
 - `sched_fifo`: requests are served in first-in-first-out order.
 - `sched_slo`: requests are served based on their end-to-end SLO end time, which is their SLO added to the time at which they arrived at the frontend server.

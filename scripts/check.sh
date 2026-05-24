@@ -3,6 +3,12 @@
 # Enforce no warnings
 export RUSTFLAGS="-D warnings"
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+PYTHON_BIN="${PYTHON:-python3}"
+
+"$PYTHON_BIN" "$REPO_ROOT/scripts/validate_policy_matrix.py"
+
 flag_combos=(
     "sched_fifo"
     "sched_fifo,abort_slo"

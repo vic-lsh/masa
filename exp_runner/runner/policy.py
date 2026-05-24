@@ -21,12 +21,19 @@ _PRIO_MAP: dict[str, str] = {
     "sched_fifo": "fifo",
     "sched_slo": "e2e_slo",
     "sched_tailclipper": "oldest",
+    "sched_oracle": "oracle",
     "sched_pred": "slack",
 }
 
 # sched_pred and sched_tailclipper imply sched_slo at the Cargo level.
 # When both are present, sched_slo is redundant.
-_PRIO_PRIORITY = ["sched_pred", "sched_tailclipper", "sched_slo", "sched_fifo"]
+_PRIO_PRIORITY = [
+    "sched_pred",
+    "sched_tailclipper",
+    "sched_oracle",
+    "sched_slo",
+    "sched_fifo",
+]
 
 _EST_MAP: dict[str, str] = {
     "est_mean_var": "mean_var",
@@ -48,13 +55,14 @@ _AC_MAP: dict[str, str] = {
     "ac_rajomon": "rajomon",
 }
 
-# Flags that are always ignored (implied by other flags).
-_IGNORED_FLAGS = {"sched_slo", "estimator"}
+# Flags that do not affect plotting/display metadata.
+_IGNORED_FLAGS = {"estimator", "trace_queue_latency"}
 
 _PRIO_DISPLAY: dict[str, str] = {
     "fifo": "FIFO",
     "e2e_slo": "SLO priority",
     "oldest": "TailClipper",
+    "oracle": "Oracle priority",
     "slack": "Masa priority",
 }
 
@@ -92,6 +100,7 @@ _MARKER_MAP: dict[tuple[str | None, str | None], str] = {
     ("fifo", "rajomon"): "^",
     ("e2e_slo", "rajomon"): "v",
     ("oldest", "rajomon"): "<",
+    ("oracle", "rajomon"): "*",
     ("slack", "rajomon"): ">",
 }
 
@@ -264,6 +273,10 @@ class Policy:
             ("oldest", "e2e_slo"): "#CC79A7",
             ("oldest", "slack"): "#882255",
             ("oldest", "slack_signal"): "#DDCC77",
+            ("oracle", None): "#B07AA1",
+            ("oracle", "e2e_slo"): "#AA4499",
+            ("oracle", "slack"): "#CC6677",
+            ("oracle", "slack_signal"): "#AA3377",
             ("slack", None): "#D55E00",
             ("slack", "e2e_slo"): "#E69F00",
             ("slack", "slack"): "#009E73",
@@ -313,6 +326,8 @@ class Policy:
             return "//"
         if self.prio == "oldest":
             return "xx"
+        if self.prio == "oracle":
+            return "\\\\"
         if self.prio == "slack":
             return ".."
         return ""

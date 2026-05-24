@@ -20,6 +20,10 @@ class TestParse:
         p = Policy.parse("sched_tailclipper")
         assert p.prio == "oldest"
 
+    def test_oracle(self):
+        p = Policy.parse("sched_oracle")
+        assert p.prio == "oracle"
+
     def test_slack(self):
         p = Policy.parse("sched_pred")
         assert p.prio == "slack"
@@ -123,6 +127,9 @@ class TestDisplayName:
 
     def test_oldest_bare(self):
         assert Policy.parse("sched_tailclipper").display_name == "TailClipper"
+
+    def test_oracle_bare(self):
+        assert Policy.parse("sched_oracle").display_name == "Oracle priority"
 
     def test_oldest_with_drop(self):
         assert (
