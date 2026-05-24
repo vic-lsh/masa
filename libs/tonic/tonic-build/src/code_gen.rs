@@ -17,7 +17,7 @@ impl DefaultHooksPath {
 
 impl Default for DefaultHooksPath {
     fn default() -> Self {
-        Self(syn::parse_quote!(tonic::masa_ext::DefaultHooks))
+        Self(syn::parse_quote!(masa::DefaultHooks))
     }
 }
 
@@ -110,7 +110,7 @@ impl CodeGenBuilder {
 
     /// Set the default Masa hooks type path emitted in generated clients and servers.
     ///
-    /// This defaults to `tonic::masa_ext::DefaultHooks`.
+    /// This defaults to `masa::DefaultHooks`.
     pub fn default_hooks_path(&mut self, default_hooks_path: syn::Path) -> &mut Self {
         self.default_hooks_path = DefaultHooksPath(default_hooks_path);
         self
