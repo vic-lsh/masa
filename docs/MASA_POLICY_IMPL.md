@@ -7,7 +7,7 @@ For the dependency graph and remaining vendored-library patch inventory, see
 
 ## 1. Feature Flags and Build Configuration
 
-Masa uses Rust feature flags to select the scheduling policy at compile time. These flags are defined in `libs/masa/Cargo.toml` (the facade) and propagated to `libs/masa-core`, `libs/tonic` and `libs/tokio`.
+Masa uses Rust feature flags to select the scheduling policy at compile time. These flags are defined in `libs/masa/Cargo.toml` (the facade) and propagated to `libs/masa-core`, `libs/masa-policy`, and `libs/tokio`. Vendored `tonic` keeps only the transport/runtime feature wiring it needs and does not depend on `masa-policy`.
 
 Policy is configured along three composable dimensions:
 
@@ -35,16 +35,18 @@ Features propagate from application crates through a dependency chain:
 Application Cargo.toml (e.g., apps/hotel --features sched_slo)
   |
   +-- libs/masa/Cargo.toml:            sched_slo forwards to masa-core, masa-policy,
-  |                                     tonic, and tokio/sched_prio
+  |                                     and tokio/sched_prio
   |
   +-- libs/tonic/tonic/Cargo.toml:     sched_slo = ["masa", "masa-core/sched_slo",
-  |                                                    "masa-policy/sched_slo",
   |                                                    "tokio/sched_prio"]
        |
        +-- libs/masa-tonic-core        hook contracts and runtime bridge
        +-- libs/masa-core/Cargo.toml   sched_slo sets the core cfg flag
-       +-- libs/masa-policy/Cargo.toml sched_slo selects PolicyHooks layers
        +-- libs/tokio/tokio/Cargo.toml sched_prio selects the priority queue
+
+libs/masa/Cargo.toml also enables `masa-policy/sched_slo`, which selects the
+concrete `PolicyHooks` layers. Keeping that policy selection in `masa` avoids a
+direct `tonic` dependency on `masa-policy`.
 ```
 
 Note: `sched_prio` remains as a tokio-internal flag that controls the priority queue implementation. User-facing flags (`sched_slo`, `sched_pred`, `sched_tailclipper`, `sched_oracle`) activate it internally.
@@ -189,7 +191,7 @@ The `Context` is serialized using **bincode** (compact binary format) and **base
 
 ### Method Name Override
 
-The `x-masa-method-name` header (`libs/masa-tonic-core/src/lib.rs`, reexported through `tonic::masa_ext`) allows overriding the gRPC method name for latency tracking. This is used by applications where a generic endpoint (e.g., `invoke`) handles multiple logical methods (e.g., the synthbench and tracebench applications).
+The `x-masa-method-name` header (`libs/masa-tonic-core/src/lib.rs`, reexported through `masa`) allows overriding the gRPC method name for latency tracking. This is used by applications where a generic endpoint (e.g., `invoke`) handles multiple logical methods (e.g., the synthbench and tracebench applications).
 
 ## 4. Transport Layer (`libs/hyper`)
 
