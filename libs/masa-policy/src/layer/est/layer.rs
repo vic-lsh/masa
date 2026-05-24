@@ -101,7 +101,7 @@ impl Layer for EstimationLayer {
         #[cfg(feature = "sched_pred")]
         {
             let remaining = ctx.deadline().saturating_sub(masa_core::time_now());
-            tokio::task::reprioritize(PriorityHint::new(remaining));
+            tokio::task::reprioritize(tokio::task::TaskPriority::new(remaining));
         }
 
         self.request_metadata.start_poll();

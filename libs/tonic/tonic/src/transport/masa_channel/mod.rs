@@ -8,14 +8,13 @@ use crate::transport::{Endpoint, Executor};
 use http::Request;
 use masa_core::balance::Balance;
 use std::task::{Context, Poll};
+use tokio::task::TaskPriority;
 
 use tower::{
     buffer::Buffer,
     util::{BoxService, Either},
     Service,
 };
-
-use masa_core::PriorityHint;
 
 /// minimal reimplementation of crate::transport::channel::Channel:
 /// - uses a fixed list of services for load balancing and eagerly connects to them
@@ -58,7 +57,7 @@ impl Channel {
 
         let svc = BoxService::new(svc);
         let (svc, worker) = Buffer::pair(Either::B(svc), DEFAULT_BUFFER_SIZE);
-        SharedExec::tokio().execute(Box::pin(worker), PriorityHint::infra());
+        SharedExec::tokio().execute(Box::pin(worker), TaskPriority::infra());
 
         Channel { svc }
     }

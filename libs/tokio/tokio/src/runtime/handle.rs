@@ -1,8 +1,7 @@
-use masa_core::PriorityHint;
-
 #[cfg(tokio_unstable)]
 use crate::runtime;
 use crate::runtime::{context, scheduler, RuntimeFlavor};
+use crate::task::TaskPriority;
 
 /// Handle to the runtime.
 ///
@@ -330,7 +329,7 @@ impl Handle {
         let future = super::task::trace::Trace::root(future);
         #[cfg(all(tokio_unstable, feature = "tracing"))]
         let future = crate::util::trace::task(future, "task", _name, id.as_u64());
-        self.inner.spawn(future, id, PriorityHint::infra())
+        self.inner.spawn(future, id, TaskPriority::infra())
     }
 
     /// Returns the flavor of the current `Runtime`.

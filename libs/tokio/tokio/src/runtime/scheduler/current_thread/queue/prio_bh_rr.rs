@@ -5,7 +5,7 @@ use std::{
 
 use super::{IntoSchedFlavor, PopError, PushError, Queue, SchedFlavor};
 use crate::runtime::task::{Identifiable, Traceable};
-use masa_core::{Prioritize, PriorityHint};
+use crate::task::{TaskPrioritize, TaskPriority};
 
 #[allow(dead_code)]
 static INIT: std::sync::LazyLock<u64> = std::sync::LazyLock::new(time_now);
@@ -32,7 +32,7 @@ pub(crate) struct BinaryHeapRoundRobinQueue<T, const USE_INFRA_QUEUE: bool = fal
     infra_rr_queue: VecDeque<T>,
 }
 
-impl<T: Ord + PartialOrd + Prioritize + Identifiable + Traceable, const USE_INFRA_QUEUE: bool> Queue
+impl<T: Ord + PartialOrd + TaskPrioritize + Identifiable + Traceable, const USE_INFRA_QUEUE: bool> Queue
     for BinaryHeapRoundRobinQueue<T, USE_INFRA_QUEUE>
 {
     type Item = T;
@@ -47,7 +47,7 @@ impl<T: Ord + PartialOrd + Prioritize + Identifiable + Traceable, const USE_INFR
 
     fn push(&mut self, mut item: Self::Item) -> Result<(), PushError<Self::Item>> {
         item.timer().set_enqueue_time();
-        if USE_INFRA_QUEUE && item.priority() == PriorityHint::infra() {
+        if USE_INFRA_QUEUE && item.priority() == TaskPriority::infra() {
             self.infra_rr_queue.push_back(item);
             return Ok(());
         }
@@ -141,7 +141,7 @@ mod tests {
     #[derive(Clone)]
     struct MockTask {
         id: Id,
-        priority: PriorityHint,
+        priority: TaskPriority,
         timer: TraceTimer,
     }
 
@@ -158,14 +158,14 @@ mod tests {
         fn new(id: u64, priority: u64) -> Self {
             Self {
                 id: Id(id),
-                priority: PriorityHint::new(priority),
+                priority: TaskPriority::new(priority),
                 timer: TraceTimer::new(),
             }
         }
         fn new_infra(id: u64) -> Self {
             Self {
                 id: Id(id),
-                priority: PriorityHint::infra(),
+                priority: TaskPriority::infra(),
                 timer: TraceTimer::new(),
             }
         }
@@ -197,8 +197,8 @@ mod tests {
         }
     }
 
-    impl Prioritize for MockTask {
-        fn priority(&self) -> PriorityHint {
+    impl TaskPrioritize for MockTask {
+        fn priority(&self) -> TaskPriority {
             self.priority
         }
     }

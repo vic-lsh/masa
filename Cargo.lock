@@ -5591,7 +5591,6 @@ dependencies = [
  "futures",
  "libc",
  "loom",
- "masa-core",
  "mio",
  "mio-aio",
  "mockall",
