@@ -8,6 +8,7 @@ use std::{
     time::Duration,
 };
 
+use masa_core::{time_now, ContextBuilder};
 use masa_integration_tests::pb::{
     child_service_client::ChildServiceClient,
     child_service_server::{ChildService, ChildServiceServer},
@@ -16,10 +17,23 @@ use masa_integration_tests::pb::{
     Input1, Input2, Output1, Output2,
 };
 use tonic::{
-    masa_ext::{ClientHooks, Hooks, ParentHooks, ServerHooks},
+    masa_ext::{ClientHooks, Hooks, MasaRequestExt, ParentHooks, ServerHooks},
     transport::Server,
     GrpcMethod, Request, Response, Status,
 };
+
+fn input1_request(api: &'static str, request_id: u64) -> Request<Input1> {
+    let now = time_now();
+    let ctx = ContextBuilder::new(api, request_id)
+        .slo(1_000_000)
+        .gateway_entry(now)
+        .deadline(now + 1_000_000)
+        .build();
+
+    let mut request = Request::new(Input1 {});
+    request.set_masa_context(&ctx);
+    request
+}
 
 struct ParentSvc<P> {
     child_addr: &'static str,
@@ -52,9 +66,15 @@ where
         .await
         .unwrap();
 
-        for _ in 0..self.fanout_factor {
+        for i in 0..self.fanout_factor {
             println!("calling child...");
-            client.rpc1(Request::new(Input1 {})).await.unwrap();
+            client
+                .rpc1(input1_request(
+                    "masa_context.ChildService/Rpc1",
+                    1_000 + i as u64,
+                ))
+                .await
+                .unwrap();
         }
 
         Ok(Response::new(Output1 {}))
@@ -69,10 +89,15 @@ where
         .unwrap();
 
         let mut handles: Vec<_> = Vec::new();
-        for _ in 0..self.fanout_factor {
+        for i in 0..self.fanout_factor {
             let mut c = client.clone();
             handles.push(tokio::spawn(async move {
-                c.rpc1(Request::new(Input1 {})).await.unwrap();
+                c.rpc1(input1_request(
+                    "masa_context.ChildService/Rpc1",
+                    2_000 + i as u64,
+                ))
+                .await
+                .unwrap();
             }));
         }
         for h in handles {
@@ -118,6 +143,10 @@ impl ClientHooks for MockChildCtx {
     fn new<T>(_method: GrpcMethod, _req: &Request<T>) -> Self {
         Self {}
     }
+}
+
+fn parent_request(request_id: u64) -> Request<Input1> {
+    input1_request("masa_context.ParentService/Rpc", request_id)
 }
 
 async fn make_parent_child_svcs<M>(
@@ -244,14 +273,14 @@ async fn test_parent_ctx_before_after_rpc_hooks() {
         .await
         .unwrap();
 
-    parent_cl.rpc(Request::new(Input1 {})).await.unwrap();
+    parent_cl.rpc(parent_request(1)).await.unwrap();
 
     assert_eq!(N_BEFORE_CHILD_RPCS.load(Ordering::Relaxed), fanout_factor);
     assert_eq!(N_AFTER_CHILD_RPCS.load(Ordering::Relaxed), fanout_factor);
     N_BEFORE_CHILD_RPCS.store(0, Ordering::Relaxed);
     N_AFTER_CHILD_RPCS.store(0, Ordering::Relaxed);
 
-    parent_cl.fanout_rpc(Request::new(Input1 {})).await.unwrap();
+    parent_cl.fanout_rpc(parent_request(2)).await.unwrap();
 
     assert_eq!(N_BEFORE_CHILD_RPCS.load(Ordering::Relaxed), fanout_factor);
     assert_eq!(N_AFTER_CHILD_RPCS.load(Ordering::Relaxed), fanout_factor);
@@ -300,14 +329,14 @@ async fn test_child_ctx_before_after_rpc_hooks() {
         .await
         .unwrap();
 
-    parent_cl.rpc(Request::new(Input1 {})).await.unwrap();
+    parent_cl.rpc(parent_request(3)).await.unwrap();
 
     assert_eq!(N_BEFORE_SEND.load(Ordering::Relaxed), fanout_factor);
     assert_eq!(N_AFTER_RECV.load(Ordering::Relaxed), fanout_factor);
     N_BEFORE_SEND.store(0, Ordering::Relaxed);
     N_AFTER_RECV.store(0, Ordering::Relaxed);
 
-    parent_cl.fanout_rpc(Request::new(Input1 {})).await.unwrap();
+    parent_cl.fanout_rpc(parent_request(4)).await.unwrap();
 
     assert_eq!(N_BEFORE_SEND.load(Ordering::Relaxed), fanout_factor);
     assert_eq!(N_AFTER_RECV.load(Ordering::Relaxed), fanout_factor);
@@ -360,7 +389,7 @@ async fn test_parent_ctx_before_after_poll_hooks() {
         .await
         .unwrap();
 
-    parent_cl.rpc(Request::new(Input1 {})).await.unwrap();
+    parent_cl.rpc(parent_request(5)).await.unwrap();
 
     assert!(N_BEFORE_POLLS.load(Ordering::Relaxed) > 1);
     assert!(N_AFTER_POLLS.load(Ordering::Relaxed) > 1);
@@ -406,7 +435,7 @@ async fn test_parent_ctx_finalize_hook() {
         .await
         .unwrap();
 
-    parent_cl.rpc(Request::new(Input1 {})).await.unwrap();
+    parent_cl.rpc(parent_request(6)).await.unwrap();
 
     // finalize is called twice:
     // once in the child service side,
