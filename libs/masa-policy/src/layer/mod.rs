@@ -1,8 +1,7 @@
 // Layer module — composable hooks layered on the base request lifecycle.
 //
-// Defines the `Layer`, `LayerServer`, and `LayerChild` traits and the
-// `for_each_layer!` macro that composes multiple layers into the generated
-// `ParentContext`, `ServerContext`, `ChildContext`, and hook impls.
+// Defines the `Layer`, `LayerServer`, and `LayerChild` traits used by the
+// explicit layer containers in `hooks.rs`.
 //
 // Four layer categories:
 // - **Guard**: `E2eDeadlineGuardLayer` — rejects past-deadline requests.
@@ -40,9 +39,7 @@ mod queue_latency;
 // ── Traits ──────────────────────────────────────────────────────────────
 
 /// Server-level layer state, shared across all requests.
-pub(crate) trait LayerServer: Send + Sync + std::fmt::Debug {
-    fn new() -> Self;
-}
+pub(crate) trait LayerServer: Send + Sync + std::fmt::Debug {}
 
 /// Mutable state populated by layers in [`Layer::before_child_rpc`].
 ///
@@ -164,11 +161,13 @@ mod est_noop {
     #[derive(Debug)]
     pub(crate) struct NoopEstServer;
 
-    impl LayerServer for NoopEstServer {
-        fn new() -> Self {
+    impl NoopEstServer {
+        pub(crate) fn new(_service_name: &'static str) -> Self {
             Self
         }
     }
+
+    impl LayerServer for NoopEstServer {}
 
     #[derive(Debug)]
     pub(crate) struct NoopEstLayer;
@@ -194,7 +193,9 @@ mod est_noop {
 
 // ── Re-exports ──────────────────────────────────────────────────────────
 
-pub(crate) use admission::AdmissionLayer;
+#[cfg(feature = "ac_pred")]
+pub(crate) use admission::AdmissionDeps;
+pub(crate) use admission::{AdmissionLayer, AdmissionServer};
 pub(crate) use e2e_deadline_guard::E2eDeadlineGuardLayer;
 pub(crate) use oracle::OracleLayer;
 pub(crate) use queue_latency::QueueLatencyLayer;

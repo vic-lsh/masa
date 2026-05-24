@@ -15,11 +15,13 @@ use super::LayerServer;
 #[derive(Debug)]
 pub(crate) struct QueueLatencyServer;
 
-impl LayerServer for QueueLatencyServer {
-    fn new() -> Self {
+impl QueueLatencyServer {
+    pub(crate) fn new() -> Self {
         Self
     }
 }
+
+impl LayerServer for QueueLatencyServer {}
 
 // ── Per-Request (trace_queue_latency enabled) ───────────────────────────
 
