@@ -460,13 +460,13 @@ fn compute_child_probabilities(
 mod tests {
     use super::*;
     use crate::service_stubs::{self, InvokeRequest, InvokeResponse};
+    use masa::transport::LoadBalancedChannel;
     use masa::MethodId;
     use std::collections::HashMap;
     use tonic::async_trait;
     use tonic::masa_ext::{
         MasaRequestExt, METHOD_NAME_OVERRIDE_HEADER, SERVICE_NAME_OVERRIDE_HEADER,
     };
-    use tonic::transport::masa_channel::LoadBalancedChannel;
     use tonic::transport::Server;
     use tonic::Request;
     use trace_config::svc::{

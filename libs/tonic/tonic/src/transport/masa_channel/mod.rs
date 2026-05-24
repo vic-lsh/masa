@@ -2,7 +2,6 @@
 
 use super::service::{Connection, SharedExec};
 use crate::body::BoxBody;
-use crate::client::GrpcService;
 use crate::transport::channel::{ResponseFuture, Svc, DEFAULT_BUFFER_SIZE};
 use crate::transport::{Endpoint, Executor};
 use http::Request;
@@ -76,59 +75,5 @@ impl Service<http::Request<BoxBody>> for Channel {
         let inner = Service::call(&mut self.svc, request);
 
         ResponseFuture { inner }
-    }
-}
-
-/// A channel that load balances across a static number of replicas.
-#[derive(Clone)]
-#[allow(missing_debug_implementations)]
-pub struct LoadBalancedChannel {
-    channel: Channel,
-}
-
-impl LoadBalancedChannel {
-    /// Construct a new LoadBalancedChannel with a custom start index
-    pub async fn new_from(hostname_base: String, port: u16, replicas: u8, start: u8) -> Self {
-        let mut endpoints = Vec::new();
-        for i in 0..replicas {
-            let endpoint =
-                Endpoint::from_shared(format!("http://{}-{}:{}", hostname_base, i + start, port))
-                    .unwrap();
-            endpoints.push(endpoint);
-        }
-
-        let channel = Channel::new(endpoints.into_iter()).await;
-
-        Self { channel }
-    }
-
-    /// Construct a new LoadBalancedChannel
-    pub async fn new(hostname_base: String, port: u16, replicas: u8) -> Self {
-        Self::new_from(hostname_base, port, replicas, 1).await
-    }
-
-    /// Construct a new LoadBalancedChannel using service name directly (for Docker Compose).
-    /// Docker Compose handles load balancing automatically when using `scale`, so we use
-    /// the service name directly instead of individual replica hostnames.
-    pub async fn new_from_service_name(service_name: String, port: u16, _replicas: u8) -> Self {
-        // For Docker Compose, use the service name directly - Docker Compose DNS
-        // will handle load balancing across replicas automatically
-        let endpoint = Endpoint::from_shared(format!("http://{}:{}", service_name, port)).unwrap();
-        let channel = Channel::new(std::iter::once(endpoint)).await;
-        Self { channel }
-    }
-}
-
-impl Service<http::Request<BoxBody>> for LoadBalancedChannel {
-    type Response = http::Response<<Channel as GrpcService<BoxBody>>::ResponseBody>;
-    type Error = <Channel as GrpcService<BoxBody>>::Error;
-    type Future = <Channel as GrpcService<BoxBody>>::Future;
-
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        GrpcService::poll_ready(&mut self.channel, cx)
-    }
-
-    fn call(&mut self, request: http::Request<BoxBody>) -> Self::Future {
-        GrpcService::call(&mut self.channel, request)
     }
 }

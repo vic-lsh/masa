@@ -85,12 +85,10 @@ execute_test() {
     fi
 }
 
-# Feature flag combinations to test (aligned with check.sh)
+# Feature flag combinations to test (aligned with policy_matrix.toml).
 feature_combos=(
-    "sched_fifo"
-    "sched_slo"
-    "sched_tailclipper,abort_slo"
-    "sched_oracle"
+    "sched_slo,trace_queue_latency"
+    "sched_slo,abort_slo"
     "sched_slo,ac_rajomon"
     "sched_pred,abort_slo,ac_pred,est_mean_var"
 )
@@ -101,23 +99,23 @@ run_feature_tests() {
     local feat="$1"
     execute_test "hotel (sched_policy $feat)" cargo test -p hotel --test sched_policy --features "$feat"
     case "$feat" in
-        sched_slo)
-            execute_test "masa-integration-tests (sched_slo)" \
-                cargo test -p masa-integration-tests --features sched_slo
+        sched_slo,trace_queue_latency)
             execute_test "masa-integration-tests (sched_slo+trace_queue_latency)" \
                 cargo test -p masa-integration-tests --features sched_slo,trace_queue_latency
             ;;
-        sched_tailclipper,abort_slo)
+        sched_slo,abort_slo)
             execute_test "masa-integration-tests (sched_slo+abort_slo)" \
                 cargo test -p masa-integration-tests --features sched_slo,abort_slo
             ;;
         sched_slo,ac_rajomon)
             execute_test "masa-integration-tests (ac_rajomon)" \
                 cargo test -p masa-integration-tests --features sched_slo,ac_rajomon
+            execute_test "masa-policy (sched_slo+ac_rajomon)" \
+                cargo test -p masa-policy --features sched_slo,ac_rajomon
             ;;
         sched_pred,abort_slo,ac_pred,est_mean_var)
-            execute_test "tonic (est_mean_var)" \
-                cargo test -p tonic --features masa,sched_pred,est_mean_var
+            execute_test "masa-policy (sched_pred+abort_slo+ac_pred+est_mean_var)" \
+                cargo test -p masa-policy --features sched_pred,abort_slo,ac_pred,est_mean_var
             ;;
     esac
 }
@@ -134,6 +132,11 @@ if [ "$IS_MATRIX" = false ]; then
     done
 elif [[ " ${feature_combos[*]} " =~ " $FEATURE_FLAG " ]]; then
     run_feature_tests "$FEATURE_FLAG"
+elif [ -n "$FEATURE_FLAG" ]; then
+    echo "Unsupported cargo test feature combo: '$FEATURE_FLAG'"
+    echo "Supported combos:"
+    printf '  - %s\n' "${feature_combos[@]}"
+    exit 1
 fi
 
 # because not all tests build right now, we only test the modules we know to build successfully.
@@ -165,41 +168,20 @@ packages=(
     "trace-config"
 )
 
-# If testing your crate requires special feature flags, set them here
-declare -A package_features=(
-    ["tokio"]="--features full"
-    ["tokio-util"]="--features full"
-)
-
-# Testing by package name can be ambiguous (e.g., we have a local crate X and
-# cargo also downloads another version from crates.io). In this case, we can
-# be precise about our package under test by specifying its Cargo.toml path.
-declare -A package_manifest_paths=(
-    # This is an example; async-task has been removed
-    #["async-task"]="./libs/async-task/Cargo.toml"
-)
-
 # Loop through each package and run tests
 if [ "$IS_MATRIX" = false ] || [ -z "$FEATURE_FLAG" ]; then
     for package in "${packages[@]}"; do
-        # Check if the package has defined feature flags
-        if [ -n "${package_features[$package]}" ]; then
-            features="${package_features[$package]}"
-        else
-            features=""
-        fi
-
-        if [ -n "${package_manifest_paths[$package]}" ]; then
-            # for packages with manifest path, test directly using manifest path
-            execute_test "$package" cargo test --manifest-path "${package_manifest_paths[$package]}"
-        else
-            # otherwise, test with package name and optionally with feature flags
-            if [ -n "$features" ]; then
-                 execute_test "$package" cargo test -p "$package" $features
-            else
-                 execute_test "$package" cargo test -p "$package"
-            fi
-        fi
+        case "$package" in
+            tokio | tokio-util)
+                execute_test "$package" cargo test -p "$package" --features full
+                ;;
+            tower)
+                execute_test "$package" cargo test -p "$package" --all-features
+                ;;
+            *)
+                execute_test "$package" cargo test -p "$package"
+                ;;
+        esac
     done
 
     execute_test "tokio (masa priority suite)" cargo test -p tokio --features full --test masa_priority

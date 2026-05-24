@@ -59,7 +59,3 @@ opt-level = 3
 [patch.crates-io]
 tokio = { path = "./libs/tokio/tokio", version = "1" }
 hyper = { path = "./libs/hyper" }
-tokio-util = { path = "./libs/tokio/tokio-util" }
-tokio-stream = { path = "./libs/tokio/tokio-stream" }
-tokio-test = { path = "./libs/tokio/tokio-test" }
-tokio-macros = { path = "./libs/tokio/tokio-macros" }

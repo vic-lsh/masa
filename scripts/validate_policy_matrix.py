@@ -84,6 +84,18 @@ def _extract_shell_array(path: Path, name: str) -> list[str]:
     return re.findall(r'"([^"]*)"', match.group("body"))
 
 
+def _extract_workflow_matrix_features(path: Path, job_name: str) -> list[str]:
+    text = path.read_text(encoding="utf-8")
+    match = re.search(
+        rf"^  {re.escape(job_name)}:\n(?P<body>.*?)(?=^  [A-Za-z0-9_-]+:|\Z)",
+        text,
+        re.M | re.S,
+    )
+    if match is None:
+        raise ValueError(f"Could not find workflow job {job_name!r} in {path}")
+    return re.findall(r'^\s+features:\s*"([^"]*)"\s*$', match.group("body"), re.M)
+
+
 def _load_cargo_features(path: Path) -> dict[str, list[str]]:
     raw_features = _load_toml(path).get("features", {})
     if not isinstance(raw_features, dict):
@@ -311,6 +323,22 @@ def _validate_shell_matrices(
         "scripts/test.sh feature_combos",
         _extract_shell_array(repo_root / "scripts/test.sh", "feature_combos"),
         test_combos,
+    )
+    _compare_sequence(
+        errors,
+        ".github/workflows/ci.yml cargo-check matrix",
+        _extract_workflow_matrix_features(
+            repo_root / ".github/workflows/ci.yml", "cargo-check"
+        ),
+        ["", *check_combos],
+    )
+    _compare_sequence(
+        errors,
+        ".github/workflows/ci.yml test-cargo matrix",
+        _extract_workflow_matrix_features(
+            repo_root / ".github/workflows/ci.yml", "test-cargo"
+        ),
+        ["", *test_combos],
     )
     _validate_combo_list(
         errors, "check matrix", check_combos, known_flags, implies, exclusive_groups

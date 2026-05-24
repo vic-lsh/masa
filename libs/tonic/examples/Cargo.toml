@@ -388,8 +388,8 @@ tonic-reflection = { path = "../tonic-reflection", optional = true }
 tonic-types = { path = "../tonic-types", optional = true }
 either = { version = "1.9", optional = true }
 async-stream = { version = "0.3", optional = true }
-tokio-stream = { path = "../../tokio/tokio-stream", optional = true }
-tokio-util = { path = "../../tokio/tokio-util", optional = true }
+tokio-stream = { version = "=0.1.15", optional = true }
+tokio-util = { version = "=0.7.11", optional = true }
 tower = { version = "0.4", optional = true }
 rand = { version = "0.8", optional = true }
 rand_distr = "0.4"

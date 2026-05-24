@@ -119,7 +119,7 @@ h2 = { version = "0.3.27", optional = true }
 hyper = { path = "../../hyper", features = ["full"], optional = true }
 hyper-timeout = { version = "0.4.1", optional = true }
 tokio = { path = "../../tokio/tokio", optional = true }
-tokio-stream = { path = "../../tokio/tokio-stream" }
+tokio-stream = "=0.1.15"
 tower = { version = "0.4", default-features = false, features = [
   "balance",
   "buffer",

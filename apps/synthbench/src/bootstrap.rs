@@ -1,9 +1,9 @@
 use crate::tonic::child::child_client::ChildClient;
+use masa::transport::LoadBalancedChannel;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tokio::task::{JoinHandle, JoinSet};
-use tonic::transport::masa_channel::LoadBalancedChannel;
 use tracing::info;
 
 /// Bootstrap task that connects to children asynchronously

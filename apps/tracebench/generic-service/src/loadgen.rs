@@ -8,6 +8,7 @@ use std::{
 };
 
 use app_utils::load_gen::{ArrivalProcess, ArrivalTimer, TraceRecord};
+use masa::transport::LoadBalancedChannel;
 use masa::{time_now, ContextBuilder as MasaContextBuilder};
 use serde::Deserialize;
 use serde_json;
@@ -17,7 +18,6 @@ use tokio::task::JoinSet;
 use tokio::time::{Instant, MissedTickBehavior};
 use tokio::{fs, time};
 use tonic::masa_ext::MasaRequestExt;
-use tonic::transport::masa_channel::LoadBalancedChannel;
 use tonic::Request;
 use trace_config::svc::GraphId;
 use tracing_subscriber::layer::SubscriberExt;
