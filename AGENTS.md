@@ -158,6 +158,7 @@ See `docs/MASA_POLICY_IMPL.md` for detailed implementation walkthrough covering 
 - Use `scripts/test_e2e_hotel.sh` or similar scripts for end-to-end verification
 
 ### Working in this Codebase
+- When working in a worktree derived from `main`, pull the latest `main` from the remote before starting changes.
 - Before editing, understand call sites and dependencies
 - Keep changes scoped to the request unless necessary for correctness
 - When adding a new feature flag, be sure to update the documentation and include it in all applications.
