@@ -1,6 +1,5 @@
-use crate::task::JoinHandle;
+use crate::task::{JoinHandle, TaskPriority};
 
-use masa_core::PriorityHint;
 use std::future::Future;
 
 cfg_rt! {
@@ -167,12 +166,12 @@ cfg_rt! {
         F: Future + Send + 'static,
         F::Output: Send + 'static,
     {
-        spawn_with_prio(future, PriorityHint::infra())
+        spawn_with_prio(future, TaskPriority::infra())
     }
 
     /// Like spawn(), but associates the task with a priority.
     #[track_caller]
-    pub fn spawn_with_prio<F>(future: F, priority: PriorityHint) -> JoinHandle<F::Output>
+    pub fn spawn_with_prio<F>(future: F, priority: TaskPriority) -> JoinHandle<F::Output>
     where
         F: Future + Send + 'static,
         F::Output: Send + 'static,
@@ -208,7 +207,7 @@ cfg_rt! {
     /// picked up the next time the task is woken and re-enqueued. Has no
     /// effect if called outside a Masa runtime context (i.e., when
     /// `current_task_header()` returns `None`).
-    pub fn reprioritize(priority: PriorityHint) {
+    pub fn reprioritize(priority: TaskPriority) {
         if let Some(header) = crate::runtime::task::current_task_header() {
             // SAFETY: The task is currently running (RUNNING bit is set by the
             // scheduler before calling poll), so we hold exclusive access to the
@@ -219,7 +218,11 @@ cfg_rt! {
     }
 
     #[track_caller]
-    pub(super) fn spawn_inner<T>(future: T, name: Option<&str>, priority: PriorityHint) -> JoinHandle<T::Output>
+    pub(super) fn spawn_inner<T>(
+        future: T,
+        name: Option<&str>,
+        priority: TaskPriority,
+    ) -> JoinHandle<T::Output>
     where
         T: Future + Send + 'static,
         T::Output: Send + 'static,

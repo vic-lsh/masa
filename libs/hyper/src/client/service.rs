@@ -8,7 +8,7 @@ use std::marker::PhantomData;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use masa_core::PriorityHint;
+use tokio::task::TaskPriority;
 
 use tracing::debug;
 
@@ -82,7 +82,7 @@ where
                                     debug!("connection error: {:?}", e);
                                 }
                             },
-                            PriorityHint::infra(),
+                            TaskPriority::infra(),
                         );
                         Ok(sr)
                     }

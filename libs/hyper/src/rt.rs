@@ -5,12 +5,12 @@
 //! If the `runtime` feature is disabled, the types in this module can be used
 //! to plug in other runtimes.
 
-use masa_core::PriorityHint;
+use tokio::task::TaskPriority;
 
 /// An executor of futures.
 pub trait Executor<Fut> {
     /// Place a future with a deadline hint onto the executor.
-    fn execute(&self, fut: Fut, prio: PriorityHint);
+    fn execute(&self, fut: Fut, prio: TaskPriority);
 }
 
 #[cfg(any(feature = "http1", feature = "http2", feature = "server"))]

@@ -1,6 +1,4 @@
 cfg_rt! {
-    use masa_core::PriorityHint;
-
     pub(crate) mod current_thread;
     pub(crate) use current_thread::CurrentThread;
 
@@ -86,7 +84,7 @@ cfg_rt! {
     use crate::loom::sync::Arc;
     use crate::runtime::{blocking, task::Id};
     use crate::runtime::context;
-    use crate::task::JoinHandle;
+    use crate::task::{JoinHandle, TaskPriority};
     use crate::util::RngSeedGenerator;
     use std::task::Waker;
 
@@ -117,7 +115,7 @@ cfg_rt! {
             match_flavor!(self, Handle(h) => &h.blocking_spawner)
         }
 
-        pub(crate) fn spawn<F>(&self, future: F, id: Id, priority: PriorityHint) -> JoinHandle<F::Output>
+        pub(crate) fn spawn<F>(&self, future: F, id: Id, priority: TaskPriority) -> JoinHandle<F::Output>
         where
             F: Future + Send + 'static,
             F::Output: Send + 'static,

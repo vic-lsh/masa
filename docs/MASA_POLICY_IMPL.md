@@ -227,16 +227,16 @@ The core scheduling logic resides in a modified version of `tokio`.
 **Critical**: The priority scheduler is implemented **only** in the `current_thread` (single-threaded) scheduler. The `multi_thread` scheduler has **no** priority-aware modifications. Applications **must** use `#[tokio::main(flavor = "current_thread")]`. Using `multi_thread` will silently ignore all priorities and revert to FIFO scheduling.
 
 ### `spawn_with_prio`
-`tokio` exposes a `spawn_with_prio` function (`libs/tokio/tokio/src/task/spawn.rs`). This function accepts a `Future` and a `PriorityHint`.
+`tokio` exposes a `spawn_with_prio` function (`libs/tokio/tokio/src/task/spawn.rs`). This function accepts a `Future` and a neutral runtime `TaskPriority`.
 
-The standard `tokio::spawn()` calls `spawn_with_prio(future, PriorityHint::infra())` — meaning all non-Masa tasks (connection management, timers, channel workers, etc.) run at the **highest priority** by default. Only request-processing tasks spawned via `execute_h2stream_with_prio` receive a lower (deadline-based) priority.
+The standard `tokio::spawn()` calls `spawn_with_prio(future, TaskPriority::infra())` — meaning all non-Masa tasks (connection management, timers, channel workers, etc.) run at the **highest priority** by default. Only request-processing tasks spawned via `execute_h2stream_with_prio` receive a lower (deadline-based) priority converted from Masa's `PriorityHint` at the runtime boundary.
 
 `spawn_with_prio` also handles **poll hook inheritance**: it clones the calling task's poll hook (if any) and wraps the child future with it, ensuring thread-local context propagation (see Section 6).
 
 ### Task Header
 
 Each tokio task header (`libs/tokio/tokio/src/runtime/task/core.rs`) is extended with three Masa-specific fields:
-*   `priority: UnsafeCell<PriorityHint>` — the task's scheduling priority.
+*   `priority: UnsafeCell<TaskPriority>` — the task's scheduling priority.
 *   `poll_hook: UnsafeCell<Option<PollHook>>` — optional before/after poll callbacks.
 *   `timer: UnsafeCell<TraceTimer>` — queue latency measurement (see below).
 
