@@ -3057,6 +3057,7 @@ dependencies = [
 name = "masa-tonic-core"
 version = "0.1.0"
 dependencies = [
+ "tokio",
  "tonic-core",
 ]
 
