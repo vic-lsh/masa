@@ -156,10 +156,10 @@ For a complete request lifecycle:
 ### Policy Implementation
 All scheduling policies are unified into `PolicyHooks` (`libs/masa-policy/src/hooks.rs`), which dispatches to composable layers:
 *   **`E2eDeadlineGuardLayer`** (`layer/e2e_deadline_guard.rs`): Checks deadline in `before_poll`/`after_poll`; aborts past-deadline requests. Enabled by `abort_slo` feature.
-*   **`PredAdmissionLayer`** (`layer/admission/predictive.rs`): Computes local deadlines via latency estimates, tightens child deadlines, and performs predictive admission control. Enabled by `estimator` feature.
-*   **`RajomonLayer`** (`layer/admission/rajomon.rs`): Token-bucket admission control with server-side price signals. Enabled by `ac_rajomon` feature.
+*   **`PredAdmissionLayer`** (`layer/admission/predictive/mod.rs`): Computes local deadlines via latency estimates, tightens child deadlines, and performs predictive admission control. Enabled by `estimator` feature.
+*   **`RajomonLayer`** (`layer/admission/rajomon/mod.rs`): Token-bucket admission control with server-side price signals. Enabled by `ac_rajomon` feature.
 *   **`QueueLatencyLayer`** (`layer/queue_latency.rs`): Tracks queue latency across the call graph via `x-queue-latency` headers.
-*   **`NoopLayer`** (`layer/admission/mod.rs`): Zero-cost no-op, used when no admission control layer is active.
+*   **`NoopLayer`** (`layer/admission/noop.rs`): Zero-cost no-op, used when no admission control layer is active.
 *   **`NoopHooks`** (`tonic-core/src/masa_ext/noop.rs`): Selected when no scheduling feature is active.
 ### Client Code Generation
 

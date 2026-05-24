@@ -24,7 +24,7 @@ pub use registry::{MethodId, MethodRegistry};
 pub use policy_params::PolicyParams;
 
 // Re-export Rajomon public items when the feature is enabled.
-#[cfg(feature = "ac_rajomon")]
+#[cfg(all(feature = "ac_rajomon", not(feature = "ac_pred")))]
 pub use layer::admission::rajomon::{
     ClientTokenBucket, RajomonSharedState, CLIENT_TOKEN_BUCKET, RAJOMON_STATE,
 };
