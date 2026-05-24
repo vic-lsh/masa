@@ -17,7 +17,7 @@ std::thread_local! {
 
 /// Client-side access to the parent RPC context visible to child RPCs.
 pub mod client {
-    use crate::Hooks;
+    use super::super::Hooks;
 
     /// Return the parent RPC context currently visible to this task.
     ///
@@ -34,7 +34,7 @@ pub mod client {
 
 /// Server-side management of the parent RPC context around handler polling.
 pub mod server {
-    use crate::Hooks;
+    use super::super::Hooks;
 
     /// Set the parent context visible to child RPCs in this task.
     ///

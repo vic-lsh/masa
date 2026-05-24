@@ -1,6 +1,6 @@
 use std::sync::atomic::Ordering;
 
-use tonic_core::{CowGrpcMethod, Response, Status};
+use tonic::{CowGrpcMethod, Response, Status};
 
 use super::*;
 use crate::layer::Layer;

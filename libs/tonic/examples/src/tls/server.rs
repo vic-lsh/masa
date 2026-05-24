@@ -8,7 +8,7 @@ use tonic::{
         server::{TcpConnectInfo, TlsConnectInfo},
         Identity, Server, ServerTlsConfig,
     },
-    Request, RequestExt, Response, Status,
+    Request, Response, Status,
 };
 
 type EchoResult<T> = Result<Response<T>, Status>;

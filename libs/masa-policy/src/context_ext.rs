@@ -1,16 +1,14 @@
 //! Masa context extension traits and helpers.
 
 use masa_core::Context;
-use tonic_core::metadata::{Ascii, MetadataValue};
-use tonic_core::{Request, Response, Status};
+use tonic::metadata::{Ascii, MetadataValue};
+use tonic::{Request, Response, Status};
 
 /// Internal header key for MASA context.
 pub const MASA_CONTEXT_HEADER: &str = masa_core::MASA_CONTEXT_HEADER;
 
 /// Get the MASA context from metadata.
-pub fn get_masa_context_from_metadata(
-    metadata: &tonic_core::metadata::MetadataMap,
-) -> Option<Context> {
+pub fn get_masa_context_from_metadata(metadata: &tonic::metadata::MetadataMap) -> Option<Context> {
     metadata.get(MASA_CONTEXT_HEADER).map(|value| {
         let ctx_str = value.to_str().unwrap_or_else(|err| {
             panic!(
@@ -23,10 +21,7 @@ pub fn get_masa_context_from_metadata(
 }
 
 /// Set the MASA context in metadata.
-pub fn set_masa_context_in_metadata(
-    metadata: &mut tonic_core::metadata::MetadataMap,
-    ctx: &Context,
-) {
+pub fn set_masa_context_in_metadata(metadata: &mut tonic::metadata::MetadataMap, ctx: &Context) {
     let value: MetadataValue<Ascii> = ctx.to_header_string().parse().unwrap();
     metadata.insert(MASA_CONTEXT_HEADER, value);
 }
@@ -53,7 +48,7 @@ pub trait MasaRequestExt<T> {
 
 impl<T> MasaRequestExt<T> for Request<T> {
     fn set_method_name_override(&mut self, method_name: &str) -> Result<(), Status> {
-        use masa_tonic_core::METHOD_NAME_OVERRIDE_HEADER;
+        use tonic::masa::METHOD_NAME_OVERRIDE_HEADER;
         let value = MetadataValue::<Ascii>::try_from(method_name).map_err(|e| {
             Status::internal(format!(
                 "Failed to create metadata value for method name override: {:?}",
@@ -66,7 +61,7 @@ impl<T> MasaRequestExt<T> for Request<T> {
     }
 
     fn set_service_name_override(&mut self, service_name: &str) -> Result<(), Status> {
-        use masa_tonic_core::SERVICE_NAME_OVERRIDE_HEADER;
+        use tonic::masa::SERVICE_NAME_OVERRIDE_HEADER;
         let value = MetadataValue::<Ascii>::try_from(service_name).map_err(|e| {
             Status::internal(format!(
                 "Failed to create metadata value for service name override: {:?}",

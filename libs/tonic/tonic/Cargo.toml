@@ -94,12 +94,6 @@ pin-project = "1.0.11"
 tower-layer = "0.3"
 tower-service = "0.3"
 
-# Core tonic request/response/status types.
-tonic-core = { path = "../tonic-core" }
-
-# Masa hook traits and runtime support.
-masa-tonic-core = { path = "../../masa-tonic-core", features = ["runtime"] }
-
 # Needed for context serialization and transport priority
 masa-core = { path = "../../masa-core" }
 

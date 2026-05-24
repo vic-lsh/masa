@@ -618,7 +618,7 @@ impl Error for Status {
 
 /// Take the `Status` value from `trailers` if it is available, else from `status_code`.
 #[doc(hidden)]
-pub fn infer_grpc_status(
+pub(crate) fn infer_grpc_status(
     trailers: Option<&HeaderMap>,
     status_code: http::StatusCode,
 ) -> Result<(), Option<Status>> {

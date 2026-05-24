@@ -239,7 +239,7 @@ mod tests {
     use super::*;
     use masa_core::LatencyRms;
     use std::sync::Arc;
-    use tonic_core::CowGrpcMethod;
+    use tonic::CowGrpcMethod;
 
     fn test_method_id() -> MethodId {
         MethodRegistry::global().get_or_register(CowGrpcMethod::new("TestService", "TestMethod"))

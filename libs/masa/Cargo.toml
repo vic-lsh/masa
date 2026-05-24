@@ -6,7 +6,6 @@ edition = "2021"
 [dependencies]
 masa-core = { path = "../masa-core" }
 masa-policy = { path = "../masa-policy" }
-masa-tonic-core = { path = "../masa-tonic-core" }
 tokio = { path = "../tokio/tokio", optional = true }
 tonic = { path = "../tonic/tonic" }
 

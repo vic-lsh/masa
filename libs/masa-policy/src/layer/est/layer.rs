@@ -7,7 +7,7 @@
 use std::task::Poll;
 
 use masa_core::{Context, PriorityHint, RootMethod, ABORT_SLACK};
-use tonic_core::{Code, CowGrpcMethod, Response, Status};
+use tonic::{Code, CowGrpcMethod, Response, Status};
 
 use super::super::{ChildRpcContext, Layer, LayerChild, LayerServer};
 use super::default_estimator::DefaultLatencyEstimator;
@@ -116,7 +116,7 @@ impl Layer for EstimationLayer {
         ctx: &Context,
         child_method_name: &CowGrpcMethod,
         child_ctx: &mut EstimationChild,
-        _request: &mut tonic_core::Request<T>,
+        _request: &mut tonic::Request<T>,
         child_rpc: &mut ChildRpcContext,
     ) -> Result<(), Status> {
         let child_tracker = self.estimation.begin_child(child_method_name);

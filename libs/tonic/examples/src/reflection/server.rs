@@ -1,5 +1,5 @@
 use tonic::transport::Server;
-use tonic::{Request, RequestExt, Response, Status};
+use tonic::{Request, Response, Status};
 
 mod proto {
     tonic::include_proto!("helloworld");

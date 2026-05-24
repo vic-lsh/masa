@@ -2,7 +2,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::task::Poll;
 
 use masa_core::Context;
-use tonic_core::{CowGrpcMethod, Response, Status};
+use tonic::{CowGrpcMethod, Response, Status};
 
 use super::shared::{RajomonSharedState, RAJOMON_STATE};
 use crate::layer::{ChildRpcContext, Layer, LayerChild, LayerServer};
@@ -89,7 +89,7 @@ impl Layer for RajomonLayer {
         _ctx: &Context,
         child_method: &CowGrpcMethod,
         _child_ctx: &mut RajomonChild,
-        _request: &mut tonic_core::Request<T>,
+        _request: &mut tonic::Request<T>,
         child_rpc: &mut ChildRpcContext,
     ) -> Result<(), Status> {
         // Check if request was marked for drop before initiating child RPC
@@ -173,7 +173,7 @@ impl Layer for RajomonLayer {
         }
         // Paper §3.4: propagate the raw accumulated price — no artificial floor.
         let price = RAJOMON_STATE.accumulated_price(&self.rpc);
-        if let Ok(value) = tonic_core::metadata::MetadataValue::try_from(price.to_string()) {
+        if let Ok(value) = tonic::metadata::MetadataValue::try_from(price.to_string()) {
             match result {
                 Ok(resp) => {
                     resp.metadata_mut().insert("x-masa-rajomon-price", value);

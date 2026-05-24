@@ -27,6 +27,6 @@ pub(crate) mod base64 {
     );
 }
 
-pub use masa_tonic_core::{
+pub use crate::masa::{
     Abortable, AbortableFuture, AbortableFutureBuilder, AfterPollFn, BeforePollFn,
 };

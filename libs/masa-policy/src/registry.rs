@@ -4,7 +4,7 @@ use std::fmt;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 
-use tonic_core::CowGrpcMethod;
+use tonic::CowGrpcMethod;
 
 /// Opaque method identifier. Only handed out by [`MethodRegistry`].
 ///

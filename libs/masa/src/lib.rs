@@ -7,7 +7,7 @@ pub use masa_policy::{
     read_priority_from_headers, set_masa_context_in_metadata, MasaRequestExt, MasaResponseExt,
     MasaStatusExt, MASA_CONTEXT_HEADER,
 };
-pub use masa_tonic_core::{METHOD_NAME_OVERRIDE_HEADER, SERVICE_NAME_OVERRIDE_HEADER};
+pub use tonic::masa::{METHOD_NAME_OVERRIDE_HEADER, SERVICE_NAME_OVERRIDE_HEADER};
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
@@ -24,7 +24,7 @@ static NEXT_REQUEST_ID: AtomicU64 = AtomicU64::new(0);
     feature = "sched_tailclipper",
     feature = "sched_oracle"
 )))]
-pub type DefaultHooks = masa_tonic_core::noop::NoopHooks;
+pub type DefaultHooks = tonic::masa::noop::NoopHooks;
 
 /// The default Hooks implementation, selected at compile time by Masa features.
 #[cfg(any(

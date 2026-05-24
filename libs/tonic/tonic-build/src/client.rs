@@ -66,14 +66,14 @@ pub(crate) fn generate_internal<T: Service>(
 
             // requried to call functions in the trait, referenced through Hooks
             #[allow(unused_imports)]
-            use tonic::masa_ext::{ClientHooks, ParentHooks};
+            use tonic::masa::{ClientHooks, ParentHooks};
 
             #service_doc
             #(#struct_attributes)*
             #[derive(Debug)]
             pub struct #service_ident<
                 T,
-                M: tonic::masa_ext::Hooks = #default_hooks_path,
+                M: tonic::masa::Hooks = #default_hooks_path,
             > {
                 inner: tonic::client::Grpc<T>,
                 _ctx_ty: std::marker::PhantomData<M>,
@@ -82,7 +82,7 @@ pub(crate) fn generate_internal<T: Service>(
             impl<T, M> Clone for #service_ident<T, M>
             where
                 T: Clone,
-                M: tonic::masa_ext::Hooks
+                M: tonic::masa::Hooks
             {
                 fn clone(&self) -> Self {
                     Self {
@@ -134,7 +134,7 @@ pub(crate) fn generate_internal<T: Service>(
                 T::Error: Into<StdError>,
                 T::ResponseBody: Body<Data = Bytes> + Send  + 'static,
                 <T::ResponseBody as Body>::Error: Into<StdError> + Send,
-                M: tonic::masa_ext::Hooks
+                M: tonic::masa::Hooks
             {
                 fn new_impl(inner: T) -> Self {
                     let inner = tonic::client::Grpc::new(inner);
@@ -198,7 +198,7 @@ fn generate_get_parent_rpc_ctx(_service: &impl Service) -> TokenStream {
             //     client and server.
             //   - if custom P types are configured (e.g., in tests), the user have to
             //     ensure that. code-gen doesn't enforce this rule yet.
-            unsafe { tonic::masa_ext::client::get_parent_ctx::<M>() }
+            unsafe { tonic::masa::client::get_parent_ctx::<M>() }
         }
     }
 }
@@ -227,7 +227,7 @@ fn generate_connect(
 
         impl<M> #service_ident<tonic::transport::Channel, M>
         where
-            M: tonic::masa_ext::Hooks
+            M: tonic::masa::Hooks
         {
             /// Attempt to create a new client by connecting to a given endpoint.
             pub async fn connect_with_custom_context<D>(dst: D) -> Result<Self, tonic::transport::Error>

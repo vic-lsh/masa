@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use dashmap::DashMap;
 use once_cell::sync::Lazy;
-use tonic_core::CowGrpcMethod;
+use tonic::CowGrpcMethod;
 
 use crate::policy_params::PolicyParams;
 

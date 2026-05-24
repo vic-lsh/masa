@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use crate::Hooks;
+use super::Hooks;
 
 /// Create the Tokio poll hook used to propagate parent context to child tasks.
 pub fn make_child_task_poll_hook<M>(parent_context: Arc<M::ParentContext>) -> tokio::task::PollHook
@@ -24,7 +24,7 @@ where
 mod hook_impl {
     use std::sync::Arc;
 
-    use crate::Hooks;
+    use super::super::Hooks;
 
     pub(crate) fn on_clone<M>(raw_ctx: *const ())
     where
@@ -49,13 +49,13 @@ mod hook_impl {
     {
         // SAFETY: the hook owns one ref count to the request context.
         let ctx = unsafe { &*(raw_ctx as *const M::ParentContext) };
-        crate::server::set_parent_ctx::<M>(ctx);
+        super::super::server::set_parent_ctx::<M>(ctx);
     }
 
     pub(crate) fn after_poll<M>(_raw_ctx: *const ())
     where
         M: Hooks,
     {
-        crate::server::reset_parent_ctx::<M>();
+        super::super::server::reset_parent_ctx::<M>();
     }
 }

@@ -1,5 +1,5 @@
 use masa_core::Context;
-use tonic_core::CowGrpcMethod;
+use tonic::CowGrpcMethod;
 
 use super::super::{Layer, LayerChild, LayerServer};
 

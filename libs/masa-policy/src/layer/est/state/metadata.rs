@@ -5,7 +5,7 @@ use std::sync::{
 use std::time::Instant;
 
 use masa_core::{Context, ResponseMeta};
-use tonic_core::{Code, Response, Status};
+use tonic::{Code, Response, Status};
 
 use crate::context_ext::MasaResponseExt;
 

@@ -7,7 +7,7 @@ use std::sync::Mutex;
 use std::task::Poll;
 
 use masa_core::{time_now, Context, ABORT_SLO};
-use tonic_core::{Code, CowGrpcMethod, Response, Status};
+use tonic::{Code, CowGrpcMethod, Response, Status};
 
 use super::{ChildRpcContext, Layer, LayerChild, LayerServer};
 
@@ -154,7 +154,7 @@ impl Layer for E2eDeadlineGuardLayer {
         ctx: &Context,
         _child_method: &CowGrpcMethod,
         _child_ctx: &mut E2eDeadlineGuardChild,
-        _request: &mut tonic_core::Request<T>,
+        _request: &mut tonic::Request<T>,
         _child_rpc: &mut ChildRpcContext,
     ) -> Result<(), Status> {
         if self.handler.check(ctx) {
@@ -213,9 +213,9 @@ macro_rules! generate_abort_slo_test {
             use super::{$ChildContext, $ParentContext, $ServerContext};
             use crate::context_ext::MASA_CONTEXT_HEADER;
             use masa_core::{time_now, ContextBuilder};
-            use masa_tonic_core::{ClientHooks, ParentHooks, ServerHooks};
             use std::sync::Arc;
-            use tonic_core::{GrpcMethod, Request, Response, Status};
+            use tonic::masa::{ClientHooks, ParentHooks, ServerHooks};
+            use tonic::{GrpcMethod, Request, Response, Status};
 
             // Create a context with an e2e SLO deadline in the past.
             // SloAbortHandler now uses e2e_deadline (gateway_entry + slo) for the ER check,
@@ -248,7 +248,7 @@ macro_rules! generate_abort_slo_test {
                 _ => panic!("Expected Err(Err(Status))"),
             };
 
-            assert_eq!(err.code(), tonic_core::Code::DeadlineExceeded);
+            assert_eq!(err.code(), tonic::Code::DeadlineExceeded);
             // Verify error message format: /EarlyReturn?src=test.Service::Method
             let msg = err.message();
             assert!(
@@ -264,10 +264,7 @@ macro_rules! generate_abort_slo_test {
 
             // Update last child info manually (simulating a completed child call)
             let mut child_ctx = $ChildContext::new(method, &Request::new(()));
-            child_ctx.set_method_name(tonic_core::CowGrpcMethod::new(
-                "test.Service",
-                "ChildMethod",
-            ));
+            child_ctx.set_method_name(tonic::CowGrpcMethod::new("test.Service", "ChildMethod"));
 
             // This simulates a child RPC finishing
             let mut resp_result: Result<Response<()>, Status> = Ok(Response::new(()));
