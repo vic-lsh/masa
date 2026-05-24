@@ -1,6 +1,5 @@
 use crate::transport::BoxFuture;
 use std::{future::Future, sync::Arc};
-use tokio::task::TaskPriority;
 
 pub(crate) use hyper::rt::Executor;
 
@@ -12,7 +11,7 @@ where
     F: Future + Send + 'static,
     F::Output: Send + 'static,
 {
-    fn execute(&self, fut: F, _prio: TaskPriority) {
+    fn execute(&self, fut: F) {
         tokio::spawn(fut);
     }
 }
@@ -38,7 +37,7 @@ impl SharedExec {
 }
 
 impl Executor<BoxFuture<'static, ()>> for SharedExec {
-    fn execute(&self, fut: BoxFuture<'static, ()>, prio: TaskPriority) {
-        self.inner.execute(fut, prio);
+    fn execute(&self, fut: BoxFuture<'static, ()>) {
+        self.inner.execute(fut);
     }
 }

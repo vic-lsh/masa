@@ -28,7 +28,6 @@ use crate::proto::Dispatched;
 use crate::upgrade::Upgraded;
 use crate::{Body, Request, Response};
 use h2::client::ResponseFuture;
-use tokio::task::TaskPriority;
 
 type ClientRx<B> = crate::client::dispatch::Receiver<Request<B>, Response<Body>>;
 
@@ -170,10 +169,7 @@ where
     };
     let conn = conn.map_err(|e| debug!("connection error: {}", e));
 
-    exec.execute(
-        conn_task(conn, conn_drop_rx, cancel_tx),
-        TaskPriority::infra(),
-    );
+    exec.execute(conn_task(conn, conn_drop_rx, cancel_tx));
 
     Ok(ClientTask {
         ping,
@@ -274,7 +270,7 @@ where
                             x
                         });
                         // Clear send task
-                        self.executor.execute(pipe, TaskPriority::infra());
+                        self.executor.execute(pipe);
                     }
                 }
             }
@@ -331,8 +327,7 @@ where
                 Err((crate::Error::new_h2(err), None))
             }
         });
-        self.executor
-            .execute(f.cb.send_when(fut), TaskPriority::infra());
+        self.executor.execute(f.cb.send_when(fut));
     }
 }
 

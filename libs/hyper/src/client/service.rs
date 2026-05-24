@@ -8,7 +8,6 @@ use std::marker::PhantomData;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use tokio::task::TaskPriority;
 
 use tracing::debug;
 
@@ -76,14 +75,11 @@ where
                 Ok(io) => match builder.handshake(io).await {
                     Ok((sr, conn)) => {
                         #[cfg_attr(feature = "deprecated", allow(deprecated))]
-                        builder.exec.execute(
-                            async move {
-                                if let Err(e) = conn.await {
-                                    debug!("connection error: {:?}", e);
-                                }
-                            },
-                            TaskPriority::infra(),
-                        );
+                        builder.exec.execute(async move {
+                            if let Err(e) = conn.await {
+                                debug!("connection error: {:?}", e);
+                            }
+                        });
                         Ok(sr)
                     }
                     Err(e) => Err(e),

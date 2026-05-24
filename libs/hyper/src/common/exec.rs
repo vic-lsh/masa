@@ -63,7 +63,7 @@ impl Exec {
         }
     }
 
-    pub(crate) fn execute<F>(&self, fut: F, prio: TaskPriority)
+    pub(crate) fn execute<F>(&self, fut: F)
     where
         F: Future<Output = ()> + Send + 'static,
     {
@@ -80,18 +80,14 @@ impl Exec {
                 }
             }
             Exec::Masa(_) => {
-                {
-                    tokio::task::spawn_with_prio(fut, prio);
-                }
+                tokio::task::spawn(fut);
                 #[cfg(any())]
                 {
-                    async_executor::spawn_with_prio(fut, prio)
-                        .fallible()
-                        .detach();
+                    async_executor::spawn(fut).fallible().detach();
                 }
             }
             Exec::Executor(ref e) => {
-                e.execute(Box::pin(fut), prio);
+                e.execute(Box::pin(fut));
             }
         }
     }
@@ -114,7 +110,12 @@ where
     }
 
     fn execute_h2stream_with_prio(&mut self, fut: H2Stream<F, B>, prio: TaskPriority) {
-        self.execute(fut, prio)
+        match self {
+            Exec::Masa(_) => {
+                tokio::task::spawn_with_prio(fut, prio);
+            }
+            _ => self.execute(fut),
+        }
     }
 }
 
@@ -126,7 +127,7 @@ where
     W: Watcher<I, S, E>,
 {
     fn execute_new_svc(&mut self, fut: NewSvcTask<I, N, S, E, W>) {
-        self.execute(fut, TaskPriority::infra())
+        self.execute(fut)
     }
 }
 
@@ -140,7 +141,8 @@ where
     B: HttpBody,
 {
     fn execute_h2stream_with_prio(&mut self, fut: H2Stream<F, B>, prio: TaskPriority) {
-        self.execute(fut, prio)
+        let _ = prio;
+        self.execute(fut)
     }
 }
 
@@ -153,7 +155,7 @@ where
     W: Watcher<I, S, E>,
 {
     fn execute_new_svc(&mut self, fut: NewSvcTask<I, N, S, E, W>) {
-        self.execute(fut, TaskPriority::infra())
+        self.execute(fut)
     }
 }
 
