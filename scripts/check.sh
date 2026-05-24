@@ -65,6 +65,7 @@ check_tests() {
     local packages=(
         "masa"
         "masa-core"
+        "masa-policy"
         "masa-integration-tests"
         "hotel"
         "socialnet"
@@ -82,8 +83,22 @@ check_tests() {
     done
 
     echo "Running: $cmd"
-    $cmd
-    return $?
+    $cmd || return $?
+
+    echo "========================================================="
+    echo "Checking featured masa-policy tests"
+    for flags in "${flag_combos[@]}"; do
+        case "$flags" in
+            *ac_pred* | *ac_rajomon* | *abort_slack* | *signal_slack*) ;;
+            *) continue ;;
+        esac
+
+        local featured_cmd="cargo check --tests --quiet -p masa-policy --features $flags"
+        echo "Running: $featured_cmd"
+        cargo check --tests --quiet -p masa-policy --features "$flags" || return $?
+    done
+
+    return 0
 }
 
 FAILED=false
