@@ -31,6 +31,7 @@ members = [
   "libs/tonic/tests/default_stubs",
   # masa support
   "libs/masa-core",
+  "libs/masa-tonic-core",
   "libs/masa-policy",
   "libs/masa",
 

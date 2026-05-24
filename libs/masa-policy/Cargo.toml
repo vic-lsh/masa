@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 masa-core = { path = "../masa-core" }
+masa-tonic-core = { path = "../masa-tonic-core" }
 tonic-core = { path = "../tonic/tonic-core" }
 tokio = { path = "../tokio/tokio", optional = true, features = ["rt"] }
 dashmap = "5.5"

@@ -1,5 +1,5 @@
-// Re-export core hook traits and types from tonic-core.
-pub use tonic_core::masa_ext::{
+// Re-export core hook traits and types from masa-tonic-core.
+pub use masa_tonic_core::{
     noop, resolve_method_name_from_http, resolve_method_name_from_request, ClientHooks, Hooks,
     ParentHooks, ServerHooks, METHOD_NAME_OVERRIDE_HEADER, SERVICE_NAME_OVERRIDE_HEADER,
 };
@@ -27,7 +27,7 @@ pub use thread_local::{client, server};
     feature = "sched_tailclipper",
     feature = "sched_oracle"
 )))]
-pub type DefaultHooks = tonic_core::masa_ext::noop::NoopHooks;
+pub type DefaultHooks = masa_tonic_core::noop::NoopHooks;
 
 /// Default hooks type, selected at compile time by feature flags.
 #[cfg(any(

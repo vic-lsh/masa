@@ -3043,12 +3043,20 @@ dependencies = [
  "http",
  "log",
  "masa-core",
+ "masa-tonic-core",
  "once_cell",
  "rand 0.8.5",
  "rand_distr 0.4.3",
  "serde",
  "serde_json",
  "tokio",
+ "tonic-core",
+]
+
+[[package]]
+name = "masa-tonic-core"
+version = "0.1.0"
+dependencies = [
  "tonic-core",
 ]
 
@@ -5770,6 +5778,7 @@ dependencies = [
  "log",
  "masa-core",
  "masa-policy",
+ "masa-tonic-core",
  "once_cell",
  "percent-encoding",
  "pin-project",
