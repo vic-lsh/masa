@@ -336,11 +336,13 @@ impl RajomonSharedState {
 #[derive(Debug)]
 pub(crate) struct RajomonServer;
 
-impl LayerServer for RajomonServer {
-    fn new() -> Self {
+impl RajomonServer {
+    pub(crate) fn new() -> Self {
         Self
     }
 }
+
+impl LayerServer for RajomonServer {}
 
 #[derive(Debug)]
 pub(crate) struct RajomonLayer {

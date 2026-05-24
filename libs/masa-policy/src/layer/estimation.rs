@@ -4,7 +4,6 @@
 // Active when the `estimator` feature is enabled. Runs independently of the
 // admission control layer (ac_pred / ac_rajomon / noop).
 
-use std::sync::OnceLock;
 use std::task::Poll;
 
 use masa_core::{Context, PriorityHint, RootMethod, ABORT_SLACK};
@@ -18,26 +17,6 @@ use super::est::state::{
 use super::{ChildRpcContext, Layer, LayerChild, LayerServer};
 use crate::MethodRegistry;
 
-// ── Global estimator access ─────────────────────────────────────────────
-
-/// Global handle to the shared `LatencyEstimators`, set once when
-/// `EstimationServer` is created. Allows the admission layer to look up
-/// cost estimates without a direct reference to the estimation layer.
-static GLOBAL_ESTIMATORS: OnceLock<LatencyEstimators<DefaultLatencyEstimator>> = OnceLock::new();
-
-/// Returns a clone of the global `LatencyEstimators`.
-///
-/// Panics if called before `EstimationServer::new()` — in practice this
-/// never happens because the server context initialises all layers before
-/// any request arrives.
-#[cfg(feature = "ac_pred")]
-pub(crate) fn global_estimators() -> LatencyEstimators<DefaultLatencyEstimator> {
-    GLOBAL_ESTIMATORS
-        .get()
-        .expect("EstimationServer must be initialised before admission layer")
-        .clone()
-}
-
 // ── Server ──────────────────────────────────────────────────────────────
 
 /// Server-level estimation state (shared across requests).
@@ -46,14 +25,15 @@ pub(crate) struct EstimationServer {
     pub(crate) est: LatencyEstimators<DefaultLatencyEstimator>,
 }
 
-impl LayerServer for EstimationServer {
-    fn new() -> Self {
-        let est = LatencyEstimators::new();
-        // Publish for the admission layer to access cost estimates.
-        let _ = GLOBAL_ESTIMATORS.set(est.clone());
-        Self { est }
+impl EstimationServer {
+    pub(crate) fn new(_service_name: &'static str) -> Self {
+        Self {
+            est: LatencyEstimators::new(),
+        }
     }
 }
+
+impl LayerServer for EstimationServer {}
 
 // ── Per-Request ─────────────────────────────────────────────────────────
 

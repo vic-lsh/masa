@@ -25,13 +25,15 @@ compile_error!(
 // ── Compile-time admission layer selection ──────────────────────────────
 
 #[cfg(feature = "ac_pred")]
-pub(crate) use predictive::PredAdmissionLayer as AdmissionLayer;
+pub(crate) use predictive::{
+    AdmissionDeps, PredAdmissionLayer as AdmissionLayer, PredAdmissionServer as AdmissionServer,
+};
 
 #[cfg(all(feature = "ac_rajomon", not(feature = "ac_pred")))]
-pub(crate) use rajomon::RajomonLayer as AdmissionLayer;
+pub(crate) use rajomon::{RajomonLayer as AdmissionLayer, RajomonServer as AdmissionServer};
 
 #[cfg(not(any(feature = "ac_pred", feature = "ac_rajomon")))]
-pub(crate) use self::noop::NoopLayer as AdmissionLayer;
+pub(crate) use self::noop::{NoopLayer as AdmissionLayer, NoopServer as AdmissionServer};
 
 // ── Noop layer (inline) ─────────────────────────────────────────────────
 
@@ -45,11 +47,13 @@ mod noop {
     #[derive(Debug)]
     pub(crate) struct NoopServer;
 
-    impl LayerServer for NoopServer {
-        fn new() -> Self {
+    impl NoopServer {
+        pub(crate) fn new() -> Self {
             Self
         }
     }
+
+    impl LayerServer for NoopServer {}
 
     #[derive(Debug)]
     pub(crate) struct NoopLayer;

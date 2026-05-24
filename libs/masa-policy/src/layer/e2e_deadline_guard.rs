@@ -115,11 +115,13 @@ impl SloAbortHandler {
 #[derive(Debug)]
 pub(crate) struct E2eDeadlineGuardServer;
 
-impl LayerServer for E2eDeadlineGuardServer {
-    fn new() -> Self {
+impl E2eDeadlineGuardServer {
+    pub(crate) fn new() -> Self {
         Self
     }
 }
+
+impl LayerServer for E2eDeadlineGuardServer {}
 
 // ── Per-Request ─────────────────────────────────────────────────────────
 
