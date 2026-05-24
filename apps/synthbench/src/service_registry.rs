@@ -1,8 +1,8 @@
 use crate::tonic::child::child_client::ChildClient;
+use masa::transport::LoadBalancedChannel;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tonic::transport::masa_channel::LoadBalancedChannel;
 
 /// Service registry that maps service IDs to client connections
 pub struct ServiceRegistry {

@@ -13,8 +13,8 @@ use text_svc::url_shorten_service::{
     url_shorten_service_client::UrlShortenServiceClient, ComposeUrlsRequest,
 };
 
+use masa::transport::LoadBalancedChannel;
 use std::env;
-use tonic::transport::masa_channel::LoadBalancedChannel;
 
 pub mod text_svc {
     pub mod text_service {

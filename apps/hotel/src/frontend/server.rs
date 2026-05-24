@@ -23,8 +23,9 @@ use crate::config::HotelConfig;
 // use hotel_tonic::review::review_client::ReviewClient;
 use std::time::Instant;
 
+use masa::transport::LoadBalancedChannel;
 use tonic::masa_ext::{MasaRequestExt, MasaResponseExt};
-use tonic::{transport::masa_channel::LoadBalancedChannel, Request, Response, Status};
+use tonic::{Request, Response, Status};
 
 use hotel_tonic::{
     frontend, frontend::frontend_server::Frontend, profile, profile::profile_client::ProfileClient,

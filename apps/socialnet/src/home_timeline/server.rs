@@ -23,7 +23,7 @@ use post_storage::ReadPostsRequest;
 use social_graph::social_graph_service_client::SocialGraphServiceClient;
 use social_graph::GetFollowersRequest;
 
-use tonic::transport::masa_channel::LoadBalancedChannel;
+use masa::transport::LoadBalancedChannel;
 
 use std::env;
 

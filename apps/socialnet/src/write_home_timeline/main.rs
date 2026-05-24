@@ -10,7 +10,7 @@ use deadpool_redis::redis;
 use deadpool_redis::Pool as DeadpoolRedisPool;
 
 // NEW IMPORT
-use tonic::transport::masa_channel::LoadBalancedChannel;
+use masa::transport::LoadBalancedChannel;
 
 use crate::worker::run_worker;
 

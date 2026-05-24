@@ -1,4 +1,5 @@
 use anyhow::Result;
+use masa::transport::LoadBalancedChannel;
 use masa::MethodId;
 use service_stubs::service_client::ServiceClient;
 use std::env;
@@ -6,7 +7,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::runtime::current_thread_queue_len;
-use tonic::transport::masa_channel::LoadBalancedChannel;
 use tonic::{transport::Server, Request, Response, Status};
 use trace_config::deployment::Deployment;
 use trace_config::svc::{CallGraphConfig, GraphId, ServiceName};

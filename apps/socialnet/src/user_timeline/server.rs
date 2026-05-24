@@ -9,8 +9,8 @@ use mongodb::bson::{doc, Bson, Document};
 use mongodb::options::{FindOneAndUpdateOptions, FindOneOptions, ReturnDocument};
 use mongodb::{Client, Collection};
 
+use masa::transport::LoadBalancedChannel;
 use tonic::async_trait;
-use tonic::transport::masa_channel::LoadBalancedChannel;
 use tonic::transport::Server;
 use tonic::{Request, Response, Status};
 use tracing::{error, info, warn};

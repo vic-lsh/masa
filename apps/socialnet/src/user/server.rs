@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use std::sync::Mutex as StdMutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 // No longer need tokio::sync::Mutex for Redis
-use tonic::transport::masa_channel::LoadBalancedChannel;
+use masa::transport::LoadBalancedChannel;
 use tonic::{Request, Response, Status};
 use tracing::{error, info, warn};
 

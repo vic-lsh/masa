@@ -11,8 +11,9 @@ pub mod hotel_tonic {
 }
 
 use app_utils::stats::latency::{new_latency_tracker, spawn_latency_logger, SyncLatencyTracker};
+use masa::transport::LoadBalancedChannel;
 use std::time::Duration;
-use tonic::{transport::masa_channel::LoadBalancedChannel, Request, Response, Status};
+use tonic::{Request, Response, Status};
 
 use hotel_tonic::{
     geo, geo::geo_client::GeoClient, rate, rate::rate_client::RateClient, search,

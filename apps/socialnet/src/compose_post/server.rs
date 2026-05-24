@@ -5,10 +5,10 @@ use std::net::SocketAddr;
 
 use chrono::Utc;
 use log::info;
+use masa::transport::LoadBalancedChannel;
 use once_cell::sync::Lazy;
 use regex::Regex;
 use tonic::async_trait;
-use tonic::transport::masa_channel::LoadBalancedChannel;
 use tonic::transport::Server;
 use tonic::{Request, Response, Status};
 
