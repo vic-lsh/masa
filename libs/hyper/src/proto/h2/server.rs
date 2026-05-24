@@ -10,7 +10,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use bytes::Bytes;
 use h2::server::{Connection, Handshake, SendResponse};
 use h2::{Reason, RecvStream};
-use http::{Method, Request};
+use http::{HeaderMap, Method, Request};
 use pin_project_lite::pin_project;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tracing::{debug, trace, warn};
@@ -43,6 +43,27 @@ const DEFAULT_MAX_FRAME_SIZE: u32 = 1024 * 16; // 16kb
 const DEFAULT_MAX_SEND_BUF_SIZE: usize = 1024 * 400; // 400kb
 const DEFAULT_SETTINGS_MAX_HEADER_LIST_SIZE: u32 = 16 << 20; // 16 MB "sane default" taken from golang http2
 const DEFAULT_MAX_LOCAL_ERROR_RESET_STREAMS: usize = 1024;
+
+fn masa_priority_from_headers(
+    headers: &HeaderMap,
+    context_required: bool,
+) -> Option<masa_core::PriorityHint> {
+    let ctx = match headers.get(masa_core::MASA_CONTEXT_HEADER) {
+        Some(ctx) => ctx,
+        None if context_required => {
+            panic!("{}", masa_core::MISSING_CONTEXT_HEADER_MESSAGE)
+        }
+        None => return None,
+    };
+    let ctx_str = ctx.to_str().unwrap_or_else(|err| {
+        panic!(
+            "{}",
+            masa_core::invalid_context_header_metadata_message(err)
+        )
+    });
+
+    Some(MasaContext::from_header_string(ctx_str).prio_hint())
+}
 
 #[inline]
 #[allow(dead_code)]
@@ -346,10 +367,9 @@ where
                             req.extensions_mut().insert(Protocol::from_inner(protocol));
                         }
 
-                        if let Some(ctx) = req.headers().get(masa_core::MASA_CONTEXT_HEADER) {
-                            let ctx_str = ctx.to_str().unwrap();
-                            let ctx = MasaContext::from_header_string(ctx_str);
-                            let prio = ctx.prio_hint();
+                        if let Some(prio) =
+                            masa_priority_from_headers(req.headers(), exec.requires_masa_context())
+                        {
                             // [NOTE] Into executor.
                             let fut = H2Stream::new(service.call(req), connect_parts, respond);
                             // [TODO:Weixin] Skip if the deadline is already passed.
@@ -582,5 +602,59 @@ where
                 debug!("stream error: {}", e);
             }
         })
+    }
+}
+
+#[cfg(test)]
+mod masa_context_tests {
+    use super::*;
+    use http::HeaderValue;
+    use masa_core::{ContextBuilder, PriorityHint};
+
+    #[test]
+    fn missing_context_is_optional_when_context_is_not_required() {
+        let headers = HeaderMap::new();
+
+        assert_eq!(masa_priority_from_headers(&headers, false), None);
+    }
+
+    #[test]
+    #[should_panic(expected = "missing MASA context header `ctx`")]
+    fn missing_context_panics_when_context_is_required() {
+        let headers = HeaderMap::new();
+
+        let _ = masa_priority_from_headers(&headers, true);
+    }
+
+    #[test]
+    #[should_panic(expected = "invalid MASA context header `ctx`: invalid ASCII/metadata")]
+    fn invalid_ascii_context_panics_with_explicit_message() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            masa_core::MASA_CONTEXT_HEADER,
+            HeaderValue::from_bytes(b"\xff").unwrap(),
+        );
+
+        let _ = masa_priority_from_headers(&headers, true);
+    }
+
+    #[test]
+    fn valid_context_returns_priority_hint() {
+        let ctx = ContextBuilder::new("test.Service", 9)
+            .slo(100)
+            .gateway_entry(10)
+            .deadline(110)
+            .prio_hint(PriorityHint::new(42))
+            .build();
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            masa_core::MASA_CONTEXT_HEADER,
+            HeaderValue::from_str(&ctx.to_header_string()).unwrap(),
+        );
+
+        assert_eq!(
+            masa_priority_from_headers(&headers, true),
+            Some(PriorityHint::new(42))
+        );
     }
 }
