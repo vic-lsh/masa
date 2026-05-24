@@ -2,7 +2,12 @@
 name = "masa-tonic-core"
 version = "0.1.0"
 edition = "2021"
-description = "Runtime-neutral Masa hook traits and no-op hooks for tonic integration."
+description = "Masa hook traits and runtime support for tonic integration."
+
+[features]
+default = []
+runtime = ["dep:tokio"]
 
 [dependencies]
 tonic-core = { path = "../tonic/tonic-core" }
+tokio = { path = "../tokio/tokio", features = ["rt"], optional = true }

@@ -1,10 +1,12 @@
-//! Runtime-neutral Masa hook traits for tonic integration.
+//! Masa hook traits and runtime support for tonic integration.
 //!
-//! This crate keeps Masa hook contracts and no-op implementations outside of
-//! vendored tonic while still using tonic-core request, response, status, and
-//! method types in the public API.
+//! This crate keeps Masa hook contracts, no-op implementations, parent context
+//! propagation, and exact-boundary future wrappers outside of vendored tonic
+//! while still using tonic-core request, response, status, and method types in
+//! the public API.
 
 #![warn(missing_debug_implementations, missing_docs, rust_2018_idioms)]
+#![feature(trait_alias)]
 
 use std::{sync::Arc, task::Poll};
 
@@ -13,6 +15,16 @@ use tonic_core::{http, CowGrpcMethod, GrpcMethod, Request, Response, Status};
 
 /// No-op Masa hooks implementation for when no scheduling features are enabled.
 pub mod noop;
+
+mod future;
+mod thread_local;
+
+pub use future::{Abortable, AbortableFuture, AbortableFutureBuilder, AfterPollFn, BeforePollFn};
+pub use thread_local::{client, server};
+
+/// Tokio poll-hook bridge for propagating parent context to spawned child tasks.
+#[cfg(feature = "runtime")]
+pub mod runtime;
 
 // TODO: add notes on trait bounds
 /// Trait for specifying the set of hooks to apply.
@@ -203,10 +215,14 @@ pub fn resolve_method_name_from_request<T>(
 #[cfg(test)]
 mod tests {
     use super::{
-        noop, resolve_method_name_from_http, resolve_method_name_from_request, ClientHooks,
-        ParentHooks, ServerHooks, METHOD_NAME_OVERRIDE_HEADER, SERVICE_NAME_OVERRIDE_HEADER,
+        client, noop, resolve_method_name_from_http, resolve_method_name_from_request, server,
+        Abortable, ClientHooks, ParentHooks, ServerHooks, METHOD_NAME_OVERRIDE_HEADER,
+        SERVICE_NAME_OVERRIDE_HEADER,
     };
+    use std::cell::Cell;
+    use std::future::{poll_fn, Future};
     use std::sync::Arc;
+    use std::task::{Context, Poll, Waker};
     use tonic_core::metadata::MetadataValue;
     use tonic_core::{http, GrpcMethod, Request, Response};
 
@@ -282,5 +298,60 @@ mod tests {
         parent
             .before_poll::<()>()
             .expect("noop before_poll should not fail");
+    }
+
+    #[test]
+    fn parent_context_tls_round_trips_for_matching_hooks() {
+        let method = GrpcMethod::new("TestService", "TestMethod");
+        let server_ctx = Arc::new(noop::ServerContext::new("TestService"));
+        let req = http::Request::new(());
+        let parent = noop::ParentContext::begin(method, &req, server_ctx);
+
+        server::set_parent_ctx::<noop::NoopHooks>(&parent);
+        let observed = unsafe { client::get_parent_ctx::<noop::NoopHooks>() };
+        assert!(std::ptr::eq(observed.unwrap(), &parent));
+
+        server::reset_parent_ctx::<noop::NoopHooks>();
+        assert!(unsafe { client::get_parent_ctx::<noop::NoopHooks>() }.is_none());
+    }
+
+    #[test]
+    fn abortable_future_before_poll_can_return_without_polling_inner() {
+        let polled = Cell::new(false);
+        let inner = poll_fn(|_| {
+            polled.set(true);
+            Poll::Ready(1_u8)
+        });
+        let mut fut = Box::pin(
+            inner
+                .abortable()
+                .before_poll(|| Some(2_u8))
+                .after_poll(|_| Some(3_u8))
+                .build(),
+        );
+        let waker = Waker::noop();
+        let mut cx = Context::from_waker(waker);
+
+        assert_eq!(fut.as_mut().poll(&mut cx), Poll::Ready(2));
+        assert!(!polled.get());
+    }
+
+    #[test]
+    fn abortable_future_after_poll_can_override_ready_output() {
+        let inner = poll_fn(|_| Poll::Ready(1_u8));
+        let mut fut = Box::pin(
+            inner
+                .abortable()
+                .before_poll(|| None::<u8>)
+                .after_poll(|poll| match poll {
+                    Poll::Ready(1) => Some(2_u8),
+                    _ => None,
+                })
+                .build(),
+        );
+        let waker = Waker::noop();
+        let mut cx = Context::from_waker(waker);
+
+        assert_eq!(fut.as_mut().poll(&mut cx), Poll::Ready(2));
     }
 }
