@@ -1,4 +1,7 @@
-use crate::{code_gen::CodeGenBuilder, compile_settings::CompileSettings};
+use crate::{
+    code_gen::{CodeGenBuilder, DefaultHooksPath},
+    compile_settings::CompileSettings,
+};
 
 use super::Attributes;
 use proc_macro2::TokenStream;
@@ -41,6 +44,7 @@ pub fn configure() -> Builder {
         disable_comments: HashSet::default(),
         use_arc_self: false,
         generate_default_stubs: false,
+        default_hooks_path: DefaultHooksPath::default(),
         compile_settings: CompileSettings::default(),
     }
 }
@@ -227,6 +231,7 @@ impl prost_build::ServiceGenerator for ServiceGenerator {
                 .use_arc_self(self.builder.use_arc_self)
                 .generate_default_stubs(self.builder.generate_default_stubs)
                 .enable_parent_rpc_context(enable_parent_rpc_ctx)
+                .default_hooks_path(self.builder.default_hooks_path.as_path().clone())
                 .generate_server(
                     &TonicBuildService::new(service.clone(), self.builder.compile_settings.clone()),
                     &self.builder.proto_path,
@@ -243,6 +248,7 @@ impl prost_build::ServiceGenerator for ServiceGenerator {
                 .disable_comments(self.builder.disable_comments.clone())
                 .build_transport(self.builder.build_transport)
                 .enable_parent_rpc_context(enable_parent_rpc_ctx)
+                .default_hooks_path(self.builder.default_hooks_path.as_path().clone())
                 .generate_client(
                     &TonicBuildService::new(service, self.builder.compile_settings.clone()),
                     &self.builder.proto_path,
@@ -310,6 +316,7 @@ pub struct Builder {
     pub(crate) disable_comments: HashSet<String>,
     pub(crate) use_arc_self: bool,
     pub(crate) generate_default_stubs: bool,
+    pub(crate) default_hooks_path: DefaultHooksPath,
     pub(crate) compile_settings: CompileSettings,
 
     out_dir: Option<PathBuf>,
@@ -503,6 +510,17 @@ impl Builder {
     /// This defaults to `super` since tonic will generate code in a module.
     pub fn proto_path(mut self, proto_path: impl AsRef<str>) -> Self {
         self.proto_path = proto_path.as_ref().to_string();
+        self
+    }
+
+    /// Set the default Masa hooks type path emitted in generated clients and servers.
+    ///
+    /// The path must parse as a Rust path. This defaults to
+    /// `tonic::masa_ext::DefaultHooks`.
+    pub fn default_hooks_path(mut self, path: impl AsRef<str>) -> Self {
+        self.default_hooks_path = DefaultHooksPath(
+            syn::parse_str(path.as_ref()).expect("default_hooks_path must be a valid Rust path"),
+        );
         self
     }
 
