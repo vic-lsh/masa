@@ -469,7 +469,7 @@ impl Builder {
     /// Set the default Masa hooks type path emitted in generated clients and servers.
     ///
     /// The path must parse as a Rust path. This defaults to
-    /// `tonic::masa_ext::DefaultHooks`.
+    /// `masa::DefaultHooks`.
     pub fn default_hooks_path(mut self, path: impl AsRef<str>) -> Self {
         self.default_hooks_path = DefaultHooksPath(
             syn::parse_str(path.as_ref()).expect("default_hooks_path must be a valid Rust path"),

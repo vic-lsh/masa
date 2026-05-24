@@ -53,7 +53,7 @@ The root `Cargo.toml` `[patch.crates-io]` section replaces the upstream Tokio fa
 
 ### `DefaultHooks` Selection
 
-The `DefaultHooks` type alias (in `libs/tonic/tonic/src/masa_ext/mod.rs`) is resolved by feature flag:
+The `masa::DefaultHooks` type alias (in `libs/masa/src/lib.rs`) is resolved by feature flag:
 
 - Any scheduling feature (`sched_fifo`, `sched_slo`, `sched_tailclipper`, `sched_oracle`) → `masa_policy::PolicyHooks`
 - No scheduling features → `NoopHooks`

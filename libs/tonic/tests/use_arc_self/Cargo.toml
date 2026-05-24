@@ -7,6 +7,7 @@ publish = false
 version = "0.1.0"
 
 [dependencies]
+masa = { path = "../../../masa" }
 tokio-stream = "0.1"
 prost = "0.12"
 tonic = {path = "../../tonic", features = ["gzip"]}

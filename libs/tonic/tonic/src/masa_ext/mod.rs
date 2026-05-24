@@ -2,7 +2,8 @@
 //!
 //! Hook traits come from `masa-tonic-core`, while metadata context helpers and
 //! extension traits are implemented in `masa-policy` and reexported here so
-//! existing `tonic::masa_ext::*` imports keep working.
+//! existing `tonic::masa_ext::*` imports keep working. Policy hook selection is
+//! owned by `masa::DefaultHooks`.
 
 // Re-export core hook traits and types from masa-tonic-core.
 pub use masa_tonic_core::{
@@ -16,26 +17,3 @@ pub use masa_policy::context_ext::{
     get_masa_context_from_metadata, read_context, set_masa_context_in_metadata, MasaRequestExt,
     MasaResponseExt, MasaStatusExt, MASA_CONTEXT_HEADER,
 };
-
-/// Default hooks type, selected at compile time by feature flags.
-///
-/// - No scheduling features: `NoopHooks` (zero overhead).
-/// - Any scheduling feature (`sched_fifo`, `sched_slo`, `sched_tailclipper`,
-///   `sched_oracle`):
-///   `masa_policy::PolicyHooks` with full scheduling hooks.
-#[cfg(not(any(
-    feature = "sched_fifo",
-    feature = "sched_slo",
-    feature = "sched_tailclipper",
-    feature = "sched_oracle"
-)))]
-pub type DefaultHooks = masa_tonic_core::noop::NoopHooks;
-
-/// Default hooks type, selected at compile time by feature flags.
-#[cfg(any(
-    feature = "sched_fifo",
-    feature = "sched_slo",
-    feature = "sched_tailclipper",
-    feature = "sched_oracle"
-))]
-pub type DefaultHooks = masa_policy::PolicyHooks;
