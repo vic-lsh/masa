@@ -13,10 +13,13 @@ The codebase is structured as follows:
 ```
 .
 ├── apps          # microservice applications and testbeds
-└── libs          # Masa libraries and modified libraries
+├── exp_runner    # Python experiment orchestration and analysis
+├── libs          # Masa libraries and modified libraries
+└── tests         # cross-cutting repository invariant tests
 ```
 
 Masa is implemented by modifying a few crates; these are contained in `libs`. To evaluate Masa, we have a few microservice applications in `apps`.
+Repository-wide Python checks that span multiple subsystems live in `tests`; Python experiment runner tests live in `exp_runner/tests`.
 
 
 ## Getting started
