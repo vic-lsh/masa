@@ -32,7 +32,7 @@ h2 = { version = "0.3.27", optional = true }
 itoa = "1"
 tracing = { version = "0.1", default-features = false, features = ["std"] }
 pin-project-lite = "0.2.4"
-tower-service = { path = "../../libs/tower/tower-service" }
+tower-service = "0.3"
 tokio = { path = "../tokio/tokio", features = ["sync"] }
 want = "0.3"
 masa-core = { path = "../../libs/masa-core" }
@@ -64,7 +64,7 @@ tokio = { path = "../tokio/tokio", features = [
 ] }
 tokio-test = { path = "../tokio/tokio-test" }
 tokio-util = { path = "../tokio/tokio-util", features = ["codec"] }
-tower = { path = "../../libs/tower/tower", default-features = false, features = ["make", "util"] }
+tower = { version = "0.4", default-features = false, features = ["make", "util"] }
 url = "2.2"
 
 [target.'cfg(any(target_os = "linux", target_os = "macos"))'.dev-dependencies]
