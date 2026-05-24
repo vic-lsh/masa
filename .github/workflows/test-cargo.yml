@@ -13,13 +13,19 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        features:
-          - ""
-          - "sched_fifo"
-          - "sched_slo"
-          - "sched_tailclipper,abort_slo"
-          - "sched_slo,ac_rajomon"
-          - "sched_pred,abort_slo,ac_pred,est_mean_var"
+        include:
+          - features: ""
+            cache_key: default
+          - features: "sched_fifo"
+            cache_key: sched-fifo
+          - features: "sched_slo"
+            cache_key: sched-slo
+          - features: "sched_tailclipper,abort_slo"
+            cache_key: sched-tailclipper-abort-slo
+          - features: "sched_slo,ac_rajomon"
+            cache_key: sched-slo-ac-rajomon
+          - features: "sched_pred,abort_slo,ac_pred,est_mean_var"
+            cache_key: sched-pred-abort-slo-ac-pred-est-mean-var
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@master
@@ -27,6 +33,7 @@ jobs:
           toolchain: nightly-2026-01-07
       - uses: Swatinem/rust-cache@v2
         with:
+          key: ${{ matrix.cache_key }}
           cache-on-failure: true
       - name: Install protobuf
         run: |
