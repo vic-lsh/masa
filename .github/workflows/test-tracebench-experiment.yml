@@ -1,4 +1,4 @@
-name: test-synthetic-experiment
+name: test-tracebench-experiment
 
 on:
   workflow_call:
@@ -6,10 +6,9 @@ on:
 env:
   CI: "true"
   CARGO_BUILD_JOBS: "16"
-  EXP_NAME: "ci"
 
 jobs:
-  test-synthetic-experiment:
+  test-tracebench-experiment:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -42,4 +41,4 @@ jobs:
           rustup toolchain install nightly
           cargo --version
       - run: groups $(whoami)
-      - run: ./scripts/test_synthetic_experiment.sh $EXP_NAME --deploy-mode ${{ matrix.deploy-mode }}
+      - run: ./scripts/test_tracebench_experiment.sh --deploy-mode ${{ matrix.deploy-mode }}

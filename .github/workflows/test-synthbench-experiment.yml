@@ -1,4 +1,4 @@
-name: test-mssim-experiment
+name: test-synthbench-experiment
 
 on:
   workflow_call:
@@ -6,9 +6,10 @@ on:
 env:
   CI: "true"
   CARGO_BUILD_JOBS: "16"
+  EXP_NAME: "ci"
 
 jobs:
-  test-mssim-experiment:
+  test-synthbench-experiment:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -41,4 +42,4 @@ jobs:
           rustup toolchain install nightly
           cargo --version
       - run: groups $(whoami)
-      - run: ./scripts/test_mssim_experiment.sh --deploy-mode ${{ matrix.deploy-mode }}
+      - run: ./scripts/test_synthbench_experiment.sh $EXP_NAME --deploy-mode ${{ matrix.deploy-mode }}
