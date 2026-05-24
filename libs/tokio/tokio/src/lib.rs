@@ -501,6 +501,8 @@ pub mod net;
 
 mod loom;
 
+pub(crate) mod masa;
+
 cfg_process! {
     pub mod process;
 }

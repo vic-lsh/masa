@@ -50,7 +50,7 @@ pub(crate) enum Handle {
 }
 
 #[cfg(feature = "rt")]
-pub(super) enum Context {
+pub(crate) enum Context {
     CurrentThread(current_thread::Context),
 
     #[cfg(feature = "rt-multi-thread")]
