@@ -6,9 +6,9 @@ use crate::client::GrpcService;
 use crate::transport::channel::{ResponseFuture, Svc, DEFAULT_BUFFER_SIZE};
 use crate::transport::{Endpoint, Executor};
 use http::Request;
+use masa_core::balance::Balance;
 use std::task::{Context, Poll};
 
-use tower::balance::masa_balance::Balance;
 use tower::{
     buffer::Buffer,
     util::{BoxService, Either},
@@ -19,7 +19,7 @@ use masa_core::PriorityHint;
 
 /// minimal reimplementation of crate::transport::channel::Channel:
 /// - uses a fixed list of services for load balancing and eagerly connects to them
-/// - uses our custom load balancing logic in tower (the Balance struct)
+/// - uses Masa's fixed-list round-robin load balancing helper
 #[derive(Clone)]
 #[allow(missing_debug_implementations)]
 pub struct Channel {
