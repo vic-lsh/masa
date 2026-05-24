@@ -2,12 +2,12 @@ use crate::client_registry::ClientRegistry;
 use crate::service_stubs::service_client::ServiceClient;
 use crate::RpcClient;
 use anyhow::{Context, Result};
+use masa::transport::LoadBalancedChannel;
 use sim_config::deployment::{Deployment, ServiceDiscoveryInfo};
 use sim_config::svc::ServiceName;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::task::JoinHandle;
-use tonic::transport::masa_channel::LoadBalancedChannel;
 use tracing::info;
 
 pub(crate) struct ConnectionBootstrap {

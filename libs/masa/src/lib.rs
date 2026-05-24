@@ -15,6 +15,8 @@ static NEXT_REQUEST_ID: AtomicU64 = AtomicU64::new(0);
 /// are enabled, or `masa_policy::PolicyHooks` when any scheduling feature is on.
 pub use tonic::masa_ext::DefaultHooks;
 
+pub mod transport;
+
 /// Utility function to create a Masa Context.
 ///
 /// This handles:

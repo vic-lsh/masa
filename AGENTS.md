@@ -118,7 +118,7 @@ Tonic-specific glue:
 - `mod.rs`: `DefaultHooks` type alias selected by feature flags; re-exports from `tonic-core` and `masa-policy`
 - `runtime/mod.rs`: Bridge from tonic `ParentContext` to tokio `PollHook`
 - `thread_local.rs`: Thread-local storage for parent/server context propagation
-- `transport/masa_channel/`: Masa-aware channel transport
+- `transport/masa_channel/`: Lower-level Masa-aware channel internals; application-facing load-balanced transport lives in `masa::transport`
 
 ### Patched Libraries
 The workspace patches crates.io dependencies with local modified versions (see `Cargo.toml` `[patch.crates-io]`). All must be built from local copies:

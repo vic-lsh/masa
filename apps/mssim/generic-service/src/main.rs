@@ -1,4 +1,5 @@
 use anyhow::Result;
+use masa::transport::LoadBalancedChannel;
 use masa::MethodId;
 use service_stubs::service_client::ServiceClient;
 use sim_config::deployment::Deployment;
@@ -8,7 +9,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::runtime::current_thread_queue_len;
-use tonic::transport::masa_channel::LoadBalancedChannel;
 use tonic::{transport::Server, Request, Response, Status};
 use tracing::info;
 use tracing_subscriber::layer::SubscriberExt;

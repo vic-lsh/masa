@@ -81,12 +81,17 @@ impl Service<http::Request<BoxBody>> for Channel {
 }
 
 /// A channel that load balances across a static number of replicas.
+#[deprecated(
+    since = "0.1.0",
+    note = "use masa::transport::LoadBalancedChannel for the application-facing Masa transport API"
+)]
 #[derive(Clone)]
 #[allow(missing_debug_implementations)]
 pub struct LoadBalancedChannel {
     channel: Channel,
 }
 
+#[allow(deprecated)]
 impl LoadBalancedChannel {
     /// Construct a new LoadBalancedChannel with a custom start index
     pub async fn new_from(hostname_base: String, port: u16, replicas: u8, start: u8) -> Self {
@@ -120,6 +125,7 @@ impl LoadBalancedChannel {
     }
 }
 
+#[allow(deprecated)]
 impl Service<http::Request<BoxBody>> for LoadBalancedChannel {
     type Response = http::Response<<Channel as GrpcService<BoxBody>>::ResponseBody>;
     type Error = <Channel as GrpcService<BoxBody>>::Error;

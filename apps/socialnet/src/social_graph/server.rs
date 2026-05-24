@@ -14,7 +14,7 @@ use std::collections::HashMap;
 use tonic::{Request, Response, Status};
 
 // NEW IMPORT
-use tonic::transport::masa_channel::LoadBalancedChannel;
+use masa::transport::LoadBalancedChannel;
 
 // gRPC generated modules
 pub mod social_graph {

@@ -381,7 +381,7 @@ For an application to use Masa's features, it must:
 
 ### `LoadBalancedChannel`
 
-Services connect to downstream replicas using `LoadBalancedChannel` (`libs/tonic/tonic/src/transport/masa_channel/mod.rs`). It:
+Services connect to downstream replicas using `masa::transport::LoadBalancedChannel` (`libs/masa/src/transport.rs`). It:
 *   Eagerly connects to all replicas on construction.
 *   Uses `masa_core::balance::Balance` for fixed-list round-robin load balancing.
 *   Spawns the internal buffer worker task with `PriorityHint::infra()` (highest priority), ensuring channel infrastructure is never starved by request tasks.
