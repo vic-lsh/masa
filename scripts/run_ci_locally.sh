@@ -107,25 +107,25 @@ log_info "Running SocialNet Test..."
 ./scripts/test_socialnet.sh
 log_success "SocialNet Test Passed"
 
-# 9. Synthetic Experiment (Docker)
-log_info "Running Synthetic Experiment (Docker)..."
-./scripts/test_synthetic_experiment.sh ci --deploy-mode docker
-log_success "Synthetic Experiment Passed"
+# 9. Synthbench Experiment (Docker)
+log_info "Running Synthbench Experiment (Docker)..."
+./scripts/test_synthbench_experiment.sh ci --deploy-mode docker
+log_success "Synthbench Experiment Passed"
 
-# 10. MSSIM Experiment (Docker)
-log_info "Running MSSIM Experiment (Docker)..."
-./scripts/test_mssim_experiment.sh --deploy-mode docker
-log_success "MSSIM Experiment Passed"
+# 10. Tracebench Experiment (Docker)
+log_info "Running Tracebench Experiment (Docker)..."
+./scripts/test_tracebench_experiment.sh --deploy-mode docker
+log_success "Tracebench Experiment Passed"
 
 # 11. K8s Tests (Conditional)
 if [ "$RUN_K8S" = "true" ]; then
-    log_info "Running Synthetic Experiment (Kind)..."
-    ./scripts/test_synthetic_experiment.sh ci --deploy-mode kind
-    log_success "Synthetic Experiment (Kind) Passed"
+    log_info "Running Synthbench Experiment (Kind)..."
+    ./scripts/test_synthbench_experiment.sh ci --deploy-mode kind
+    log_success "Synthbench Experiment (Kind) Passed"
 
-    log_info "Running MSSIM Experiment (Kind)..."
-    ./scripts/test_mssim_experiment.sh --deploy-mode kind
-    log_success "MSSIM Experiment (Kind) Passed"
+    log_info "Running Tracebench Experiment (Kind)..."
+    ./scripts/test_tracebench_experiment.sh --deploy-mode kind
+    log_success "Tracebench Experiment (Kind) Passed"
 fi
 
 echo -e "${GREEN}=======================================${NC}"

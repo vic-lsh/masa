@@ -3,13 +3,13 @@ use futures_lite::future;
 use hello_world::greeter_server::{Greeter, GreeterServer};
 use hello_world::{HelloReply, HelloRequest};
 use hyper::rt::{Exec, Executor};
-use masa_core::PriorityHint;
 use rand_distr::{Distribution, Normal};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use std::time::{SystemTime, UNIX_EPOCH};
 use structopt::StructOpt;
 use tonic::{transport::Server, Request, Response, Status};
+use tokio::task::TaskPriority;
 
 pub mod hello_world {
     tonic::include_proto!("helloworld");
@@ -150,11 +150,11 @@ where
     F: std::future::Future + Send + 'static,
     F::Output: Send,
 {
-    fn execute(&self, fut: F, _ddl: PriorityHint) {
+    fn execute(&self, fut: F, _ddl: TaskPriority) {
         // let bt = std::backtrace::Backtrace::capture();
         // println!("{}", bt);
 
-        let ddl = PriorityHint::new(time_now() - self.start_at + self.ddl);
+        let ddl = TaskPriority::new(time_now() - self.start_at + self.ddl);
         self.ex
             .spawn_with_prio(Compat::new(fut), ddl)
             .fallible()

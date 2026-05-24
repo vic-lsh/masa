@@ -55,9 +55,10 @@ The extraction keeps these application-facing paths stable:
 - `tonic::masa_ext::{MasaRequestExt, MasaResponseExt, MasaStatusExt,
   get_masa_context_from_metadata, set_masa_context_in_metadata, read_context}`
   reexports metadata helpers from `masa-policy::context_ext`.
-- `tonic::masa_ext::DefaultHooks` remains the compile-time policy selector:
-  no scheduling features select `masa_tonic_core::noop::NoopHooks`; scheduling
-  features select `masa_policy::PolicyHooks`.
+- `masa::DefaultHooks` is the compile-time policy selector used by generated
+  clients and servers: no scheduling features select
+  `masa_tonic_core::noop::NoopHooks`; scheduling features select
+  `masa_policy::PolicyHooks`.
 - `tonic::transport::Server::serve_with_masa` remains the server entry point
   that selects Hyper's `Exec::Masa` executor.
 - `masa::transport::LoadBalancedChannel` is the application-facing

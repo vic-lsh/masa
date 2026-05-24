@@ -22,6 +22,7 @@ console = "0.15"
 http = "0.2"
 http-body = "0.4.2"
 hyper = { path = "../../hyper/" }
+masa = { path = "../../masa" }
 prost = "0.12"
 tokio = {path = "../../tokio/tokio", features = ["rt-multi-thread", "time", "macros"]}
 tokio-stream = { path = "../../tokio/tokio-stream" }

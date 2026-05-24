@@ -38,9 +38,9 @@ members = [
   # evaluation applications
   "apps/hotel",
   "apps/socialnet",
-  "apps/synthetic",
-  "apps/mssim/generic-service",
-  "apps/mssim/sim-config",
+  "apps/synthbench",
+  "apps/tracebench/generic-service",
+  "apps/tracebench/trace-config",
   "apps/app-utils",
   "apps/app-util-macros",
   "apps/benchmark",

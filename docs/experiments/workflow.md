@@ -16,9 +16,9 @@ Each application has a committed example configuration folder that you should co
 
 **Example Config Locations:**
 *   **Hotel**: `exp/hotel/data/in/ci`
-*   **MSSIM**: `exp/mssim/data/in/e2e_test`
+*   **Tracebench**: `exp/tracebench/data/in/e2e_test`
 *   **Socialnet**: `exp/socialnet/data/in/ci`
-*   **Synthetic**: `exp/synthetic/data/in/ci`
+*   **Synthbench**: `exp/synthbench/data/in/ci`
 
 Every experiment directory **must** contain these two files:
 
@@ -48,7 +48,7 @@ Run commands from the repository root.
 ```bash
 uv run -m exp_runner run <app> <experiment_name> --plot
 ```
-*   **`<app>`**: `hotel`, `mssim`, `socialnet`, or `synthetic`.
+*   **`<app>`**: `hotel`, `tracebench`, `socialnet`, or `synthbench`.
 *   **`<experiment_name>`**: The name of the directory created in step 1.
 *   **`--plot`**: (Optional) Automatically generate plots after the run.
 *   **`--verbose`** / **`-v`**: (Optional) Enable debug logging.
@@ -86,11 +86,11 @@ A microservices-based hotel reservation system.
         ```
 *   **Additional Plots**: `uv run -m exp_runner plot-replicas hotel` (generates replica-specific metrics).
 
-### MSSIM
-A trace-driven microservice simulator.
+### Tracebench
+A trace-driven trace-driven RPC benchmark.
 
 *   **Config Files**:
-    *   **`mssim.json`**: Points to trace data and simulation parameters.
+    *   **`tracebench.json`**: Points to trace data and replay parameters.
         ```json
         {
           "callgraph_dirs": ["trace-analysis/graphs/S_14677443"],
@@ -105,8 +105,8 @@ A trace-driven microservice simulator.
         }
         ```
 
-### Synthetic
-A configurable synthetic workload for testing specific behaviors.
+### Synthbench
+A configurable synthbench workload for testing specific behaviors.
 
 *   **Config File**: `config.docker.json`
     *   Configures child service behavior (latency distributions, replicas).

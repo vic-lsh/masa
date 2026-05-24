@@ -4,7 +4,7 @@ Tests for common building logic across applications.
 This module tests shared build behavior including:
 - Build cache ID consistency across all stages
 - Feature-based cache ID generation
-- Cache ID consistency across different apps (hotel, synthetic)
+- Cache ID consistency across different apps (hotel, synthbench)
 """
 
 import tempfile
@@ -14,7 +14,7 @@ from unittest.mock import Mock, patch
 import pytest
 
 from exp_runner.runner.apps.hotel import HotelBuilder
-from exp_runner.runner.apps.synthetic import SyntheticBuilder
+from exp_runner.runner.apps.synthbench import SynthbenchBuilder
 from exp_runner.runner.apps.utils import normalize_features_to_tag
 
 # Test fixtures for different builders
@@ -29,13 +29,13 @@ BUILDERS = [
         id="hotel",
     ),
     pytest.param(
-        SyntheticBuilder,
+        SynthbenchBuilder,
         {
-            "app_name": "synthetic",
+            "app_name": "synthbench",
             "requires_app_config": False,
             "requires_gen_config": True,
         },
-        id="synthetic",
+        id="synthbench",
     ),
 ]
 

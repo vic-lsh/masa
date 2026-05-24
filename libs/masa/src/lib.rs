@@ -8,12 +8,26 @@ use std::time::Duration;
 
 static NEXT_REQUEST_ID: AtomicU64 = AtomicU64::new(0);
 
-/// The default Hooks implementation, selected at compile time.
+/// The default Hooks implementation, selected at compile time by Masa features.
 ///
-/// This is a convenience re-export of `tonic::masa_ext::DefaultHooks`, which
-/// resolves to `NoopHooks` (zero overhead) when no scheduling features
-/// are enabled, or `masa_policy::PolicyHooks` when any scheduling feature is on.
-pub use tonic::masa_ext::DefaultHooks;
+/// No scheduling features select `NoopHooks` (zero overhead). Any scheduling
+/// feature selects `masa_policy::PolicyHooks` with full scheduling hooks.
+#[cfg(not(any(
+    feature = "sched_fifo",
+    feature = "sched_slo",
+    feature = "sched_tailclipper",
+    feature = "sched_oracle"
+)))]
+pub type DefaultHooks = masa_tonic_core::noop::NoopHooks;
+
+/// The default Hooks implementation, selected at compile time by Masa features.
+#[cfg(any(
+    feature = "sched_fifo",
+    feature = "sched_slo",
+    feature = "sched_tailclipper",
+    feature = "sched_oracle"
+))]
+pub type DefaultHooks = masa_policy::PolicyHooks;
 
 pub mod transport;
 

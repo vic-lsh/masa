@@ -17,14 +17,14 @@ jobs:
     uses: ./.github/workflows/test-e2e-hotel.yml
     secrets: inherit
 
-  test-mssim-experiment:
-    uses: ./.github/workflows/test-mssim-experiment.yml
+  test-tracebench-experiment:
+    uses: ./.github/workflows/test-tracebench-experiment.yml
     secrets: inherit
 
   test-socialnet:
     uses: ./.github/workflows/test-socialnet.yml
     secrets: inherit
 
-  test-synthetic-experiment:
-    uses: ./.github/workflows/test-synthetic-experiment.yml
+  test-synthbench-experiment:
+    uses: ./.github/workflows/test-synthbench-experiment.yml
     secrets: inherit

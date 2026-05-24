@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "synthbench.fullname" . }}-frontend
+  labels:
+    {{- include "synthbench.labels" . | nindent 4 }}
+    app.kubernetes.io/component: frontend
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - port: {{ .Values.service.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "synthbench.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: frontend

@@ -4,7 +4,6 @@ fn main() {
     tonic_build::configure()
         .disable_comments("test.Service1")
         .disable_comments("test.Service1.Rpc1")
-        .default_hooks_path("masa::DefaultHooks")
         .build_client(true)
         .build_server(true)
         .compile_with_config(config, &["proto/test.proto"], &["proto"])
