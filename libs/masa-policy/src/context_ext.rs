@@ -15,10 +15,15 @@ pub const MASA_CONTEXT_HEADER: &str = masa_core::MASA_CONTEXT_HEADER;
 pub fn get_masa_context_from_metadata(
     metadata: &tonic_core::metadata::MetadataMap,
 ) -> Option<Context> {
-    metadata
-        .get(MASA_CONTEXT_HEADER)
-        .and_then(|v| v.to_str().ok())
-        .map(Context::from_header_string)
+    metadata.get(MASA_CONTEXT_HEADER).map(|value| {
+        let ctx_str = value.to_str().unwrap_or_else(|err| {
+            panic!(
+                "{}",
+                masa_core::invalid_context_header_metadata_message(err)
+            )
+        });
+        Context::from_header_string(ctx_str)
+    })
 }
 
 /// Set the MASA context in metadata.
@@ -32,7 +37,16 @@ pub fn set_masa_context_in_metadata(
 
 /// Read the MASA context from the HTTP request headers.
 pub fn read_context<B>(req: &http::Request<B>) -> Context {
-    let ctx_str = req.headers()[MASA_CONTEXT_HEADER].to_str().unwrap();
+    let ctx = req
+        .headers()
+        .get(MASA_CONTEXT_HEADER)
+        .unwrap_or_else(|| panic!("{}", masa_core::MISSING_CONTEXT_HEADER_MESSAGE));
+    let ctx_str = ctx.to_str().unwrap_or_else(|err| {
+        panic!(
+            "{}",
+            masa_core::invalid_context_header_metadata_message(err)
+        )
+    });
     Context::from_header_string(ctx_str)
 }
 
@@ -146,5 +160,61 @@ impl MasaStatusExt for Status {
 
     fn get_masa_context(&self) -> Option<Context> {
         get_masa_context_from_metadata(self.metadata())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use http::HeaderValue;
+    use masa_core::ContextBuilder;
+
+    #[test]
+    #[should_panic(expected = "missing MASA context header `ctx`")]
+    fn read_context_panics_with_explicit_message_when_missing() {
+        let req = http::Request::new(());
+
+        let _ = read_context(&req);
+    }
+
+    #[test]
+    #[should_panic(expected = "invalid MASA context header `ctx`: invalid ASCII/metadata")]
+    fn read_context_panics_with_explicit_message_for_invalid_ascii() {
+        let mut req = http::Request::new(());
+        req.headers_mut().insert(
+            MASA_CONTEXT_HEADER,
+            HeaderValue::from_bytes(b"\xff").unwrap(),
+        );
+
+        let _ = read_context(&req);
+    }
+
+    #[test]
+    #[should_panic(expected = "invalid MASA context header `ctx`: invalid base64")]
+    fn read_context_panics_with_explicit_message_for_invalid_base64() {
+        let mut req = http::Request::new(());
+        req.headers_mut()
+            .insert(MASA_CONTEXT_HEADER, HeaderValue::from_static("not-base64"));
+
+        let _ = read_context(&req);
+    }
+
+    #[test]
+    fn read_context_preserves_valid_context() {
+        let ctx = ContextBuilder::new("test.Service", 7)
+            .slo(100)
+            .gateway_entry(10)
+            .deadline(110)
+            .build();
+        let req = http::Request::builder()
+            .header(MASA_CONTEXT_HEADER, ctx.to_header_string())
+            .body(())
+            .unwrap();
+
+        let decoded = read_context(&req);
+
+        assert_eq!(decoded.api(), ctx.api());
+        assert_eq!(decoded.request_id(), ctx.request_id());
+        assert_eq!(decoded.deadline(), ctx.deadline());
     }
 }

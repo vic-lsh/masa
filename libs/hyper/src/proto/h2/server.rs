@@ -29,8 +29,6 @@ use crate::service::HttpService;
 use crate::upgrade::{OnUpgrade, Pending, Upgraded};
 use crate::{Body, Response};
 
-use masa_core::Context as MasaContext;
-
 // Our defaults are chosen for the "majority" case, which usually are not
 // resource constrained, and so the spec default of 64kb can be too limiting
 // for performance.
@@ -346,21 +344,14 @@ where
                             req.extensions_mut().insert(Protocol::from_inner(protocol));
                         }
 
-                        if let Some(ctx) = req.headers().get(masa_core::MASA_CONTEXT_HEADER) {
-                            let ctx_str = ctx.to_str().unwrap();
-                            let ctx = MasaContext::from_header_string(ctx_str);
-                            let prio = ctx.prio_hint();
-                            // [NOTE] Into executor.
-                            let fut = H2Stream::new(service.call(req), connect_parts, respond);
-                            // [TODO:Weixin] Skip if the deadline is already passed.
-                            // if time_now() > prio.value() {
-                            //     panic!("Priority is expired");
-                            // }
-                            exec.execute_h2stream_with_prio(fut, prio);
-                        } else {
-                            let fut = H2Stream::new(service.call(req), connect_parts, respond);
-                            exec.execute_h2stream(fut);
-                        }
+                        let prio = exec.h2_stream_priority(req.headers());
+                        // [NOTE] Into executor.
+                        let fut = H2Stream::new(service.call(req), connect_parts, respond);
+                        // [TODO:Weixin] Skip if the deadline is already passed.
+                        // if time_now() > prio.value() {
+                        //     panic!("Priority is expired");
+                        // }
+                        exec.execute_h2stream_with_prio(fut, prio);
                     }
                     Some(Err(e)) => {
                         return Poll::Ready(Err(crate::Error::new_h2(e)));

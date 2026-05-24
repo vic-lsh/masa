@@ -14,13 +14,34 @@ use crate::rt::Executor;
 use crate::server::server::{new_svc::NewSvcTask, Watcher};
 #[cfg(all(feature = "server", any(feature = "http1", feature = "http2")))]
 use crate::service::HttpService;
+#[cfg(feature = "server")]
+use http::HeaderMap;
+#[cfg(feature = "server")]
+use masa_core::Context as MasaContext;
 use masa_core::PriorityHint;
 
 #[cfg(feature = "server")]
 pub trait ConnStreamExec<F, B: HttpBody>: Clone {
-    fn execute_h2stream(&mut self, fut: H2Stream<F, B>);
+    fn h2_stream_priority(&self, _headers: &HeaderMap) -> PriorityHint {
+        PriorityHint::infra()
+    }
 
     fn execute_h2stream_with_prio(&mut self, fut: H2Stream<F, B>, prio: PriorityHint);
+}
+
+#[cfg(feature = "server")]
+fn masa_priority_from_headers(headers: &HeaderMap) -> PriorityHint {
+    let ctx = headers
+        .get(masa_core::MASA_CONTEXT_HEADER)
+        .unwrap_or_else(|| panic!("{}", masa_core::MISSING_CONTEXT_HEADER_MESSAGE));
+    let ctx_str = ctx.to_str().unwrap_or_else(|err| {
+        panic!(
+            "{}",
+            masa_core::invalid_context_header_metadata_message(err)
+        )
+    });
+
+    MasaContext::from_header_string(ctx_str).prio_hint()
 }
 
 #[cfg(all(feature = "server", any(feature = "http1", feature = "http2")))]
@@ -46,6 +67,14 @@ pub enum Exec {
 // ===== impl Exec =====
 
 impl Exec {
+    #[cfg(feature = "server")]
+    pub(crate) fn h2_stream_priority(&self, headers: &HeaderMap) -> PriorityHint {
+        match self {
+            Exec::Masa => masa_priority_from_headers(headers),
+            Exec::Default | Exec::Executor(_) => PriorityHint::infra(),
+        }
+    }
+
     pub(crate) fn execute<F>(&self, fut: F, prio: PriorityHint)
     where
         F: Future<Output = ()> + Send + 'static,
@@ -92,8 +121,8 @@ where
     H2Stream<F, B>: Future<Output = ()> + Send + 'static,
     B: HttpBody,
 {
-    fn execute_h2stream(&mut self, fut: H2Stream<F, B>) {
-        self.execute(fut, PriorityHint::infra())
+    fn h2_stream_priority(&self, headers: &HeaderMap) -> PriorityHint {
+        Exec::h2_stream_priority(self, headers)
     }
 
     fn execute_h2stream_with_prio(&mut self, fut: H2Stream<F, B>, prio: PriorityHint) {
@@ -122,10 +151,6 @@ where
     H2Stream<F, B>: Future<Output = ()>,
     B: HttpBody,
 {
-    fn execute_h2stream(&mut self, fut: H2Stream<F, B>) {
-        self.execute(fut, PriorityHint::infra())
-    }
-
     fn execute_h2stream_with_prio(&mut self, fut: H2Stream<F, B>, prio: PriorityHint) {
         self.execute(fut, prio)
     }
@@ -141,6 +166,63 @@ where
 {
     fn execute_new_svc(&mut self, fut: NewSvcTask<I, N, S, E, W>) {
         self.execute(fut, PriorityHint::infra())
+    }
+}
+
+#[cfg(all(test, feature = "server"))]
+mod masa_context_tests {
+    use super::*;
+    use http::HeaderValue;
+    use masa_core::ContextBuilder;
+
+    #[test]
+    fn default_executor_ignores_missing_context() {
+        let headers = HeaderMap::new();
+
+        assert_eq!(
+            Exec::Default.h2_stream_priority(&headers),
+            PriorityHint::infra()
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "missing MASA context header `ctx`")]
+    fn masa_executor_requires_context() {
+        let headers = HeaderMap::new();
+
+        let _ = Exec::Masa.h2_stream_priority(&headers);
+    }
+
+    #[test]
+    #[should_panic(expected = "invalid MASA context header `ctx`: invalid ASCII/metadata")]
+    fn masa_executor_panics_on_invalid_ascii_context() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            masa_core::MASA_CONTEXT_HEADER,
+            HeaderValue::from_bytes(b"\xff").unwrap(),
+        );
+
+        let _ = Exec::Masa.h2_stream_priority(&headers);
+    }
+
+    #[test]
+    fn masa_executor_uses_context_priority_hint() {
+        let ctx = ContextBuilder::new("test.Service", 9)
+            .slo(100)
+            .gateway_entry(10)
+            .deadline(110)
+            .prio_hint(PriorityHint::new(42))
+            .build();
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            masa_core::MASA_CONTEXT_HEADER,
+            HeaderValue::from_str(&ctx.to_header_string()).unwrap(),
+        );
+
+        assert_eq!(
+            Exec::Masa.h2_stream_priority(&headers),
+            PriorityHint::new(42)
+        );
     }
 }
 
