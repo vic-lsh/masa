@@ -1,11 +1,9 @@
-use masa_core::{Context, ContextBuilder};
-use tonic::{
-    masa_ext::{
-        get_masa_context_from_metadata, read_context, set_masa_context_in_metadata, MasaRequestExt,
-        MasaResponseExt, MasaStatusExt, MASA_CONTEXT_HEADER,
-    },
-    Request, Response, Status,
+use masa::{
+    get_masa_context_from_metadata, read_context, set_masa_context_in_metadata, MasaRequestExt,
+    MasaResponseExt, MasaStatusExt, MASA_CONTEXT_HEADER,
 };
+use masa_core::{Context, ContextBuilder};
+use tonic::{Request, Response, Status};
 
 fn test_context(request_id: u64) -> Context {
     ContextBuilder::new("metadata.Echo", request_id)
@@ -35,7 +33,7 @@ fn metadata_helpers_round_trip_without_network() {
 }
 
 #[test]
-fn masa_ext_reexports_request_response_status_helpers() {
+fn masa_reexports_request_response_status_helpers() {
     let ctx = test_context(10);
 
     let mut request = Request::new(());
@@ -83,7 +81,7 @@ fn masa_ext_reexports_request_response_status_helpers() {
 }
 
 #[test]
-fn masa_ext_reexports_http_header_reader() {
+fn masa_reexports_http_header_reader() {
     let ctx = test_context(11);
     let request = http::Request::builder()
         .header(MASA_CONTEXT_HEADER, ctx.to_header_string())

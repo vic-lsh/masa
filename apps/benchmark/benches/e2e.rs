@@ -1,7 +1,7 @@
 use criterion::{criterion_group, criterion_main, Criterion};
 
+use masa::MasaRequestExt;
 use std::time::Duration;
-use tonic::masa_ext::MasaRequestExt;
 use tonic::{transport::Server, Request, Response, Status};
 
 pub mod frontend {

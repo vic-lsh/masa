@@ -15,8 +15,9 @@ pub mod policy_params;
 pub mod registry;
 
 pub use context_ext::{
-    get_masa_context_from_metadata, read_context, set_masa_context_in_metadata, MasaRequestExt,
-    MasaResponseExt, MasaStatusExt, MASA_CONTEXT_HEADER,
+    get_masa_context_from_metadata, read_context, read_context_from_headers,
+    read_priority_from_headers, set_masa_context_in_metadata, MasaRequestExt, MasaResponseExt,
+    MasaStatusExt, MASA_CONTEXT_HEADER,
 };
 pub use hooks::{ChildContext, ParentContext, PolicyHooks, ServerContext};
 pub use registry::{MethodId, MethodRegistry};

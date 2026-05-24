@@ -184,23 +184,22 @@ features = [
 ]
 
 [cargo."libs/tonic/tonic/Cargo.toml".deps]
-sched_slo = ["masa", "masa-core/sched_slo", "masa-policy/sched_slo", "tokio/sched_prio"]
+sched_slo = ["masa", "masa-core/sched_slo", "tokio/sched_prio"]
 sched_tailclipper = [
   "masa",
   "masa-core/sched_tailclipper",
-  "masa-policy/sched_tailclipper",
   "tokio/sched_prio",
   "tokio/tailclipper",
 ]
-sched_fifo = ["masa", "masa-core/sched_fifo", "masa-policy/sched_fifo", "tokio/sched_fifo"]
-sched_oracle = ["masa", "masa-core/sched_oracle", "masa-policy/sched_oracle", "tokio/sched_prio"]
-abort_slo = ["masa-core/abort_slo", "masa-policy/abort_slo"]
-abort_slack = ["masa-core/abort_slack", "masa-policy/abort_slack"]
-signal_slack = ["masa-core/signal_slack", "masa-policy/signal_slack"]
-estimator = ["masa-core/estimator", "masa-policy/estimator"]
-sched_pred = ["estimator", "sched_slo", "masa-core/sched_pred", "masa-policy/sched_pred"]
-ac_pred = ["estimator", "masa-core/ac_pred", "masa-policy/ac_pred"]
-ac_rajomon = ["masa-core/ac_rajomon", "masa-policy/ac_rajomon"]
+sched_fifo = ["masa", "masa-core/sched_fifo", "tokio/sched_fifo"]
+sched_oracle = ["masa", "masa-core/sched_oracle", "tokio/sched_prio"]
+abort_slo = ["masa-core/abort_slo"]
+abort_slack = ["masa-core/abort_slack"]
+signal_slack = ["masa-core/signal_slack"]
+estimator = ["masa-core/estimator"]
+sched_pred = ["estimator", "sched_slo", "masa-core/sched_pred"]
+ac_pred = ["estimator", "masa-core/ac_pred"]
+ac_rajomon = ["masa-core/ac_rajomon"]
 
 [cargo."libs/masa/Cargo.toml"]
 features = [
@@ -222,35 +221,32 @@ features = [
 ]
 
 [cargo."libs/masa/Cargo.toml".deps]
-sched_slo = ["masa-core/sched_slo", "tokio/sched_prio", "tonic/sched_slo", "masa-policy/sched_slo"]
+sched_slo = ["masa-core/sched_slo", "tokio/sched_prio", "masa-policy/sched_slo"]
 sched_tailclipper = [
   "masa-core/sched_tailclipper",
   "tokio/sched_prio",
   "tokio/tailclipper",
-  "tonic/sched_tailclipper",
   "masa-policy/sched_tailclipper",
 ]
-sched_fifo = ["masa-core/sched_fifo", "tokio/sched_fifo", "tonic/sched_fifo", "masa-policy/sched_fifo"]
+sched_fifo = ["masa-core/sched_fifo", "tokio/sched_fifo", "masa-policy/sched_fifo"]
 sched_oracle = [
   "masa-core/sched_oracle",
   "tokio/sched_prio",
-  "tonic/sched_oracle",
   "masa-policy/sched_oracle",
 ]
-sched_pred = ["masa-core/sched_pred", "tonic/sched_pred", "sched_slo", "masa-policy/sched_pred"]
-abort_slo = ["masa-core/abort_slo", "tonic/abort_slo", "masa-policy/abort_slo"]
-abort_slack = ["estimator", "masa-core/abort_slack", "tonic/abort_slack", "masa-policy/abort_slack"]
+sched_pred = ["masa-core/sched_pred", "sched_slo", "masa-policy/sched_pred"]
+abort_slo = ["masa-core/abort_slo", "masa-policy/abort_slo"]
+abort_slack = ["estimator", "masa-core/abort_slack", "masa-policy/abort_slack"]
 signal_slack = [
   "estimator",
   "ac_pred",
   "masa-core/signal_slack",
-  "tonic/signal_slack",
   "masa-policy/signal_slack",
 ]
-estimator = ["masa-core/estimator", "tonic/estimator", "masa-policy/estimator"]
-est_rms = ["tonic/est_rms", "masa-policy/est_rms"]
-est_hist = ["tonic/est_hist", "masa-policy/est_hist"]
-est_mean_var = ["tonic/est_mean_var", "masa-policy/est_mean_var"]
-ac_pred = ["masa-core/ac_pred", "tonic/ac_pred", "masa-policy/ac_pred"]
-ac_rajomon = ["masa-core/ac_rajomon", "tonic/ac_rajomon", "masa-policy/ac_rajomon"]
-trace_queue_latency = ["tonic/trace_queue_latency", "masa-policy/trace_queue_latency"]
+estimator = ["masa-core/estimator", "masa-policy/estimator"]
+est_rms = ["masa-policy/est_rms"]
+est_hist = ["masa-policy/est_hist"]
+est_mean_var = ["masa-policy/est_mean_var"]
+ac_pred = ["masa-core/ac_pred", "masa-policy/ac_pred"]
+ac_rajomon = ["masa-core/ac_rajomon", "masa-policy/ac_rajomon"]
+trace_queue_latency = ["masa-policy/trace_queue_latency"]
