@@ -17,7 +17,7 @@ Before tuning, the structural feedback loop must be cut. When `PredAdmissionRej`
 
 **Fix**: Added `self_rejected: AtomicBool` to `PredAdmissionLayer`. Set in `before_child_rpc` when Layer 2 rejects. Checked in `finalize()` to skip `record_outcome`.
 
-**File**: `libs/masa-policy/src/layer/admission/predictive.rs`
+**File**: `libs/masa-policy/src/layer/admission/predictive/mod.rs`
 
 ## Iteration Phases
 
@@ -115,7 +115,7 @@ Each iteration appends an entry below in this format:
 **Params changed**: none — code change only
 **Hypothesis**: Counting our own admission rejections as early returns creates a self-reinforcing loop where rejection inflates `er_rate` and triggers more rejection.
 **Expectation**: After fix, `er_rate` reflects only genuine downstream early returns, not the controller's own actions.
-**Setup**: Code change to `libs/masa-policy/src/layer/admission/predictive.rs` — added `self_rejected: AtomicBool`, set on Layer 2 rejection in `before_child_rpc`, checked in `finalize` to skip `record_outcome`.
+**Setup**: Code change to `libs/masa-policy/src/layer/admission/predictive/mod.rs` — added `self_rejected: AtomicBool`, set on Layer 2 rejection in `before_child_rpc`, checked in `finalize` to skip `record_outcome`.
 **Result**: Unit tests pass (`cargo test -p masa-policy --features sched_slo,ac_pred,est_mean_var -- predictive`).
 **Analysis**: The fix is structurally sound — only requests admitted by AC contribute outcomes to `record_outcome`. Whether it actually breaks the spiral in practice depends on Phase 2 experiments.
 **Conclusion**: Keep. Proceed to Phase 1.

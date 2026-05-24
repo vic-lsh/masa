@@ -167,10 +167,10 @@ For a complete request lifecycle:
 ### Policy Implementation
 All scheduling policies are unified into `PolicyHooks` (`libs/masa-policy/src/hooks.rs`), which dispatches to composable layers:
 *   **`E2eDeadlineGuardLayer`** (`layer/e2e_deadline_guard.rs`): Checks deadline in `before_poll`/`after_poll`; aborts past-deadline requests. Enabled by `abort_slo` feature.
-*   **`PredAdmissionLayer`** (`layer/admission/predictive.rs`): Computes local deadlines via latency estimates, tightens child deadlines, and performs predictive admission control. Enabled by `estimator` feature.
-*   **`RajomonLayer`** (`layer/admission/rajomon.rs`): Token-bucket admission control with server-side price signals. Enabled by `ac_rajomon` feature.
+*   **`PredAdmissionLayer`** (`layer/admission/predictive/mod.rs`): Computes local deadlines via latency estimates, tightens child deadlines, and performs predictive admission control. Enabled by `estimator` feature.
+*   **`RajomonLayer`** (`layer/admission/rajomon/mod.rs`): Token-bucket admission control with server-side price signals. Enabled by `ac_rajomon` feature.
 *   **`QueueLatencyLayer`** (`layer/queue_latency.rs`): Tracks queue latency across the call graph via `x-queue-latency` headers.
-*   **`NoopLayer`** (`layer/admission/mod.rs`): Zero-cost no-op, used when no admission control layer is active.
+*   **`NoopLayer`** (`layer/admission/noop.rs`): Zero-cost no-op, used when no admission control layer is active.
 *   **`NoopHooks`** (`libs/masa-tonic-core/src/noop.rs`): Selected when no scheduling feature is active.
 
 ### Client Code Generation
@@ -383,7 +383,7 @@ For an application to use Masa's features, it must:
 
 Services connect to downstream replicas using `LoadBalancedChannel` (`libs/tonic/tonic/src/transport/masa_channel/mod.rs`). It:
 *   Eagerly connects to all replicas on construction.
-*   Uses a custom `tower::balance::masa_balance::Balance` for round-robin load balancing.
+*   Uses `masa_core::balance::Balance` for fixed-list round-robin load balancing.
 *   Spawns the internal buffer worker task with `PriorityHint::infra()` (highest priority), ensuring channel infrastructure is never starved by request tasks.
 
 ### `x-queue-latency` Response Header

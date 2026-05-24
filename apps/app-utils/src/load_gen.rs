@@ -515,7 +515,7 @@ where
         // before `map_response` consumes the result. The server's `finalize`
         // hook writes the price into the response metadata on Ok and into the
         // Status metadata on Err
-        // (libs/masa-policy/src/layer/admission/rajomon.rs:397-405), and the
+        // (libs/masa-policy/src/layer/admission/rajomon/mod.rs), and the
         // Go reference reads it regardless of err
         // (3rd_party/rajomon/rajomon.go:181-189). Reading only from successful
         // responses creates a starvation feedback loop: a method whose

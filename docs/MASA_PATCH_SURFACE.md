@@ -15,7 +15,7 @@ Applications
   |
   +-- masa                         facade and feature propagation
   |     |
-  |     +-- masa-core              Context, PriorityHint, timing, estimators
+  |     +-- masa-core              Context, PriorityHint, timing, estimators, fixed-list balance
   |     +-- masa-policy            PolicyHooks, layers, metadata helpers
   |     |     |
   |     |     +-- masa-core
@@ -33,7 +33,7 @@ Applications
         +-- masa-core              context serialization and priorities
         +-- hyper                  H2 stream priority extraction before spawn
         +-- tokio                  priority task spawn and current-thread scheduler
-        +-- tower                  transport buffering and current masa_balance helper
+        +-- tower                  transport buffering
 
 tonic-build
   |
@@ -71,7 +71,7 @@ need to know whether a hook implementation came from `masa-tonic-core`,
 
 ## Moved Out Of Vendored Tonic And Tower
 
-The following Masa logic has already moved out of vendored Tonic:
+The following Masa logic has already moved out of vendored Tonic or Tower:
 
 - Hook traits (`Hooks`, `ServerHooks`, `ParentHooks`, `ClientHooks`) moved to
   `libs/masa-tonic-core/src/lib.rs`.
@@ -86,11 +86,9 @@ The following Masa logic has already moved out of vendored Tonic:
   `MasaStatusExt` moved to `libs/masa-policy/src/context_ext.rs`.
 - Scheduling, estimation, deadline guard, queue latency, and admission control
   layers moved to `libs/masa-policy/src/layer/`.
-
-Tower has not yet been fully cleared of Masa code. The current
-`tower::balance::masa_balance::Balance` helper remains because
-`LoadBalancedChannel` still imports it directly. Moving that helper is tied to
-the `LoadBalancedChannel` migration described below.
+- The fixed-list round-robin balance helper moved out of vendored Tower into
+  `libs/masa-core/src/balance.rs`; `LoadBalancedChannel` now imports
+  `masa_core::balance::Balance`.
 
 ## Remaining Vendored Patch Surface
 
@@ -100,7 +98,7 @@ the `LoadBalancedChannel` migration described below.
 | Hyper HTTP/2 stream priority before spawn | `libs/hyper/src/common/exec.rs`, `libs/hyper/src/proto/h2/server.rs` | Hyper is the layer that sees a new HTTP/2 stream and its headers before the stream future is spawned. Masa must read the `ctx` header and pass `PriorityHint` into the executor at that moment so first-poll ordering is correct. Waiting until Tonic receives the request is too late for initial scheduling. | Unit tests in `libs/hyper/src/common/exec.rs`; end-to-end priority behavior in `libs/tonic/tests/masa_integration_tests/tests/serve_behavior.rs`; feature-matrix compile coverage from `scripts/check.sh`. |
 | Tonic unary handler-boundary hooks | `libs/tonic/tonic/src/server/grpc.rs`, `libs/tonic/tonic-build/src/client.rs`, `libs/tonic/tonic-build/src/server.rs`, `libs/tonic/tonic-build/src/code_gen.rs`, `libs/tonic/tonic-build/src/prost.rs` | Masa hooks must run at exact Tonic boundaries: create a server context before handler execution, set parent context before each handler poll, reset it after each poll, call child RPC hooks around generated client calls, and run finalize hooks before and after response serialization. These boundaries are not exposed as stable upstream extension points. | `libs/tonic/tests/masa_integration_tests/tests/masa_context.rs`, `libs/tonic/tests/masa_integration_tests/tests/metadata_helpers.rs`, and feature-specific policy tests in `libs/tonic/tests/masa_integration_tests/tests/policy_behavior.rs`. |
 | Tonic executor glue | `libs/tonic/tonic/src/transport/server/mod.rs`, `libs/tonic/tonic/src/transport/service/executor.rs` | Applications need an explicit `serve_with_masa` entry point that selects Hyper's Masa executor without changing ordinary `serve` behavior. The shared executor trait also carries `PriorityHint` so internal transport workers can choose infrastructure priority where needed. | `libs/tonic/tests/masa_integration_tests/tests/serve_behavior.rs` verifies `serve_with_masa` priority behavior; application builds in `scripts/check.sh` verify the public API remains usable. |
-| `LoadBalancedChannel` and Tower balance helper | `libs/tonic/tonic/src/transport/masa_channel/mod.rs`, `libs/tower/tower/src/balance/masa_balance.rs`, `libs/tower/tower/src/balance/mod.rs` | Applications and Helm/experiment tooling rely on the current static replica naming, eager connection behavior, round-robin balancing, and infrastructure-priority buffer worker. The channel can move later, but only after the replacement preserves these deployment contracts and Tonic `GrpcService` compatibility. | Current coverage is indirect through application compile/e2e paths that instantiate `LoadBalancedChannel`, plus mssim service tests in `apps/mssim/generic-service/src/core.rs` that inject it through `new_from_service_name`. Before moving this code, add dedicated coverage for replica expansion, round-robin order, Docker Compose service-name mode, connection retry behavior, and buffer-worker priority. |
+| `LoadBalancedChannel` | `libs/tonic/tonic/src/transport/masa_channel/mod.rs` | Applications and Helm/experiment tooling rely on the current static replica naming, eager connection behavior, use of the Masa fixed-list round-robin balancer, and infrastructure-priority buffer worker. The channel can move later, but only after the replacement preserves these deployment contracts and Tonic `GrpcService` compatibility. | `libs/masa-core/src/balance.rs` owns unit coverage for round-robin order. Current channel coverage is indirect through application compile/e2e paths that instantiate `LoadBalancedChannel`, plus mssim service tests in `apps/mssim/generic-service/src/core.rs` that inject it through `new_from_service_name`. Before moving this code, add dedicated coverage for replica expansion, Docker Compose service-name mode, connection retry behavior, and buffer-worker priority. |
 
 ## Code That Can Move Later
 
@@ -110,8 +108,6 @@ The following code is intended to be movable once validation exists:
   if the new type still implements the required Tonic client service traits,
   preserves replica naming and Docker Compose service-name behavior, and keeps
   the buffer worker at infrastructure priority.
-- `tower::balance::masa_balance::Balance` can move with `LoadBalancedChannel`
-  once the channel no longer imports it through `tower::balance`.
 - Some generated-code hook calls could shrink if upstream Tonic exposes stable
   client and server lifecycle hooks at the same boundaries.
 - `serve_with_masa` could become an extension trait if Hyper and Tonic expose a
