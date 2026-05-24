@@ -12,7 +12,7 @@ import hashlib
 
 # Default estimator type when a slack-related flag is present but no explicit
 # est_* flag is given.  Must stay in sync with the Rust compile-time default
-# in libs/masa-policy/src/layer/est/estimator.rs (LatencyMeanVar fallback).
+# in libs/masa-policy/src/layer/est/default_estimator.rs (LatencyMeanVar fallback).
 DEFAULT_EST = "mean_var"
 
 # ── flag → (field, value) mapping ──────────────────────────────────────────

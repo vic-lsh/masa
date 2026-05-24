@@ -14,7 +14,7 @@ compile_error!("Features 'est_hist' and 'est_mean_var' cannot be enabled simulta
 #[cfg(any(feature = "est_rms", feature = "est_hist", feature = "est_mean_var"))]
 #[cfg(not(feature = "estimator"))]
 compile_error!(
-    "Features 'est_rms', 'est_hist', or 'est_mean_var' require the 'est' feature to be enabled"
+    "Features 'est_rms', 'est_hist', or 'est_mean_var' require the 'estimator' feature to be enabled"
 );
 
 // --- Default latency estimator type alias ---

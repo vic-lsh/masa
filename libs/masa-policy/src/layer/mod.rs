@@ -29,9 +29,6 @@ pub(crate) mod admission;
 #[cfg(feature = "estimator")]
 pub(crate) mod est;
 
-#[cfg(feature = "estimator")]
-pub(crate) mod estimation;
-
 mod e2e_deadline_guard;
 mod oracle;
 mod queue_latency;
@@ -146,7 +143,7 @@ pub(crate) trait LayerChild: Send + Sync + Clone + std::fmt::Debug {
 // ── Estimation layer type alias ────────────────────────────────────────
 
 #[cfg(feature = "estimator")]
-pub(crate) use estimation::EstimationLayer;
+pub(crate) use est::EstimationLayer;
 
 #[cfg(not(feature = "estimator"))]
 pub(crate) use self::est_noop::NoopEstLayer as EstimationLayer;
