@@ -38,7 +38,7 @@ Application Cargo.toml (e.g., apps/hotel --features sched_slo)
 
 Note: `sched_prio` remains as a tokio-internal flag that controls the priority queue implementation. User-facing flags (`sched_slo`, `sched_pred`, `sched_tailclipper`, `sched_oracle`) activate it internally.
 
-The root `Cargo.toml` `[patch.crates-io]` section replaces 8 upstream crates (`tokio`, `tokio-util`, `tokio-stream`, `tokio-test`, `tokio-macros`, `hyper`, `tower`, `tower-service`, `tower-layer`) with local modified versions. All must be built from local copies.
+The root `Cargo.toml` `[patch.crates-io]` section replaces the upstream Tokio family (`tokio`, `tokio-util`, `tokio-stream`, `tokio-test`, `tokio-macros`) and `hyper` with local modified versions. Tower crates come from crates.io.
 
 ### `DefaultHooks` Selection
 

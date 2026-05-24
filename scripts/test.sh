@@ -158,8 +158,6 @@ packages=(
     # "tokio-util"
     # "tokio-io-timeout"
     # "tokio-openssl"
-    "tower"
-
     # our evaluation apps test suite
     "hotel"
     "socialnet"
