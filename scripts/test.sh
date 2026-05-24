@@ -155,8 +155,6 @@ packages=(
     # "tokio-util"
     # "tokio-io-timeout"
     # "tokio-openssl"
-    "tower"
-
     # our evaluation apps test suite
     "hotel"
     "socialnet"
@@ -171,7 +169,6 @@ packages=(
 declare -A package_features=(
     ["tokio"]="--features full"
     ["tokio-util"]="--features full"
-    ["tower"]="--all-features"
 )
 
 # Testing by package name can be ambiguous (e.g., we have a local crate X and
