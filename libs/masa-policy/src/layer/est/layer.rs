@@ -9,12 +9,12 @@ use std::task::Poll;
 use masa_core::{Context, PriorityHint, RootMethod, ABORT_SLACK};
 use tonic_core::{Code, CowGrpcMethod, Response, Status};
 
-use super::est::estimator::DefaultLatencyEstimator;
-use super::est::state::{
+use super::super::{ChildRpcContext, Layer, LayerChild, LayerServer};
+use super::default_estimator::DefaultLatencyEstimator;
+use super::state::{
     is_early_return_response, ChildRPCTracker, EstimationTracker, LatencyEstimators,
     RequestMetadataTracker,
 };
-use super::{ChildRpcContext, Layer, LayerChild, LayerServer};
 use crate::MethodRegistry;
 
 // ── Server ──────────────────────────────────────────────────────────────
@@ -96,7 +96,7 @@ impl Layer for EstimationLayer {
             }
         }
 
-        super::est::signal_slack::mark_if_late(ctx, &self.request_metadata);
+        super::signal_slack::mark_if_late(ctx, &self.request_metadata);
 
         #[cfg(feature = "sched_pred")]
         {
@@ -215,7 +215,7 @@ impl Layer for EstimationLayer {
                 }
             }
         }
-        super::est::signal_slack::mark_if_late(ctx, &self.request_metadata);
+        super::signal_slack::mark_if_late(ctx, &self.request_metadata);
         Ok(())
     }
 
@@ -235,7 +235,7 @@ impl Layer for EstimationLayer {
     fn finalize<Ret>(&self, ctx: &mut Context, result: &mut Result<Response<Ret>, Status>) {
         if is_early_return_response(result) {
             self.request_metadata.mark_early_return();
-        } else if !super::est::signal_slack::should_skip_flush(&self.request_metadata) {
+        } else if !super::signal_slack::should_skip_flush(&self.request_metadata) {
             self.estimation.flush();
         }
         self.request_metadata.inject_response_meta(ctx);

@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 use masa_core::{Context, LatencyEwma};
 use tonic_core::{CowGrpcMethod, Response, Status};
 
-use super::estimators::blend_toward_legacy;
+use super::latency_estimators::blend_toward_legacy;
 use super::metadata::ComputeTracker;
 use super::request::FanoutInvocationState;
 use super::*;
