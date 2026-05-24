@@ -13,102 +13,17 @@ use std::sync::Arc;
 use std::task::Poll;
 
 use crate::context_ext::{read_context, MasaRequestExt, MasaResponseExt, MasaStatusExt};
+#[cfg(feature = "ac_pred")]
+use crate::layer::AdmissionDeps;
 use crate::layer::{
-    AdmissionLayer, ChildRpcContext, E2eDeadlineGuardLayer, EstimationLayer, Layer, LayerChild,
-    LayerServer, OracleLayer, QueueLatencyLayer,
+    AdmissionLayer, AdmissionServer, ChildRpcContext, E2eDeadlineGuardLayer, EstimationLayer,
+    Layer, LayerChild, OracleLayer, QueueLatencyLayer,
 };
 use masa_core::{Context, ContextBuilder};
 use masa_tonic_core::resolve_method_name_from_http;
 use masa_tonic_core::resolve_method_name_from_request;
 use masa_tonic_core::{ClientHooks, Hooks, ParentHooks, ServerHooks};
 use tonic_core::{CowGrpcMethod, GrpcMethod, Request, Response, Status};
-
-/// Invoke `$body` for each layer in field order
-/// (e2e_deadline_guard → estimation → oracle → admission → queue_latency).
-/// The first `Err` short-circuits via `?` if the body uses it.
-///
-/// Forms:
-///   for_each_layer!(self, |o| body)                      — parent layer only
-///   for_each_layer!(self, mut child, |o, c| body)        — with mutable child field
-///   for_each_layer!(self, child, |o, c| body)            — with immutable child field
-macro_rules! for_each_layer {
-    ($self:ident, |$o:ident| $body:expr) => {{
-        {
-            let $o = &$self.e2e_deadline_guard;
-            $body
-        }
-        {
-            let $o = &$self.estimation;
-            $body
-        }
-        {
-            let $o = &$self.oracle;
-            $body
-        }
-        {
-            let $o = &$self.admission;
-            $body
-        }
-        {
-            let $o = &$self.queue_latency;
-            $body
-        }
-    }};
-    ($self:ident, mut $child:ident, |$o:ident, $c:ident| $body:expr) => {{
-        {
-            let $o = &$self.e2e_deadline_guard;
-            let $c = &mut $child.e2e_deadline_guard;
-            $body
-        }
-        {
-            let $o = &$self.estimation;
-            let $c = &mut $child.estimation;
-            $body
-        }
-        {
-            let $o = &$self.oracle;
-            let $c = &mut $child.oracle;
-            $body
-        }
-        {
-            let $o = &$self.admission;
-            let $c = &mut $child.admission;
-            $body
-        }
-        {
-            let $o = &$self.queue_latency;
-            let $c = &mut $child.queue_latency;
-            $body
-        }
-    }};
-    ($self:ident, $child:ident, |$o:ident, $c:ident| $body:expr) => {{
-        {
-            let $o = &$self.e2e_deadline_guard;
-            let $c = &$child.e2e_deadline_guard;
-            $body
-        }
-        {
-            let $o = &$self.estimation;
-            let $c = &$child.estimation;
-            $body
-        }
-        {
-            let $o = &$self.oracle;
-            let $c = &$child.oracle;
-            $body
-        }
-        {
-            let $o = &$self.admission;
-            let $c = &$child.admission;
-            $body
-        }
-        {
-            let $o = &$self.queue_latency;
-            let $c = &$child.queue_latency;
-            $body
-        }
-    }};
-}
 
 #[derive(Debug)]
 #[allow(dead_code)]
@@ -122,21 +37,48 @@ impl Hooks for PolicyHooks {
 
 #[derive(Debug)]
 pub struct ServerContext {
+    layers: ServerLayers,
+}
+
+#[derive(Debug)]
+struct ServerLayers {
     e2e_deadline_guard: <E2eDeadlineGuardLayer as Layer>::Server,
     estimation: <EstimationLayer as Layer>::Server,
     oracle: <OracleLayer as Layer>::Server,
-    admission: <AdmissionLayer as Layer>::Server,
+    admission: AdmissionServer,
     queue_latency: <QueueLatencyLayer as Layer>::Server,
 }
 
-impl ServerHooks for ServerContext {
-    fn new(_service_name: &'static str) -> Self {
+impl ServerLayers {
+    fn new(service_name: &'static str) -> Self {
+        let e2e_deadline_guard = <E2eDeadlineGuardLayer as Layer>::Server::new();
+        let estimation = <EstimationLayer as Layer>::Server::new(service_name);
+        let oracle = <OracleLayer as Layer>::Server::new();
+
+        #[cfg(feature = "ac_pred")]
+        let admission = AdmissionServer::new(AdmissionDeps {
+            estimators: estimation.est.clone(),
+        });
+
+        #[cfg(not(feature = "ac_pred"))]
+        let admission = AdmissionServer::new();
+
+        let queue_latency = <QueueLatencyLayer as Layer>::Server::new();
+
         Self {
-            e2e_deadline_guard: <<E2eDeadlineGuardLayer as Layer>::Server as LayerServer>::new(),
-            estimation: <<EstimationLayer as Layer>::Server as LayerServer>::new(),
-            oracle: <<OracleLayer as Layer>::Server as LayerServer>::new(),
-            admission: <<AdmissionLayer as Layer>::Server as LayerServer>::new(),
-            queue_latency: <<QueueLatencyLayer as Layer>::Server as LayerServer>::new(),
+            e2e_deadline_guard,
+            estimation,
+            oracle,
+            admission,
+            queue_latency,
+        }
+    }
+}
+
+impl ServerHooks for ServerContext {
+    fn new(service_name: &'static str) -> Self {
+        Self {
+            layers: ServerLayers::new(service_name),
         }
     }
 }
@@ -146,11 +88,139 @@ impl ServerHooks for ServerContext {
 pub struct ParentContext {
     ctx: Context,
     resolved_method: CowGrpcMethod,
-    pub(crate) e2e_deadline_guard: E2eDeadlineGuardLayer,
-    pub(crate) estimation: EstimationLayer,
-    pub(crate) oracle: OracleLayer,
-    pub(crate) admission: AdmissionLayer,
-    pub(crate) queue_latency: QueueLatencyLayer,
+    layers: ParentLayers,
+}
+
+#[derive(Debug)]
+struct ParentLayers {
+    e2e_deadline_guard: E2eDeadlineGuardLayer,
+    estimation: EstimationLayer,
+    oracle: OracleLayer,
+    admission: AdmissionLayer,
+    queue_latency: QueueLatencyLayer,
+}
+
+impl ParentLayers {
+    fn new(method: &CowGrpcMethod, server: &ServerLayers, ctx: &mut Context) -> Self {
+        let e2e_deadline_guard =
+            E2eDeadlineGuardLayer::new(method, &server.e2e_deadline_guard, ctx);
+        let estimation = EstimationLayer::new(method, &server.estimation, ctx);
+        let oracle = OracleLayer::new(method, &server.oracle, ctx);
+        let admission = AdmissionLayer::new(method, &server.admission, ctx);
+        let queue_latency = QueueLatencyLayer::new(method, &server.queue_latency, ctx);
+
+        Self {
+            e2e_deadline_guard,
+            estimation,
+            oracle,
+            admission,
+            queue_latency,
+        }
+    }
+
+    fn before_poll<Ret>(&self, ctx: &Context) -> Result<(), Result<Response<Ret>, Status>> {
+        self.e2e_deadline_guard.before_poll(ctx)?;
+        self.estimation.before_poll(ctx)?;
+        self.oracle.before_poll(ctx)?;
+        self.admission.before_poll(ctx)?;
+        self.queue_latency.before_poll(ctx)?;
+        Ok(())
+    }
+
+    fn before_child_rpc<T>(
+        &self,
+        ctx: &Context,
+        child_method: &CowGrpcMethod,
+        child_layers: &mut ChildLayers,
+        request: &mut Request<T>,
+        child_rpc: &mut ChildRpcContext,
+    ) -> Result<(), Status> {
+        self.e2e_deadline_guard.before_child_rpc(
+            ctx,
+            child_method,
+            &mut child_layers.e2e_deadline_guard,
+            request,
+            child_rpc,
+        )?;
+        self.estimation.before_child_rpc(
+            ctx,
+            child_method,
+            &mut child_layers.estimation,
+            request,
+            child_rpc,
+        )?;
+        self.oracle.before_child_rpc(
+            ctx,
+            child_method,
+            &mut child_layers.oracle,
+            request,
+            child_rpc,
+        )?;
+        self.admission.before_child_rpc(
+            ctx,
+            child_method,
+            &mut child_layers.admission,
+            request,
+            child_rpc,
+        )?;
+        self.queue_latency.before_child_rpc(
+            ctx,
+            child_method,
+            &mut child_layers.queue_latency,
+            request,
+            child_rpc,
+        )?;
+        Ok(())
+    }
+
+    fn after_child_rpc<T>(
+        &self,
+        ctx: &Context,
+        child_method: &CowGrpcMethod,
+        response: &mut Result<Response<T>, Status>,
+        child_layers: &ChildLayers,
+    ) -> Result<(), Status> {
+        self.e2e_deadline_guard.after_child_rpc(
+            ctx,
+            child_method,
+            response,
+            &child_layers.e2e_deadline_guard,
+        )?;
+        self.estimation
+            .after_child_rpc(ctx, child_method, response, &child_layers.estimation)?;
+        self.oracle
+            .after_child_rpc(ctx, child_method, response, &child_layers.oracle)?;
+        self.admission
+            .after_child_rpc(ctx, child_method, response, &child_layers.admission)?;
+        self.queue_latency.after_child_rpc(
+            ctx,
+            child_method,
+            response,
+            &child_layers.queue_latency,
+        )?;
+        Ok(())
+    }
+
+    fn after_poll<Ret>(
+        &self,
+        ctx: &Context,
+        poll: &Poll<Result<Response<Ret>, Status>>,
+    ) -> Result<(), Result<Response<Ret>, Status>> {
+        self.e2e_deadline_guard.after_poll(ctx, poll)?;
+        self.estimation.after_poll(ctx, poll)?;
+        self.oracle.after_poll(ctx, poll)?;
+        self.admission.after_poll(ctx, poll)?;
+        self.queue_latency.after_poll(ctx, poll)?;
+        Ok(())
+    }
+
+    fn finalize<Ret>(&self, ctx: &mut Context, result: &mut Result<Response<Ret>, Status>) {
+        self.e2e_deadline_guard.finalize(ctx, result);
+        self.estimation.finalize(ctx, result);
+        self.oracle.finalize(ctx, result);
+        self.admission.finalize(ctx, result);
+        self.queue_latency.finalize(ctx, result);
+    }
 }
 
 impl ParentHooks<ChildContext, ServerContext> for ParentContext {
@@ -161,29 +231,17 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
     ) -> Self {
         let mut ctx = read_context(req);
         let resolved_method = resolve_method_name_from_http(method, req);
-
-        let e2e_deadline_guard =
-            E2eDeadlineGuardLayer::new(&resolved_method, &server_ctx.e2e_deadline_guard, &mut ctx);
-        let estimation = EstimationLayer::new(&resolved_method, &server_ctx.estimation, &mut ctx);
-        let oracle = OracleLayer::new(&resolved_method, &server_ctx.oracle, &mut ctx);
-        let admission = AdmissionLayer::new(&resolved_method, &server_ctx.admission, &mut ctx);
-        let queue_latency =
-            QueueLatencyLayer::new(&resolved_method, &server_ctx.queue_latency, &mut ctx);
+        let layers = ParentLayers::new(&resolved_method, &server_ctx.layers, &mut ctx);
 
         Self {
             ctx,
             resolved_method,
-            e2e_deadline_guard,
-            estimation,
-            oracle,
-            admission,
-            queue_latency,
+            layers,
         }
     }
 
     fn before_poll<Ret>(&self) -> Result<(), Result<Response<Ret>, Status>> {
-        for_each_layer!(self, |o| o.before_poll(&self.ctx)?);
-        Ok(())
+        self.layers.before_poll(&self.ctx)
     }
 
     fn before_child_rpc<T>(
@@ -196,14 +254,13 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         child_ctx.set_method_name(child_method_name.clone());
 
         let mut child_rpc = ChildRpcContext::from_parent(&self.ctx);
-
-        for_each_layer!(self, mut child_ctx, |o, c| o.before_child_rpc(
+        self.layers.before_child_rpc(
             &self.ctx,
             &child_method_name,
-            c,
+            &mut child_ctx.layers,
             request,
-            &mut child_rpc
-        )?);
+            &mut child_rpc,
+        )?;
 
         let child_recv_ctx = ContextBuilder::from(&self.ctx)
             .deadline(child_rpc.deadline)
@@ -223,12 +280,8 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         child_ctx: ChildContext,
     ) -> Result<(), Status> {
         if let Some(child_method) = child_ctx.child_method_name.as_ref() {
-            for_each_layer!(self, child_ctx, |o, c| o.after_child_rpc(
-                &self.ctx,
-                child_method,
-                response,
-                c
-            )?);
+            self.layers
+                .after_child_rpc(&self.ctx, child_method, response, &child_ctx.layers)?;
         }
         Ok(())
     }
@@ -237,13 +290,12 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
         &self,
         poll: &Poll<Result<Response<Ret>, Status>>,
     ) -> Result<(), Result<Response<Ret>, Status>> {
-        for_each_layer!(self, |o| o.after_poll(&self.ctx, poll)?);
-        Ok(())
+        self.layers.after_poll(&self.ctx, poll)
     }
 
     fn finalize_before_serialization<Ret>(&self, result: &mut Result<Response<Ret>, Status>) {
         let mut ctx = self.ctx.clone();
-        for_each_layer!(self, |o| o.finalize(&mut ctx, result));
+        self.layers.finalize(&mut ctx, result);
         match result {
             Ok(resp) => resp.set_masa_context(&ctx),
             Err(status) => status.set_masa_context(&ctx),
@@ -254,22 +306,35 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
 #[derive(Debug, Clone)]
 pub struct ChildContext {
     pub child_method_name: Option<CowGrpcMethod>,
+    layers: ChildLayers,
+}
+
+#[derive(Debug, Clone)]
+struct ChildLayers {
     e2e_deadline_guard: <E2eDeadlineGuardLayer as Layer>::Child,
-    pub(crate) estimation: <EstimationLayer as Layer>::Child,
-    pub(crate) oracle: <OracleLayer as Layer>::Child,
-    pub(crate) admission: <AdmissionLayer as Layer>::Child,
+    estimation: <EstimationLayer as Layer>::Child,
+    oracle: <OracleLayer as Layer>::Child,
+    admission: <AdmissionLayer as Layer>::Child,
     queue_latency: <QueueLatencyLayer as Layer>::Child,
+}
+
+impl ChildLayers {
+    fn new() -> Self {
+        Self {
+            e2e_deadline_guard: <<E2eDeadlineGuardLayer as Layer>::Child as LayerChild>::new(),
+            estimation: <<EstimationLayer as Layer>::Child as LayerChild>::new(),
+            oracle: <<OracleLayer as Layer>::Child as LayerChild>::new(),
+            admission: <<AdmissionLayer as Layer>::Child as LayerChild>::new(),
+            queue_latency: <<QueueLatencyLayer as Layer>::Child as LayerChild>::new(),
+        }
+    }
 }
 
 impl ClientHooks for ChildContext {
     fn new<T>(_method: GrpcMethod, _request: &Request<T>) -> Self {
         Self {
             child_method_name: None,
-            e2e_deadline_guard: <<E2eDeadlineGuardLayer as Layer>::Child as LayerChild>::new(),
-            estimation: <<EstimationLayer as Layer>::Child as LayerChild>::new(),
-            oracle: <<OracleLayer as Layer>::Child as LayerChild>::new(),
-            admission: <<AdmissionLayer as Layer>::Child as LayerChild>::new(),
-            queue_latency: <<QueueLatencyLayer as Layer>::Child as LayerChild>::new(),
+            layers: ChildLayers::new(),
         }
     }
 }
@@ -423,6 +488,7 @@ mod tests {
 
             // Verify child tracker was initialized by the estimation layer
             let child_tracker = child_ctx
+                .layers
                 .estimation
                 .child_tracker
                 .as_ref()

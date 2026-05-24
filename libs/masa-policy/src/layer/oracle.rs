@@ -21,11 +21,14 @@ use super::{Layer, LayerChild, LayerServer};
 pub(crate) struct OracleServer;
 
 #[cfg(feature = "sched_oracle")]
-impl LayerServer for OracleServer {
-    fn new() -> Self {
+impl OracleServer {
+    pub(crate) fn new() -> Self {
         Self
     }
 }
+
+#[cfg(feature = "sched_oracle")]
+impl LayerServer for OracleServer {}
 
 #[cfg(feature = "sched_oracle")]
 #[derive(Debug)]
@@ -134,11 +137,14 @@ fn read_u64_header(
 pub(crate) struct OracleServer;
 
 #[cfg(not(feature = "sched_oracle"))]
-impl LayerServer for OracleServer {
-    fn new() -> Self {
+impl OracleServer {
+    pub(crate) fn new() -> Self {
         Self
     }
 }
+
+#[cfg(not(feature = "sched_oracle"))]
+impl LayerServer for OracleServer {}
 
 #[cfg(not(feature = "sched_oracle"))]
 #[derive(Debug)]

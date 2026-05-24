@@ -41,15 +41,24 @@ const LAMBDA: f64 = 2.0;
 #[derive(Debug)]
 pub(crate) struct PredAdmissionServer {
     pred_admission: Arc<PredictiveAdmission>,
+    est: LatencyEstimators<DefaultLatencyEstimator>,
 }
 
-impl LayerServer for PredAdmissionServer {
-    fn new() -> Self {
+#[derive(Debug)]
+pub(crate) struct AdmissionDeps {
+    pub(crate) estimators: LatencyEstimators<DefaultLatencyEstimator>,
+}
+
+impl PredAdmissionServer {
+    pub(crate) fn new(deps: AdmissionDeps) -> Self {
         Self {
             pred_admission: Arc::new(PredictiveAdmission::new()),
+            est: deps.estimators,
         }
     }
 }
+
+impl LayerServer for PredAdmissionServer {}
 
 // ── Per-Request ─────────────────────────────────────────────────────────
 
@@ -78,7 +87,7 @@ impl Layer for PredAdmissionLayer {
         });
         Self {
             pred_admission: server.pred_admission.clone(),
-            est: crate::layer::estimation::global_estimators(),
+            est: server.est.clone(),
             root_method_id,
             rpc: method.clone(),
             self_rejected: AtomicBool::new(false),
