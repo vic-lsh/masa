@@ -635,9 +635,20 @@ mod tests {
 
         layer.finalize(&mut ctx, &mut result);
 
-        let state = ac.state.lock().unwrap();
-        assert_eq!(state.window_total, 1);
-        assert_eq!(state.er_count, 1);
+        let root_id =
+            crate::MethodRegistry::global().get_or_register(CowGrpcMethod::new("svc", "method"));
+
+        let global_state = ac.global_state.lock().unwrap();
+        assert_eq!(global_state.window_total, 1);
+        assert_eq!(global_state.er_count, 1);
+        drop(global_state);
+
+        let states = ac.states_by_root.lock().unwrap();
+        let root_state = states
+            .get(&root_id)
+            .expect("deadline signal should record an outcome for the request root");
+        assert_eq!(root_state.window_total, 1);
+        assert_eq!(root_state.er_count, 1);
     }
 
     /// Verify idle decay reopens admission when no outcomes arrive.
