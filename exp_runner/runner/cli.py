@@ -532,21 +532,21 @@ Examples:
   uv run -m exp_runner build hotel exp1
 
   # Build images for a specific policy (new or old flag names work)
-  uv run -m exp_runner build synthetic exp1 --policy sched_slo
-  uv run -m exp_runner build synthetic exp1 --policy prio_global  # old name still works
+  uv run -m exp_runner build synthbench exp1 --policy sched_slo
+  uv run -m exp_runner build synthbench exp1 --policy prio_global  # old name still works
 
   # Show build commands without executing them
   uv run -m exp_runner build-dryrun hotel exp1
 
   # Show build commands for a specific policy
-  uv run -m exp_runner build-dryrun synthetic exp1 --policy sched_slo
+  uv run -m exp_runner build-dryrun synthbench exp1 --policy sched_slo
 
   # Queue multiple experiments
-  uv run -m exp_runner run-multiple synthetic "exp1 exp2 exp3" --plot
+  uv run -m exp_runner run-multiple synthbench "exp1 exp2 exp3" --plot
 
   # Generate plots only
   uv run -m exp_runner plot hotel exp1
-  uv run -m exp_runner plot mssim e2e_test
+  uv run -m exp_runner plot tracebench e2e_test
 
   # Generate replica plots for hotel experiments
   uv run -m exp_runner plot-replicas hotel
@@ -571,8 +571,8 @@ Examples:
     )
     run_parser.add_argument(
         "app",
-        choices=["hotel", "mssim", "socialnet", "synthetic"],
-        help="Application to run (hotel, mssim, or synthetic)",
+        choices=["hotel", "tracebench", "socialnet", "synthbench"],
+        help="Application to run (hotel, tracebench, or synthbench)",
     )
     run_parser.add_argument(
         "experiment",
@@ -620,8 +620,8 @@ Examples:
     )
     queue_parser.add_argument(
         "app",
-        choices=["hotel", "mssim", "socialnet", "synthetic"],
-        help="Application to run (hotel, mssim, or synthetic)",
+        choices=["hotel", "tracebench", "socialnet", "synthbench"],
+        help="Application to run (hotel, tracebench, or synthbench)",
     )
     queue_parser.add_argument(
         "experiments", help="Space-separated list of experiment names (quoted)"
@@ -668,8 +668,8 @@ Examples:
     )
     build_parser.add_argument(
         "app",
-        choices=["hotel", "mssim", "socialnet", "synthetic"],
-        help="Application to build (hotel, mssim, or synthetic)",
+        choices=["hotel", "tracebench", "socialnet", "synthbench"],
+        help="Application to build (hotel, tracebench, or synthbench)",
     )
     build_parser.add_argument(
         "experiment",
@@ -692,8 +692,8 @@ Examples:
     )
     build_dryrun_parser.add_argument(
         "app",
-        choices=["hotel", "mssim", "socialnet", "synthetic"],
-        help="Application to build (hotel, mssim, or synthetic)",
+        choices=["hotel", "tracebench", "socialnet", "synthbench"],
+        help="Application to build (hotel, tracebench, or synthbench)",
     )
     build_dryrun_parser.add_argument(
         "experiment",
@@ -718,8 +718,8 @@ Examples:
     )
     plot_parser.add_argument(
         "app",
-        choices=["hotel", "mssim", "socialnet", "synthetic"],
-        help="Application name (hotel, mssim, or synthetic)",
+        choices=["hotel", "tracebench", "socialnet", "synthbench"],
+        help="Application name (hotel, tracebench, or synthbench)",
     )
     plot_parser.add_argument("experiment", help="Name of the experiment to plot")
     _add_plot_selector_args(plot_parser)
@@ -744,7 +744,7 @@ Examples:
     )
     optimize_parser.add_argument(
         "app",
-        choices=["hotel", "mssim", "socialnet", "synthetic"],
+        choices=["hotel", "tracebench", "socialnet", "synthbench"],
         help="Application to optimize",
     )
     optimize_parser.add_argument(
@@ -796,7 +796,7 @@ Examples:
     )
     optimize_pred_parser.add_argument(
         "app",
-        choices=["hotel", "mssim", "socialnet", "synthetic"],
+        choices=["hotel", "tracebench", "socialnet", "synthbench"],
         help="Application to optimize",
     )
     optimize_pred_parser.add_argument(

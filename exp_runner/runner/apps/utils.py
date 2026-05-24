@@ -163,7 +163,7 @@ def _api_weight_fractions(gen_config: dict, num_apis: int) -> Optional[list[floa
 
 def verify_standard_workload(config: "ExperimentConfig") -> bool:
     """
-    Shared verification logic for standard workloads (hotel, socialnet, synthetic).
+    Shared verification logic for standard workloads (hotel, socialnet, synthbench).
 
     Checks:
     - Existence of done marker

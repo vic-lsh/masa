@@ -68,14 +68,14 @@ Masa currently has four applications for experimentation:
 
 - `hotel`: Based on the Hotel application in Deathstarbench. We've ported this application to Rust for Masa compatibility.
 - `socialnet`: Social network microservice workload inspired by the SocialNetwork benchmark.
-- `synthetic`: A synthetic application with configurable behavior, for understanding Masa in simple scenarios.
-- `mssim`: A microservice simulator-driven workload for trace-based experiments.
+- `synthbench`: A synthbench application with configurable behavior, for understanding Masa in simple scenarios.
+- `tracebench`: A trace-driven RPC benchmark-driven workload for trace-based experiments.
 
 Docker compose is the recommended way to run an application. See instructions in the section below.
 
 #### Docker compose automated (single-server)
 
-NOTE: This is currently only supported for `hotel` and `synthetic`.
+NOTE: This is currently only supported for `hotel` and `synthbench`.
 
 We have some basic scripts to automate running experiments on an application. Assuming you are in `exp/<app>`, an experiment takes the following files as input:
 
@@ -127,8 +127,8 @@ uv run -m exp_runner plot <app> <experiment-name>
 
 # For example:
 uv run -m exp_runner plot hotel exp1
-uv run -m exp_runner plot synthetic quick_test
-uv run -m exp_runner plot mssim e2e_test
+uv run -m exp_runner plot synthbench quick_test
+uv run -m exp_runner plot tracebench e2e_test
 uv run -m exp_runner plot socialnet exp1
 ```
 
@@ -142,7 +142,7 @@ uv run python -m exp_runner run <app> <experiment-name> --plot
 
 #### Docker compose manual (single-server)
 
-NOTE: This is currently supported for `hotel`, `synthetic`, and `socialnet`.
+NOTE: This is currently supported for `hotel`, `synthbench`, and `socialnet`.
 
 For running experiments, use the Python experiment runner:
 
@@ -152,7 +152,7 @@ uv run -m exp_runner run <app> <experiment-name> --plot
 
 # For example:
 uv run -m exp_runner run hotel exp1 --plot
-uv run -m exp_runner run synthetic quick_test --plot
+uv run -m exp_runner run synthbench quick_test --plot
 uv run -m exp_runner run socialnet exp1 --plot
 
 # Run multiple experiments sequentially
@@ -174,7 +174,7 @@ Note: The old bash scripts (`get-env.sh`, `docker-run.sh`, `loadgen-run.sh`, `do
 
 #### K8s / Kind
 
-NOTE: This is currently only supported for `synthetic`.
+NOTE: This is currently only supported for `synthbench`.
 
 You can run experiments on Kubernetes (K8s) or Kind (Kubernetes in Docker) using the experiment runner.
 
@@ -183,7 +183,7 @@ For Kind (recommended for local development):
 2. Run with the `--kind` flag:
 
 ```bash
-uv run -m exp_runner run synthetic <experiment-name> --kind --plot
+uv run -m exp_runner run synthbench <experiment-name> --kind --plot
 ```
 
 The `--kind` flag implies `--k8s` and handles loading images into the Kind cluster automatically.
@@ -193,7 +193,7 @@ For standard Kubernetes clusters:
 2. Run with the `--k8s` flag:
 
 ```bash
-uv run -m exp_runner run synthetic <experiment-name> --k8s --plot
+uv run -m exp_runner run synthbench <experiment-name> --k8s --plot
 ```
 
 Note: When using `--k8s` without `--kind`, you must ensure the container images are available to your cluster (e.g., pushed to a registry).
@@ -209,5 +209,5 @@ policy features.
 - `sched_fifo`: requests are served in first-in-first-out order.
 - `sched_slo`: requests are served based on their end-to-end SLO end time, which is their SLO added to the time at which they arrived at the frontend server.
 - `sched_tailclipper`: oldest request first, implementing the TailClipper paper's policy with round-robin fairness.
-- `sched_oracle`: synthetic-only perfect-information priority scheduling using configured remaining work headers.
+- `sched_oracle`: synthbench-only perfect-information priority scheduling using configured remaining work headers.
 - `sched_pred`: requests are served based on their local deadline with deadline tightening using latency estimates.

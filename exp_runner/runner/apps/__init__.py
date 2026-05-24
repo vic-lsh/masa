@@ -4,18 +4,18 @@ Application plugins for the experiment runner.
 
 from .base import AppBuilder, AppPlugin, DockerConfig
 from .hotel import HotelApp
-from .mssim import MssimApp
+from .tracebench import TracebenchApp
 from .socialnet import SocialnetApp
-from .synthetic import SyntheticApp
+from .synthbench import SynthbenchApp
 
 __all__ = [
     "AppBuilder",
     "AppPlugin",
     "DockerConfig",
     "HotelApp",
-    "MssimApp",
+    "TracebenchApp",
     "SocialnetApp",
-    "SyntheticApp",
+    "SynthbenchApp",
 ]
 
 
@@ -24,7 +24,7 @@ def get_app_plugin(app_name: str) -> AppPlugin:
     Factory function to get the appropriate app plugin.
 
     Args:
-        app_name: Name of the application (hotel, synthetic)
+        app_name: Name of the application (hotel, synthbench)
 
     Returns:
         AppPlugin instance for the specified application
@@ -34,9 +34,9 @@ def get_app_plugin(app_name: str) -> AppPlugin:
     """
     apps = {
         "hotel": HotelApp,
-        "mssim": MssimApp,
+        "tracebench": TracebenchApp,
         "socialnet": SocialnetApp,
-        "synthetic": SyntheticApp,
+        "synthbench": SynthbenchApp,
     }
 
     if app_name not in apps:

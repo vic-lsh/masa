@@ -8,7 +8,7 @@ The experiment runner replaces the previous bash script system with a well-struc
 
 ## Features
 
-- **Multiple Applications**: Supports hotel, socialnet, synthetic, and mssim applications with extensible plugin architecture
+- **Multiple Applications**: Supports hotel, socialnet, synthbench, and tracebench applications with extensible plugin architecture
 - **Policy Testing**: Run experiments with different scheduling policies (sched_fifo, sched_slo, sched_slo,sched_pred, etc.)
 - **Automated Workflow**: Handles Docker builds, service orchestration, load generation, and log collection
 - **Result Analysis**: Integrated plotting for goodput, latency, and hotel replica metrics
@@ -47,8 +47,8 @@ uv run -m exp_runner run hotel exp1
 # Run experiment 'exp1' for the socialnet application
 uv run -m exp_runner run socialnet exp1
 
-# Run an MSSIM experiment
-uv run -m exp_runner run mssim e2e_test
+# Run a Tracebench experiment
+uv run -m exp_runner run tracebench e2e_test
 
 # Run with plot generation
 uv run -m exp_runner run hotel exp1 --plot
@@ -58,7 +58,7 @@ uv run -m exp_runner run socialnet exp1 --plot
 uv run -m exp_runner run hotel exp1 --plot --verbose
 
 # Print what would run (no containers started)
-uv run -m exp_runner run mssim e2e_test --dry-run
+uv run -m exp_runner run tracebench e2e_test --dry-run
 ```
 
 ### Queue Multiple Experiments
@@ -67,8 +67,8 @@ uv run -m exp_runner run mssim e2e_test --dry-run
 # Run multiple experiments sequentially
 uv run -m exp_runner run-multiple hotel "exp1 exp2 exp3" --plot
 
-# For synthetic application
-uv run -m exp_runner run-multiple synthetic "quick_test template-presampled" --plot
+# For synthbench application
+uv run -m exp_runner run-multiple synthbench "quick_test template-presampled" --plot
 ```
 
 ### Generate Plots Only
@@ -76,7 +76,7 @@ uv run -m exp_runner run-multiple synthetic "quick_test template-presampled" --p
 ```bash
 # Generate plots from existing experiment output
 uv run -m exp_runner plot hotel exp1
-uv run -m exp_runner plot mssim e2e_test
+uv run -m exp_runner plot tracebench e2e_test
 
 # Generate replica plots from hotel inputs
 uv run -m exp_runner plot-replicas hotel
@@ -117,14 +117,14 @@ Experiments are configured using files in `exp/<app>/data/in/<experiment_name>/`
 3. **Application-specific config** (varies by app):
    - Hotel: `hotel.json` - Service replica counts and configuration
    - Socialnet: `socialnet.json` - Placeholder config for Docker builds (can be empty)
-   - Synthetic: `config.docker.json` - Child service configuration (optional)
-   - MSSIM: `mssim.json` - Trace/config inputs and MSSIM-specific parameters
+   - Synthbench: `config.docker.json` - Child service configuration (optional)
+   - Tracebench: `tracebench.json` - Trace/config inputs and Tracebench-specific parameters
 
-### MSSIM Configuration
+### Tracebench Configuration
 
-MSSIM experiments live under `exp/mssim/data/in/<experiment_name>/` and require:
+Tracebench experiments live under `exp/tracebench/data/in/<experiment_name>/` and require:
 
-1. **`gen_config.json`** (MSSIM subset)
+1. **`gen_config.json`** (Tracebench subset)
    ```json
    {
      "Repeats": 1,
@@ -140,11 +140,11 @@ MSSIM experiments live under `exp/mssim/data/in/<experiment_name>/` and require:
    sched_fifo sched_slo
    ```
 
-3. **`mssim.json`**
+3. **`tracebench.json`**
    ```json
    {
      "callgraph_dirs": ["trace-analysis/graphs/S_14677443"],
-     "config_dir": "apps/mssim/simulator/example_config/",
+     "config_dir": "apps/tracebench/tracebench/example_config/",
      "slo_ms": 100,
      "orchestrator": "localhost:50051",
      "replay_path": null,
@@ -183,12 +183,12 @@ exp/socialnet/data/in/exp1/
 └── policies              # Scheduling policies to test
 ```
 
-### Example: Synthetic Application
+### Example: Synthbench Application
 
 ```bash
-exp/synthetic/data/in/quick_test/
+exp/synthbench/data/in/quick_test/
 ├── gen_config.json       # Load generator settings
-├── config.docker.json    # Optional synthetic config
+├── config.docker.json    # Optional synthbench config
 └── policies              # Scheduling policies to test
 ```
 
@@ -214,12 +214,12 @@ exp/hotel/data/out/exp1/
 Plots are generated in `exp/<app>/data/plots/<experiment_name>/`.
 Replica plots are generated in `exp/hotel/data/plots/replicas/`.
 
-### MSSIM Output Layout
+### Tracebench Output Layout
 
-MSSIM uses the standard runner output root, with per-RPS subdirectories under each policy:
+Tracebench uses the standard runner output root, with per-RPS subdirectories under each policy:
 
 ```
-exp/mssim/data/out/e2e_test/
+exp/tracebench/data/out/e2e_test/
 ├── 0/
 │   ├── sched_fifo/
 │   │   └── rps_200/
@@ -245,7 +245,7 @@ uv run -m exp_runner run <app> <experiment> [options]
 ```
 
 **Arguments:**
-- `<app>`: Application name (`hotel`, `mssim`, or `synthetic`)
+- `<app>`: Application name (`hotel`, `tracebench`, or `synthbench`)
 - `<experiment>`: Experiment name (must exist in `exp/<app>/data/in/`)
 
 **Options:**
@@ -268,7 +268,7 @@ uv run -m exp_runner run-multiple <app> "<exp1> <exp2> ..." [options]
 ```
 
 **Arguments:**
-- `<app>`: Application name (`hotel`, `mssim`, or `synthetic`)
+- `<app>`: Application name (`hotel`, `tracebench`, or `synthbench`)
 - `"<experiments>"`: Space-separated list of experiment names (must be quoted)
 
 **Options:**
@@ -291,13 +291,13 @@ uv run -m exp_runner plot <app> <experiment>
 ```
 
 **Arguments:**
-- `<app>`: Application name (`hotel`, `mssim`, or `synthetic`)
+- `<app>`: Application name (`hotel`, `tracebench`, or `synthbench`)
 - `<experiment>`: Experiment name to generate plots for
 
 **Example:**
 ```bash
 uv run -m exp_runner plot hotel exp1
-uv run -m exp_runner plot mssim e2e_test
+uv run -m exp_runner plot tracebench e2e_test
 ```
 
 ### plot-replicas
@@ -337,7 +337,7 @@ uv run -m exp_runner run hotel exp1 --plot
 ### Key Differences
 
 1. **Location**: Python runner can be called from anywhere in the repo (no need to `cd` to exp directory)
-2. **Explicit app name**: Must specify app name as first argument (`hotel`, `synthetic`)
+2. **Explicit app name**: Must specify app name as first argument (`hotel`, `synthbench`)
 3. **Better error messages**: Clearer validation and error reporting
 4. **Logging**: Use `--verbose` flag for detailed logs instead of shell tracing
 
@@ -379,7 +379,7 @@ from .your_app import YourApp
 def get_app_plugin(app_name: str) -> AppPlugin:
     apps = {
         "hotel": HotelApp,
-        "synthetic": SyntheticApp,
+        "synthbench": SynthbenchApp,
         "your_app": YourApp,  # Add your app
     }
     # ...
@@ -403,8 +403,8 @@ The runner is organized into several modules:
 - **`apps/`** - Application plugins
   - `base.py` - Abstract base class for app plugins
   - `hotel.py` - Hotel application implementation
-  - `synthetic.py` - Synthetic application implementation
-  - `mssim.py` - MSSIM application implementation (Unified in Phase 2)
+  - `synthbench.py` - Synthbench application implementation
+  - `tracebench.py` - Tracebench application implementation (Unified in Phase 2)
 - **`plotting/`** - Result visualization
   - `goodput.py` - Goodput plot generation
   - `latency.py` - Latency plot generation
@@ -413,7 +413,7 @@ The runner is organized into several modules:
 
 ## Unified Architecture (Phase 2 & 3)
 
-The runner now uses a unified architecture for all applications, including MSSIM which was previously separate.
+The runner now uses a unified architecture for all applications, including Tracebench which was previously separate.
 - **`ExpDriver`**: Central orchestrator for all workloads.
 - **`DeploymentManager`**: Abstract base class for Docker and Kubernetes backends.
 - **`AppPlugin`**: Interface for application-specific logic.
@@ -451,7 +451,7 @@ uv run -m exp_runner --help
 uv run -m exp_runner run --help
 
 # Run a quick test experiment
-uv run -m exp_runner run synthetic quick_test --verbose
+uv run -m exp_runner run synthbench quick_test --verbose
 ```
 
 ### Logging

@@ -148,24 +148,24 @@ class TestSmokeTest:
         assert verify_standard_workload(mock_config) is False
 
 
-class TestMssimSmoke:
+class TestTracebenchSmoke:
     @pytest.fixture
     def mock_config(self, tmp_path):
         config = MagicMock(spec=ExperimentConfig)
-        config.experiment_name = "test_mssim"
-        config.app_name = "mssim"
+        config.experiment_name = "test_tracebench"
+        config.app_name = "tracebench"
         config.policies = ["policy1"]
         config.get_repeats.return_value = 1
         config.out_dir = tmp_path / "out"
         config.gen_config = {"Rps": [100], "DurationSecs": 1, "Repeats": 1}
         return config
 
-    def test_mssim_verify_results_success(self, mock_config, tmp_path):
-        from exp_runner.runner.apps.mssim import MssimApp
+    def test_tracebench_verify_results_success(self, mock_config, tmp_path):
+        from exp_runner.runner.apps.tracebench import TracebenchApp
 
-        app = MssimApp()
+        app = TracebenchApp()
 
-        # Setup directory structure for MSSIM
+        # Setup directory structure for Tracebench
         # {out_dir}/{iteration}/{policy}/
         run_dir = mock_config.out_dir / "0" / "policy1"
         run_dir.mkdir(parents=True)
@@ -174,7 +174,7 @@ class TestMssimSmoke:
 
         # Create CSV with valid goodput
         # Target RPS = 100, Duration = 1 -> Target Total = 100
-        # MSSIM uses root_latencies_{rps}rps.csv
+        # Tracebench uses root_latencies_{rps}rps.csv
         # New Format: index 6 is error (/None for success)
         csv_path = run_dir / "root_latencies_100rps.csv"
         with open(csv_path, "w") as f:
@@ -183,10 +183,12 @@ class TestMssimSmoke:
 
         assert app.verify_results(mock_config) is True
 
-    def test_mssim_verify_results_failure_missing_metadata(self, mock_config, tmp_path):
-        from exp_runner.runner.apps.mssim import MssimApp
+    def test_tracebench_verify_results_failure_missing_metadata(
+        self, mock_config, tmp_path
+    ):
+        from exp_runner.runner.apps.tracebench import TracebenchApp
 
-        app = MssimApp()
+        app = TracebenchApp()
 
         run_dir = mock_config.out_dir / "0" / "policy1"
         run_dir.mkdir(parents=True)
@@ -195,10 +197,10 @@ class TestMssimSmoke:
 
         assert app.verify_results(mock_config) is False
 
-    def test_mssim_verify_results_failure_goodput(self, mock_config, tmp_path):
-        from exp_runner.runner.apps.mssim import MssimApp
+    def test_tracebench_verify_results_failure_goodput(self, mock_config, tmp_path):
+        from exp_runner.runner.apps.tracebench import TracebenchApp
 
-        app = MssimApp()
+        app = TracebenchApp()
 
         run_dir = mock_config.out_dir / "0" / "policy1"
         run_dir.mkdir(parents=True)

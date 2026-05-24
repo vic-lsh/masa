@@ -1,0 +1,11 @@
+{
+  "callgraph_dirs": [
+    "trace-analysis/graph_branch/S_14677443"
+  ],
+  "config_dir": "apps/tracebench/tracebench/example_config/",
+  "slo_ms": 100,
+  "orchestrator": "localhost:50051",
+  "replay_path": null,
+  "stats_interval_sec": 2,
+  "extra_env": {}
+}

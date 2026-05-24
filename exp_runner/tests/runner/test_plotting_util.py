@@ -107,7 +107,7 @@ def test_load_plot_data_matches_read_data(tmp_path):
 
 def test_read_data_repairs_malformed_request_csv_rows(tmp_path):
     """
-    Synthetic request CSVs can contain malformed rows where:
+    Synthbench request CSVs can contain malformed rows where:
     - the error field contains unescaped commas (e.g. gRPC error strings), and/or
     - trailing latency fields are missing (e.g. early-return rows).
 

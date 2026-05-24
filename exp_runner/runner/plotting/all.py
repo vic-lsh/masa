@@ -11,7 +11,7 @@ from pathlib import Path
 from . import goodput
 from . import latency
 from . import queueing
-from . import mssim
+from . import tracebench
 from . import cpu
 from .util import (
     get_plot_worker_count,
@@ -95,9 +95,9 @@ def generate_all_plots(
         return
 
     config_dir = Path(args.config_dir)
-    if (config_dir / "mssim.json").exists():
-        # mssim has its own pipeline but honors the same selector kwargs.
-        mssim.generate_plots(
+    if (config_dir / "tracebench.json").exists():
+        # tracebench has its own pipeline but honors the same selector kwargs.
+        tracebench.generate_plots(
             args,
             only=only,
             skip=skip,

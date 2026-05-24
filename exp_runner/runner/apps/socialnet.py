@@ -474,7 +474,7 @@ class SocialnetApp(AppPlugin):
         `{base}-1..{base}-N` convention); infra (mongo/redis/memcached/rabbitmq)
         is reached at `{project}-{name}` directly.
 
-        We pin every `*_REPLICAS` env var to 1 in k8s mode (mirrors the mssim
+        We pin every `*_REPLICAS` env var to 1 in k8s mode (mirrors the tracebench
         pattern) so a single Service per microservice load-balances across the
         underlying Deployment pods.
         """

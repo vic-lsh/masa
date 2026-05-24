@@ -82,7 +82,7 @@ class DockerManager(DeploymentManager):
             )
             if check_network.returncode != 0:
                 # Check if this looks like a Docker Compose project network
-                # Pattern: {project_name}_{network_key} (e.g., "fifo_synthetic_network")
+                # Pattern: {project_name}_{network_key} (e.g., "fifo_synthbench_network")
                 if "_" in task_spec.network and not task_spec.network.startswith(
                     "local_"
                 ):

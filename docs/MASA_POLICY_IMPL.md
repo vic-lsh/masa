@@ -12,7 +12,7 @@ Policy is configured along three composable dimensions:
 - `sched_fifo`: First-In-First-Out ordering (baseline).
 - `sched_slo`: Priority by end-to-end SLO deadline (implies tokio priority queue).
 - `sched_tailclipper`: Priority by request arrival time (oldest first), implementing the TailClipper paper (implies tokio priority queue).
-- `sched_oracle`: Perfect-information child deadline/priority assignment for deterministic synthetic experiments (implies tokio priority queue).
+- `sched_oracle`: Perfect-information child deadline/priority assignment for deterministic synthbench experiments (implies tokio priority queue).
 - `sched_pred`: Priority by per-RPC predicted deadline with deadline tightening and dynamic reprioritization (implies `sched_slo` and `estimator`).
 
 **Admission control** (mutually exclusive — pick at most one):
@@ -177,7 +177,7 @@ The `Context` is serialized using **bincode** (compact binary format) and **base
 
 ### Method Name Override
 
-The `x-masa-method-name` header (`libs/tonic/tonic-core/src/masa_ext/mod.rs`) allows overriding the gRPC method name for latency tracking. This is used by applications where a generic endpoint (e.g., `invoke`) handles multiple logical methods (e.g., the synthetic and mssim applications).
+The `x-masa-method-name` header (`libs/tonic/tonic-core/src/masa_ext/mod.rs`) allows overriding the gRPC method name for latency tracking. This is used by applications where a generic endpoint (e.g., `invoke`) handles multiple logical methods (e.g., the synthbench and tracebench applications).
 
 ## 4. Transport Layer (`libs/hyper`)
 

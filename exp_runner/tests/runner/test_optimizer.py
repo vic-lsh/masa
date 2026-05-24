@@ -67,7 +67,7 @@ class TestComputeObjective:
     """Tests for objective computation."""
 
     def test_with_mock_csvs(self, tmp_path):
-        """Create synthetic CSV data and verify objective matches formula."""
+        """Create synthbench CSV data and verify objective matches formula."""
         policy = "sched_slo,ac_rajomon,abort_slo"
         apis = ["Search", "Reservation"]
         slos = [200000, 100000]  # 200ms, 100ms in microseconds

@@ -160,11 +160,11 @@ packages=(
     # our evaluation apps test suite
     "hotel"
     "socialnet"
-    "synthetic"
+    "synthbench"
 
-    # simulator
+    # tracebench
     "generic-service"
-    "sim-config"
+    "trace-config"
 )
 
 # If testing your crate requires special feature flags, set them here
