@@ -294,12 +294,22 @@ impl ParentHooks<ChildContext, ServerContext> for ParentContext {
             &mut child_rpc,
         )?;
 
-        let child_recv_ctx = ContextBuilder::from(&self.ctx)
+        #[cfg_attr(
+            not(any(feature = "estimator", feature = "ac_rajomon")),
+            allow(unused_mut)
+        )]
+        let mut child_recv_ctx = ContextBuilder::from(&self.ctx)
             .deadline(child_rpc.deadline)
-            .prio_hint(child_rpc.prio_hint)
-            .hop_count(child_rpc.hop_count)
-            .tokens(child_rpc.tokens)
-            .build();
+            .prio_hint(child_rpc.prio_hint);
+        #[cfg(feature = "estimator")]
+        {
+            child_recv_ctx = child_recv_ctx.hop_count(child_rpc.hop_count);
+        }
+        #[cfg(feature = "ac_rajomon")]
+        {
+            child_recv_ctx = child_recv_ctx.tokens(child_rpc.tokens);
+        }
+        let child_recv_ctx = child_recv_ctx.build();
         request.set_masa_context(&child_recv_ctx);
 
         Ok(())

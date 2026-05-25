@@ -29,4 +29,4 @@ est_mean_var = ["masa-policy/est_mean_var"]
 
 ac_pred = ["hyper/masa", "tonic/masa", "masa-core/ac_pred", "masa-policy/ac_pred"]
 ac_rajomon = ["hyper/masa", "tonic/masa", "masa-core/ac_rajomon", "masa-policy/ac_rajomon"]
-trace_queue_latency = ["hyper/masa", "tonic/masa", "masa-policy/trace_queue_latency"]
+trace_queue_latency = ["hyper/masa", "tonic/masa", "masa-core/trace_queue_latency", "masa-policy/trace_queue_latency"]

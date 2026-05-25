@@ -47,7 +47,9 @@ pub(crate) trait LayerServer: Send + Sync + std::fmt::Debug {}
 pub(crate) struct ChildRpcContext {
     pub deadline: u64,
     pub prio_hint: PriorityHint,
+    #[cfg(feature = "estimator")]
     pub hop_count: u8,
+    #[cfg(feature = "ac_rajomon")]
     pub tokens: u64,
 }
 
@@ -55,15 +57,12 @@ impl ChildRpcContext {
     pub fn from_parent(ctx: &Context) -> Self {
         // hop_count is only incremented when estimation is active — it uses
         // hop_count to distinguish ingress from internal hops.
-        let hop_count = if cfg!(feature = "estimator") {
-            ctx.hop_count().saturating_add(1)
-        } else {
-            ctx.hop_count()
-        };
         Self {
             deadline: ctx.deadline(),
             prio_hint: ctx.prio_hint(),
-            hop_count,
+            #[cfg(feature = "estimator")]
+            hop_count: ctx.hop_count().saturating_add(1),
+            #[cfg(feature = "ac_rajomon")]
             tokens: ctx.tokens(),
         }
     }
