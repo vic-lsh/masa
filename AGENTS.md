@@ -98,27 +98,26 @@ Key policy flags:
 - `PriorityHint::infra()` (value 0) is reserved for infrastructure tasks and always runs first
 
 ### libs/masa & libs/masa-core
-Core Masa types and utilities:
-- `Context`/`ContextBuilder`: RPC context with deadline/priority info
-- `PriorityHint`: Priority value (lower = higher priority; reversed `Ord` for `BinaryHeap`)
-- `Prioritize`: Priority calculation trait
-- `LatencyEstimator`: Latency distribution tracking
-
-### libs/tonic/tonic-core/src/masa_ext/
-Core hook trait definitions (`Hooks`, `ServerHooks`, `ParentHooks`, `ClientHooks`) and `NoopHooks`, plus shared types (`Request`, `Response`, `Status`, metadata). Has no dependency on `masa-policy` or `masa-core`.
+Application-facing Masa API and core types:
+- `libs/masa-core`: `Context`/`ContextBuilder`, `PriorityHint`, `Prioritize`, and latency distribution utilities
+- `libs/masa`: `DefaultHooks` selection by feature flag, context creation helpers, load-balanced transport, and policy-facing reexports from `masa-policy`
+- `DefaultHooks`: `tonic::masa::noop::NoopHooks` with no scheduling features; `masa_policy::PolicyHooks` when scheduling features are enabled
 
 ### libs/masa-policy/
-Policy implementations extracted from tonic:
-- `hooks.rs`: `PolicyHooks` — unified hook implementation with `for_each_layer!` macro dispatch
+Concrete policy hook implementation and metadata helpers:
+- `hooks.rs`: `PolicyHooks` — unified hook implementation that dispatches the active layer stack in field order
 - `layer/`: Composable layer system — `e2e_deadline_guard.rs`, `queue_latency.rs`, `est/` (estimation), `admission/` (predictive + rajomon)
-- `context_ext.rs`: Context serialization helpers for tonic requests/responses
+- `context_ext.rs`: Context serialization helpers and `MasaRequestExt`/`MasaResponseExt`/`MasaStatusExt`
+- Depends on `tonic` for hook traits and gRPC boundary types; vendored tonic does not depend on `masa-policy`
 
-### libs/tonic/tonic/src/masa_ext/
+### libs/tonic/tonic/src/masa/
 Tonic-specific glue:
-- `mod.rs`: `DefaultHooks` type alias selected by feature flags; re-exports from `tonic-core` and `masa-policy`
-- `runtime/mod.rs`: Bridge from tonic `ParentContext` to tokio `PollHook`
+- `hooks.rs`: Core hook trait definitions (`Hooks`, `ServerHooks`, `ParentHooks`, `ClientHooks`) used by tonic internals and generated code
+- `noop.rs`: No-op Masa hooks implementation for builds without scheduling features
+- `runtime.rs`: Bridge from tonic `ParentContext` to tokio `PollHook`
 - `thread_local.rs`: Thread-local storage for parent/server context propagation
-- `transport/masa_channel/`: Lower-level Masa-aware channel internals; application-facing load-balanced transport lives in `masa::transport`
+- Has no dependency on `masa-policy` or `masa-core`; concrete policy hooks are wired through `masa::DefaultHooks`
+- `libs/tonic/tonic/src/transport/masa_channel/`: Lower-level Masa-aware channel internals; application-facing load-balanced transport lives in `masa::transport`
 
 ### Patched Libraries
 The workspace patches crates.io dependencies with local modified versions (see `Cargo.toml` `[patch.crates-io]`). All must be built from local copies:
