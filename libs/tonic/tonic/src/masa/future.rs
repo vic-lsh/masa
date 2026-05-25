@@ -7,7 +7,7 @@ use std::{
 
 /// Future wrapper that can return early from hooks before or after polling.
 #[derive(Debug)]
-pub struct AbortableFuture<F, Pre, Post> {
+pub(crate) struct AbortableFuture<F, Pre, Post> {
     inner: F,
     before_poll: Option<Pre>,
     after_poll: Option<Post>,
@@ -17,17 +17,17 @@ pub struct AbortableFuture<F, Pre, Post> {
 ///
 /// The function can provide an output value. If provided, the future will never
 /// be polled again, and the output value is immediately returned.
-pub trait BeforePollFn<F: Future> = Fn() -> Option<F::Output>;
+pub(crate) trait BeforePollFn<F: Future> = Fn() -> Option<F::Output>;
 
 /// Hook invoked after a future is polled.
 ///
 /// The function can optionally provide an output value. If provided, this
 /// output value will be the one returned, even if the future is already ready.
-pub trait AfterPollFn<F: Future> = Fn(&Poll<F::Output>) -> Option<F::Output>;
+pub(crate) trait AfterPollFn<F: Future> = Fn(&Poll<F::Output>) -> Option<F::Output>;
 
 /// Builder for [`AbortableFuture`].
 #[derive(Debug)]
-pub struct AbortableFutureBuilder<F, Pre, Post> {
+pub(crate) struct AbortableFutureBuilder<F, Pre, Post> {
     inner: F,
     before_poll: Option<Pre>,
     after_poll: Option<Post>,
@@ -36,7 +36,7 @@ pub struct AbortableFutureBuilder<F, Pre, Post> {
 
 impl<F: Future> AbortableFutureBuilder<F, (), ()> {
     /// Start constructing an [`AbortableFuture`].
-    pub fn new(future: F) -> Self {
+    pub(crate) fn new(future: F) -> Self {
         Self {
             inner: future,
             before_poll: None,
@@ -51,7 +51,7 @@ where
     F: Future,
 {
     /// Define the hook point before polling.
-    pub fn before_poll<NewPre: BeforePollFn<F>>(
+    pub(crate) fn before_poll<NewPre: BeforePollFn<F>>(
         self,
         hook: NewPre,
     ) -> AbortableFutureBuilder<F, NewPre, Post> {
@@ -69,7 +69,7 @@ where
     F: Future,
 {
     /// Define the hook point after polling.
-    pub fn after_poll<NewPost: AfterPollFn<F>>(
+    pub(crate) fn after_poll<NewPost: AfterPollFn<F>>(
         self,
         hook: NewPost,
     ) -> AbortableFutureBuilder<F, Pre, NewPost> {
@@ -89,7 +89,7 @@ where
     Post: AfterPollFn<F>,
 {
     /// Finish constructing the wrapped future.
-    pub fn build(self) -> AbortableFuture<F, Pre, Post> {
+    pub(crate) fn build(self) -> AbortableFuture<F, Pre, Post> {
         AbortableFuture {
             inner: self.inner,
             before_poll: self.before_poll,
@@ -130,7 +130,7 @@ where
 }
 
 /// Extension trait for adding abort hook points to a future.
-pub trait Abortable: Sized + Future {
+pub(crate) trait Abortable: Sized + Future {
     /// Start building an [`AbortableFuture`].
     fn abortable(self) -> AbortableFutureBuilder<Self, (), ()>;
 }

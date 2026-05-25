@@ -200,7 +200,7 @@ mod tests {
         resolve_method_name_from_http, resolve_method_name_from_request, ClientHooks, ParentHooks,
         ServerHooks, METHOD_NAME_OVERRIDE_HEADER, SERVICE_NAME_OVERRIDE_HEADER,
     };
-    use crate::masa::{client, noop, server, Abortable};
+    use crate::masa::{client, future::Abortable, noop, server};
     use crate::metadata::MetadataValue;
     use crate::{http, GrpcMethod, Request, Response};
     use std::cell::Cell;
