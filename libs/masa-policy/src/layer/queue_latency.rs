@@ -32,7 +32,7 @@ mod inner {
     use std::sync::{Mutex, OnceLock};
 
     use masa_core::{Context, QueueLatencies};
-    use tonic_core::{CowGrpcMethod, Response, Status};
+    use tonic::{CowGrpcMethod, Response, Status};
 
     use super::super::{Layer, LayerChild};
     use super::QueueLatencyServer;
@@ -142,7 +142,7 @@ mod inner {
 #[cfg(not(feature = "trace_queue_latency"))]
 mod inner {
     use masa_core::Context;
-    use tonic_core::CowGrpcMethod;
+    use tonic::CowGrpcMethod;
 
     use super::super::{Layer, LayerChild};
     use super::QueueLatencyServer;

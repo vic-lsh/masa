@@ -1,11 +1,11 @@
 // Masa scheduling policy implementations.
 //
 // This crate contains the scheduling, estimation, and admission control
-// implementations for Masa. It depends on `tonic-core` for gRPC types and
-// hook traits, and optionally `tonic` depends on this crate to wire up
-// `DefaultHooks`.
+// implementations for Masa. It depends on `tonic` for gRPC boundary types and
+// hook traits. Tonic does not depend on this crate; `masa::DefaultHooks` selects
+// policy hooks when scheduling features are enabled.
 
-/// Masa context extension traits and helpers (moved from tonic to break circular dep).
+/// Masa context extension traits and helpers.
 pub mod context_ext;
 mod hooks;
 pub(crate) mod layer;

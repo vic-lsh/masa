@@ -13,7 +13,7 @@ use tokio::net::TcpListener;
 use tokio_stream::{Stream, StreamExt};
 use tonic::{
     transport::{Channel, Endpoint, Server, Uri},
-    Request, Response, ResponseExt, Status, Streaming,
+    Request, Response, Status, Streaming,
 };
 use tower::{layer::layer_fn, service_fn, Service, ServiceBuilder};
 use tower_http::{map_request_body::MapRequestBodyLayer, map_response_body::MapResponseBodyLayer};

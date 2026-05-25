@@ -4,7 +4,7 @@ pub mod pb {
 
 use pb::{EchoRequest, EchoResponse};
 use tonic::transport::{Certificate, Identity, Server, ServerTlsConfig};
-use tonic::{Request, RequestExt, Response, Status};
+use tonic::{Request, Response, Status};
 
 type EchoResult<T> = Result<Response<T>, Status>;
 

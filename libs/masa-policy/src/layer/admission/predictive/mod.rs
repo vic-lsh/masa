@@ -12,7 +12,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use masa_core::Context;
-use tonic_core::{Code, CowGrpcMethod, Response, Status};
+use tonic::{Code, CowGrpcMethod, Response, Status};
 
 use super::super::{ChildRpcContext, Layer, LayerChild, LayerServer};
 use crate::layer::est::default_estimator::DefaultLatencyEstimator;
@@ -101,10 +101,7 @@ impl Layer for PredAdmissionLayer {
     /// The `admission_checked` flag ensures it runs exactly once per request
     /// regardless of how many times the future is polled.
     #[inline]
-    fn before_poll<Ret>(
-        &self,
-        ctx: &Context,
-    ) -> Result<(), Result<tonic_core::Response<Ret>, Status>> {
+    fn before_poll<Ret>(&self, ctx: &Context) -> Result<(), Result<tonic::Response<Ret>, Status>> {
         if ctx.hop_count() != 0 || self.admission_checked.swap(true, Ordering::Relaxed) {
             return Ok(());
         }
@@ -143,7 +140,7 @@ impl Layer for PredAdmissionLayer {
         ctx: &Context,
         child_method_name: &CowGrpcMethod,
         _child_ctx: &mut PredAdmissionChild,
-        _request: &mut tonic_core::Request<T>,
+        _request: &mut tonic::Request<T>,
         _child_rpc: &mut ChildRpcContext,
     ) -> Result<(), Status> {
         use masa_core::time_now;

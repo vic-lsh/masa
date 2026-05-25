@@ -1,30 +1,12 @@
 //! Masa hook traits and runtime support for tonic integration.
 //!
-//! This crate keeps Masa hook contracts, no-op implementations, parent context
-//! propagation, and exact-boundary future wrappers outside of vendored tonic
-//! while still using tonic-core request, response, status, and method types in
-//! the public API.
-
-#![warn(missing_debug_implementations, missing_docs, rust_2018_idioms)]
-#![feature(trait_alias)]
+//! Tonic owns the hook contracts and exact Tonic boundary types. Policy
+//! implementations live outside Tonic and implement these traits.
 
 use std::{sync::Arc, task::Poll};
 
-use tonic_core::body::BoxBody;
-use tonic_core::{http, CowGrpcMethod, GrpcMethod, Request, Response, Status};
-
-/// No-op Masa hooks implementation for when no scheduling features are enabled.
-pub mod noop;
-
-mod future;
-mod thread_local;
-
-pub use future::{Abortable, AbortableFuture, AbortableFutureBuilder, AfterPollFn, BeforePollFn};
-pub use thread_local::{client, server};
-
-/// Tokio poll-hook bridge for propagating parent context to spawned child tasks.
-#[cfg(feature = "runtime")]
-pub mod runtime;
+use crate::body::BoxBody;
+use crate::{http, CowGrpcMethod, GrpcMethod, Request, Response, Status};
 
 // TODO: add notes on trait bounds
 /// Trait for specifying the set of hooks to apply.
@@ -215,16 +197,16 @@ pub fn resolve_method_name_from_request<T>(
 #[cfg(test)]
 mod tests {
     use super::{
-        client, noop, resolve_method_name_from_http, resolve_method_name_from_request, server,
-        Abortable, ClientHooks, ParentHooks, ServerHooks, METHOD_NAME_OVERRIDE_HEADER,
-        SERVICE_NAME_OVERRIDE_HEADER,
+        resolve_method_name_from_http, resolve_method_name_from_request, ClientHooks, ParentHooks,
+        ServerHooks, METHOD_NAME_OVERRIDE_HEADER, SERVICE_NAME_OVERRIDE_HEADER,
     };
+    use crate::masa::{client, noop, server, Abortable};
+    use crate::metadata::MetadataValue;
+    use crate::{http, GrpcMethod, Request, Response};
     use std::cell::Cell;
     use std::future::{poll_fn, Future};
     use std::sync::Arc;
     use std::task::{Context, Poll, Waker};
-    use tonic_core::metadata::MetadataValue;
-    use tonic_core::{http, GrpcMethod, Request, Response};
 
     #[test]
     fn resolves_method_name_from_http_with_overrides() {

@@ -8,9 +8,9 @@
 use masa_core::Context;
 #[cfg(feature = "sched_oracle")]
 use masa_core::{PriorityHint, ORACLE_CHILD_WORK_US_HEADER, ORACLE_REMAINING_AFTER_US_HEADER};
-use tonic_core::CowGrpcMethod;
+use tonic::CowGrpcMethod;
 #[cfg(feature = "sched_oracle")]
-use tonic_core::{Request, Status};
+use tonic::{Request, Status};
 
 #[cfg(feature = "sched_oracle")]
 use super::ChildRpcContext;
@@ -97,7 +97,7 @@ impl OracleHint {
 
 #[cfg(feature = "sched_oracle")]
 fn read_u64_header(
-    metadata: &tonic_core::metadata::MetadataMap,
+    metadata: &tonic::metadata::MetadataMap,
     key: &'static str,
     child_method: &CowGrpcMethod,
 ) -> Result<u64, Status> {

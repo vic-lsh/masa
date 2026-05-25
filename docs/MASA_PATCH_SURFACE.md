@@ -1,12 +1,12 @@
-# Masa Patch Surface After Tonic Support Extraction
+# Masa Patch Surface
 
-This document describes the intended crate graph after extracting Masa support
-out of vendored Tonic where practical, and it records the remaining vendored
-patches that still carry Masa-specific behavior. Use it when planning Tokio,
+This document describes the current crate graph and records the remaining
+vendored patches that carry Masa-specific behavior. Use it when planning Tokio,
 Hyper, Tonic, or Tower updates.
 
-The goal is to keep policy code in Masa-owned crates, keep compatibility imports
-stable for applications, and make the remaining vendored patches explicit.
+The goal is to keep upstream library layout recognizable, keep policy code in
+Masa-owned crates, keep compatibility imports stable for applications, and make
+the remaining vendored patches explicit.
 
 ## Current Crate Graph
 
@@ -19,16 +19,14 @@ Applications
   |     +-- masa-policy            PolicyHooks, layers, metadata extension traits
   |     |     |
   |     |     +-- masa-core
-  |     |     +-- masa-tonic-core  hook traits and runtime support
-  |     |     +-- tonic-core       Request, Response, Status, metadata
+  |     |     +-- tonic            Request, Response, Status, metadata, hook traits
   |     |     +-- tokio            optional, for runtime/queue metrics features
   |     |
   |     +-- tonic                  transport glue
   |
   +-- tonic
         |
-        +-- tonic-core             upstream-like tonic core types
-        +-- masa-tonic-core        hook traits, futures, thread-local runtime bridge
+        +-- src/masa               hook traits, futures, thread-local runtime bridge
         +-- masa-core              context serialization and priorities
         +-- hyper                  H2 stream priority extraction before spawn
         +-- tokio                  priority task spawn and current-thread scheduler
@@ -36,30 +34,30 @@ Applications
 
 tonic-build
   |
-  +-- generated clients/servers use tonic::masa_ext compatibility paths
+  +-- generated clients/servers use tonic::masa compatibility paths
 ```
 
-`tonic-core` remains an upstream-shaped crate for common Tonic types. Masa hook
-contracts live in `masa-tonic-core`; scheduling and admission policy logic lives
-in `masa-policy`; core wire and priority types live in `masa-core`. Vendored
-Tonic does not depend on `masa-policy`.
+Tonic keeps its upstream-shaped core modules (`Request`, `Response`, `Status`,
+metadata, body, and method types) in `libs/tonic/tonic/src`. Masa hook contracts
+and runtime helpers live under `libs/tonic/tonic/src/masa`. Scheduling and
+admission policy logic lives in `masa-policy`; core wire and priority types live
+in `masa-core`. Vendored Tonic does not depend on `masa-policy`.
 
 ## Compatibility Surface
 
 The extraction keeps these paths stable:
 
-- `tonic::masa_ext::{Hooks, ServerHooks, ParentHooks, ClientHooks}` reexports
-  the hook traits from `masa-tonic-core`.
-- `tonic::masa_ext::{client, server, runtime}` reexports thread-local access
-  and runtime hook helpers from `masa-tonic-core` for Tonic internals and
-  generated code.
+- `tonic::masa::{Hooks, ServerHooks, ParentHooks, ClientHooks}` reexports
+  the hook traits owned by Tonic's Masa module.
+- `tonic::masa::{client, server, runtime}` exposes thread-local access and
+  runtime hook helpers for Tonic internals and generated code.
 - `masa::{MasaRequestExt, MasaResponseExt, MasaStatusExt,
   get_masa_context_from_metadata, set_masa_context_in_metadata, read_context,
   read_context_from_headers, read_priority_from_headers}` reexports the
   application-facing context helpers and extension traits.
 - `masa::DefaultHooks` is the compile-time policy selector used by generated
   clients and servers: no scheduling features select
-  `masa_tonic_core::noop::NoopHooks`; scheduling features select
+  `tonic::masa::noop::NoopHooks`; scheduling features select
   `masa_policy::PolicyHooks`.
 - `tonic::transport::Server::serve_with_masa` remains the server entry point
   that selects Hyper's `Exec::Masa` executor.
@@ -67,24 +65,14 @@ The extraction keeps these paths stable:
   client-side replica channel used by applications and experiment deployment
   scripts. It wraps the lower-level `tonic::transport::masa_channel::Channel`.
 
-Generated code from `tonic-build` still names `tonic::masa_ext` rather than the
-new lower-level crates for hook traits and runtime modules. Application code
-should import concrete Masa context helpers from `masa`, not from
-`tonic::masa_ext`.
+Generated code from `tonic-build` names `tonic::masa` for hook traits and
+runtime modules. Application code should import concrete Masa context helpers
+from `masa`, not from `tonic::masa`.
 
-## Moved Out Of Vendored Tonic And Tower
+## Masa-Owned Code Outside Vendored Tonic And Tower
 
-The following Masa logic has already moved out of vendored Tonic or Tower:
+The following Masa logic lives outside vendored Tonic or Tower:
 
-- Hook traits (`Hooks`, `ServerHooks`, `ParentHooks`, `ClientHooks`) moved to
-  `libs/masa-tonic-core/src/lib.rs`.
-- No-op hook implementations moved to `libs/masa-tonic-core/src/noop.rs`.
-- The exact-boundary future wrapper (`AbortableFuture` and builder helpers)
-  moved to `libs/masa-tonic-core/src/future.rs`; Tonic reexports it from
-  `tonic::util` for its server internals.
-- Parent-context thread-local storage moved to
-  `libs/masa-tonic-core/src/thread_local.rs`.
-- The Tokio poll-hook bridge moved to `libs/masa-tonic-core/src/runtime.rs`.
 - Metadata context helpers and `MasaRequestExt`/`MasaResponseExt`/
   `MasaStatusExt` moved to `libs/masa-policy/src/context_ext.rs`.
 - HTTP header context readers (`read_context`, `read_context_from_headers`,

@@ -2,7 +2,7 @@ use std::sync::Mutex;
 use std::time::Instant;
 
 use masa_core::LatencyEstimator;
-use tonic_core::{CowGrpcMethod, Response, Status};
+use tonic::{CowGrpcMethod, Response, Status};
 
 use super::super::fanout::{recover_path_groups, ChildRecord, PathPrefix};
 use super::super::latency_map::{ParentToChildKey, RootToLocalKey};

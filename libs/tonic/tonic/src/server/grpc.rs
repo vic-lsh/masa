@@ -1,7 +1,7 @@
 use crate::codec::compression::{
     CompressionEncoding, EnabledCompressionEncodings, SingleMessageCompressionOverride,
 };
-use crate::masa_ext::{Hooks, ParentHooks};
+use crate::masa::{Hooks, ParentHooks};
 use crate::{
     body::BoxBody,
     codec::{encode_server, Codec, Streaming},
@@ -283,7 +283,7 @@ where
             // which would happen when this request finishes and removes this hook.
             let parent_ctx = req_ctx.clone();
 
-            let child_hook = crate::masa_ext::runtime::make_child_task_poll_hook::<M>(parent_ctx);
+            let child_hook = crate::masa::runtime::make_child_task_poll_hook::<M>(parent_ctx);
             tokio::configure_child_task_poll_hook(child_hook);
         }
 
@@ -310,14 +310,14 @@ where
             .call(request)
             .abortable()
             .before_poll(|| {
-                crate::masa_ext::server::set_parent_ctx::<M>(req_ctx.as_ref());
+                crate::masa::server::set_parent_ctx::<M>(req_ctx.as_ref());
                 match req_ctx.before_poll() {
                     Ok(()) => None,
                     Err(e) => Some(e),
                 }
             })
             .after_poll(|poll| {
-                crate::masa_ext::server::reset_parent_ctx::<M>();
+                crate::masa::server::reset_parent_ctx::<M>();
                 match req_ctx.after_poll(poll) {
                     Ok(()) => None,
                     Err(e) => Some(e),

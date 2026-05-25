@@ -20,7 +20,7 @@
 use std::task::Poll;
 
 use masa_core::{Context, PriorityHint};
-use tonic_core::{CowGrpcMethod, Response, Status};
+use tonic::{CowGrpcMethod, Response, Status};
 
 // ── Submodules ──────────────────────────────────────────────────────────
 
@@ -99,7 +99,7 @@ pub(crate) trait Layer: Send + Sync + std::fmt::Debug {
         _ctx: &Context,
         _child_method: &CowGrpcMethod,
         _child_ctx: &mut Self::Child,
-        _request: &mut tonic_core::Request<T>,
+        _request: &mut tonic::Request<T>,
         _child_rpc: &mut ChildRpcContext,
     ) -> Result<(), Status> {
         Ok(())
@@ -151,7 +151,7 @@ pub(crate) use self::est_noop::NoopEstLayer as EstimationLayer;
 #[cfg(not(feature = "estimator"))]
 mod est_noop {
     use masa_core::Context;
-    use tonic_core::CowGrpcMethod;
+    use tonic::CowGrpcMethod;
 
     use super::{Layer, LayerChild, LayerServer};
 

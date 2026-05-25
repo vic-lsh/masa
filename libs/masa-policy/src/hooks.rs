@@ -20,10 +20,10 @@ use crate::layer::{
     Layer, LayerChild, OracleLayer, QueueLatencyLayer,
 };
 use masa_core::{Context, ContextBuilder};
-use masa_tonic_core::resolve_method_name_from_http;
-use masa_tonic_core::resolve_method_name_from_request;
-use masa_tonic_core::{ClientHooks, Hooks, ParentHooks, ServerHooks};
-use tonic_core::{CowGrpcMethod, GrpcMethod, Request, Response, Status};
+use tonic::masa::resolve_method_name_from_http;
+use tonic::masa::resolve_method_name_from_request;
+use tonic::masa::{ClientHooks, Hooks, ParentHooks, ServerHooks};
+use tonic::{CowGrpcMethod, GrpcMethod, Request, Response, Status};
 
 #[derive(Debug)]
 #[allow(dead_code)]
@@ -357,10 +357,10 @@ mod tests {
         use crate::layer::est::state::LatencyEstimators;
         use crate::MethodRegistry;
         use masa_core::{ContextBuilder, LatencyRms};
-        use masa_tonic_core::resolve_method_name_from_http;
-        use masa_tonic_core::{ClientHooks, ParentHooks, ServerHooks};
         use std::sync::Arc;
-        use tonic_core::{CowGrpcMethod, GrpcMethod, Request, Response};
+        use tonic::masa::resolve_method_name_from_http;
+        use tonic::masa::{ClientHooks, ParentHooks, ServerHooks};
+        use tonic::{CowGrpcMethod, GrpcMethod, Request, Response};
 
         #[test]
         fn test_server_context_rms_integration() {
@@ -399,7 +399,7 @@ mod tests {
         #[test]
         fn test_resolve_method_name_from_http_with_overrides() {
             use http::HeaderValue;
-            use masa_tonic_core::{METHOD_NAME_OVERRIDE_HEADER, SERVICE_NAME_OVERRIDE_HEADER};
+            use tonic::masa::{METHOD_NAME_OVERRIDE_HEADER, SERVICE_NAME_OVERRIDE_HEADER};
 
             let method = GrpcMethod::new("TestService", "TestMethod");
             let mut req = http::Request::new(());
@@ -427,11 +427,11 @@ mod tests {
 
         #[test]
         fn test_resolve_method_name_from_request_with_overrides() {
-            use masa_tonic_core::{
+            use tonic::masa::{
                 resolve_method_name_from_request, METHOD_NAME_OVERRIDE_HEADER,
                 SERVICE_NAME_OVERRIDE_HEADER,
             };
-            use tonic_core::metadata::MetadataValue;
+            use tonic::metadata::MetadataValue;
 
             let method = GrpcMethod::new("TestService", "TestMethod");
             let mut req = Request::new(());

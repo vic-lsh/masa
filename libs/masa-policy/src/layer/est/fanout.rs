@@ -667,7 +667,7 @@ mod tests {
         // Test-only: build a MethodId via the registry by registering
         // synthetic method names.
         use crate::MethodRegistry;
-        use tonic_core::CowGrpcMethod;
+        use tonic::CowGrpcMethod;
         MethodRegistry::global()
             .get_or_register(CowGrpcMethod::new("FanoutTest", format!("m{}", n)))
     }

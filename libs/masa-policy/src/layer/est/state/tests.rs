@@ -2,7 +2,7 @@ use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
 use masa_core::{Context, LatencyEwma};
-use tonic_core::{CowGrpcMethod, Response, Status};
+use tonic::{CowGrpcMethod, Response, Status};
 
 use super::latency_estimators::blend_toward_legacy;
 use super::metadata::ComputeTracker;
