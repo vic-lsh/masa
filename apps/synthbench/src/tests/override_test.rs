@@ -6,7 +6,7 @@ use crate::distribution::LatencyDistribution;
 use crate::tonic::{child, child::child_client::ChildClient, child::child_server::ChildServer};
 use app_utils::timing::time_now;
 use masa::ContextBuilder;
-use masa::{MasaRequestExt, METHOD_NAME_OVERRIDE_HEADER, SERVICE_NAME_OVERRIDE_HEADER};
+use masa::MasaRequestExt;
 use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio_stream::wrappers::TcpListenerStream;
@@ -97,13 +97,12 @@ async fn test_override_headers() {
         .unwrap();
 
     // Verify headers are set correctly in the request
-    let metadata = request.metadata();
     assert_eq!(
-        metadata.get(SERVICE_NAME_OVERRIDE_HEADER).unwrap(),
+        request.get_service_name_override().unwrap(),
         "OverriddenService"
     );
     assert_eq!(
-        metadata.get(METHOD_NAME_OVERRIDE_HEADER).unwrap(),
+        request.get_method_name_override().unwrap(),
         "overridden_method"
     );
 

@@ -2,12 +2,11 @@ use crate::config::ParsedCall;
 use crate::hop_trace::decode_hop_traces;
 use crate::service_registry::ServiceRegistry;
 use app_utils::timing::time_now;
-use masa::{METHOD_NAME_OVERRIDE_HEADER, SERVICE_NAME_OVERRIDE_HEADER};
+use masa::MasaRequestExt;
 use rand::{thread_rng, Rng};
 use std::sync::LazyLock;
 use std::time::{Duration, Instant};
 use tokio::task::JoinSet;
-use tonic::metadata::MetadataValue;
 use tonic::{Request, Status};
 use tracing::warn;
 
@@ -101,22 +100,6 @@ pub async fn execute_call_sequence(
                 let target_service_id = call.target.service_id.clone();
                 let target_method_name = call.target.method_name.clone();
                 tasks.spawn(async move {
-                    // Create metadata values first to avoid cloning strings
-                    let method_meta = MetadataValue::try_from(target_method_name.as_str())
-                        .map_err(|e| {
-                            Status::internal(format!(
-                                "Failed to create method name override: {:?}",
-                                e
-                            ))
-                        })?;
-                    let service_meta = MetadataValue::try_from(target_service_id.as_str())
-                        .map_err(|e| {
-                            Status::internal(format!(
-                                "Failed to create service name override: {:?}",
-                                e
-                            ))
-                        })?;
-
                     let mut request = Request::new(crate::tonic::child::MethodRequest {
                         service_id: target_service_id.clone(),
                         method_name: target_method_name.clone(),
@@ -124,11 +107,18 @@ pub async fn execute_call_sequence(
                     });
 
                     request
-                        .metadata_mut()
-                        .insert(METHOD_NAME_OVERRIDE_HEADER, method_meta);
+                        .set_method_name_override(target_method_name.as_str())
+                        .map_err(|e| {
+                            Status::internal(format!("Failed to set method name override: {:?}", e))
+                        })?;
                     request
-                        .metadata_mut()
-                        .insert(SERVICE_NAME_OVERRIDE_HEADER, service_meta);
+                        .set_service_name_override(target_service_id.as_str())
+                        .map_err(|e| {
+                            Status::internal(format!(
+                                "Failed to set service name override: {:?}",
+                                e
+                            ))
+                        })?;
 
                     client.clone().handle_method(request).await
                 });
@@ -180,15 +170,6 @@ pub async fn execute_oracle_call_sequence(
                 let target_service_id = planned_call.target.service_id.clone();
                 let target_method_name = planned_call.target.method_name.clone();
 
-                let method_meta =
-                    MetadataValue::try_from(target_method_name.as_str()).map_err(|e| {
-                        Status::internal(format!("Failed to create method name override: {:?}", e))
-                    })?;
-                let service_meta =
-                    MetadataValue::try_from(target_service_id.as_str()).map_err(|e| {
-                        Status::internal(format!("Failed to create service name override: {:?}", e))
-                    })?;
-
                 let mut request = Request::new(crate::tonic::child::MethodRequest {
                     service_id: target_service_id.clone(),
                     method_name: target_method_name.clone(),
@@ -196,11 +177,15 @@ pub async fn execute_oracle_call_sequence(
                 });
 
                 request
-                    .metadata_mut()
-                    .insert(METHOD_NAME_OVERRIDE_HEADER, method_meta);
+                    .set_method_name_override(target_method_name.as_str())
+                    .map_err(|e| {
+                        Status::internal(format!("Failed to set method name override: {:?}", e))
+                    })?;
                 request
-                    .metadata_mut()
-                    .insert(SERVICE_NAME_OVERRIDE_HEADER, service_meta);
+                    .set_service_name_override(target_service_id.as_str())
+                    .map_err(|e| {
+                        Status::internal(format!("Failed to set service name override: {:?}", e))
+                    })?;
                 planned_call.inject_headers(request.metadata_mut())?;
 
                 client.clone().handle_method(request).await

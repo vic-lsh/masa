@@ -191,7 +191,7 @@ The `Context` is serialized using **bincode** (compact binary format) and **base
 
 ### Method Name Override
 
-The `x-masa-method-name` header (`libs/tonic/tonic/src/masa/hooks.rs`, reexported through `masa`) allows overriding the gRPC method name for latency tracking. This is used by applications where a generic endpoint (e.g., `invoke`) handles multiple logical methods (e.g., the synthbench and tracebench applications).
+The `x-masa-method-name` header (`libs/masa-policy/src/context_ext.rs`, exposed through Masa-owned request helpers) allows overriding the gRPC method name for latency tracking. This is used by applications where a generic endpoint (e.g., `invoke`) handles multiple logical methods (e.g., the synthbench and tracebench applications).
 
 ## 4. Transport Layer (`libs/hyper`)
 
