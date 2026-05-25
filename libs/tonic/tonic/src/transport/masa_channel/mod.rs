@@ -5,8 +5,10 @@ use crate::body::BoxBody;
 use crate::transport::channel::{ResponseFuture, Svc, DEFAULT_BUFFER_SIZE};
 use crate::transport::{Endpoint, Executor};
 use http::Request;
-use masa_core::balance::Balance;
-use std::task::{Context, Poll};
+use std::{
+    marker::PhantomData,
+    task::{Context, Poll},
+};
 
 use tower::{
     buffer::Buffer,
@@ -14,9 +16,45 @@ use tower::{
     Service,
 };
 
+#[allow(missing_debug_implementations)]
+struct Balance<S, Req> {
+    services: Vec<S>,
+    next: usize,
+    _req: PhantomData<Req>,
+}
+
+impl<S, Req> Balance<S, Req> {
+    fn new(list: impl Iterator<Item = S>) -> Self {
+        Self {
+            services: list.collect(),
+            next: 0,
+            _req: PhantomData,
+        }
+    }
+}
+
+impl<S, Req> Service<Req> for Balance<S, Req>
+where
+    S: Service<Req>,
+{
+    type Response = S::Response;
+    type Error = S::Error;
+    type Future = S::Future;
+
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.services[self.next].poll_ready(cx)
+    }
+
+    fn call(&mut self, request: Req) -> Self::Future {
+        let response = self.services[self.next].call(request);
+        self.next = (self.next + 1) % self.services.len();
+        response
+    }
+}
+
 /// minimal reimplementation of crate::transport::channel::Channel:
 /// - uses a fixed list of services for load balancing and eagerly connects to them
-/// - uses Masa's fixed-list round-robin load balancing helper
+/// - uses fixed-list round-robin load balancing
 #[derive(Clone)]
 #[allow(missing_debug_implementations)]
 pub struct Channel {

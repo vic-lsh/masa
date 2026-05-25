@@ -9,6 +9,7 @@ use std::process;
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use masa::MasaServerExt;
 use tonic::{transport::Server, Request, Response, Status};
 
 use unique_id_service::unique_id_service_server::{UniqueIdService, UniqueIdServiceServer};

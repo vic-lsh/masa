@@ -6,6 +6,7 @@ use std::net::SocketAddr;
 use chrono::Utc;
 use log::info;
 use masa::transport::LoadBalancedChannel;
+use masa::MasaServerExt;
 use once_cell::sync::Lazy;
 use regex::Regex;
 use tonic::async_trait;

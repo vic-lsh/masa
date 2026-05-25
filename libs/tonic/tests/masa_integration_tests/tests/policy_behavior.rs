@@ -16,6 +16,7 @@ use std::sync::{
 use masa::MasaRequestExt;
 #[cfg(feature = "trace_queue_latency")]
 use masa::MasaResponseExt;
+use masa::MasaServerExt;
 use masa_core::{time_now, ContextBuilder};
 use masa_integration_tests::pb::{
     child_service_client::ChildServiceClient,

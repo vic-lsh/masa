@@ -1,3 +1,4 @@
+use masa::MasaServerExt;
 use socialnet::user_mention::server::create_service;
 use std::env;
 use std::net::SocketAddr;

@@ -8,7 +8,7 @@ use std::{
     time::Duration,
 };
 
-use masa::MasaRequestExt;
+use masa::{MasaRequestExt, MasaServerExt};
 use masa_core::{time_now, ContextBuilder};
 use masa_integration_tests::pb::{
     child_service_client::ChildServiceClient,

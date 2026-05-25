@@ -74,7 +74,7 @@ ac_rajomon = ["masa/ac_rajomon", "app-utils/ac_rajomon"]
 est_rms = ["masa/est_rms"]
 est_hist = ["masa/est_hist"]
 est_mean_var = ["masa/est_mean_var"]
-trace_queue_latency = ["masa/trace_queue_latency", "tonic/trace_queue_latency"]
+trace_queue_latency = ["masa/trace_queue_latency"]
 
 [python_policy.prio]
 sched_fifo = "fifo"
@@ -163,43 +163,6 @@ estimator = ["masa-core/estimator", "tokio"]
 sched_pred = ["estimator", "sched_slo", "masa-core/sched_pred"]
 ac_pred = ["estimator", "masa-core/ac_pred"]
 ac_rajomon = ["masa", "masa-core/ac_rajomon", "tokio"]
-
-[cargo."libs/tonic/tonic/Cargo.toml"]
-features = [
-  "trace_queue_latency",
-  "sched_slo",
-  "sched_tailclipper",
-  "sched_fifo",
-  "sched_oracle",
-  "abort_slo",
-  "abort_slack",
-  "signal_slack",
-  "estimator",
-  "sched_pred",
-  "ac_pred",
-  "ac_rajomon",
-  "est_rms",
-  "est_hist",
-  "est_mean_var",
-]
-
-[cargo."libs/tonic/tonic/Cargo.toml".deps]
-sched_slo = ["masa", "masa-core/sched_slo", "tokio/sched_prio"]
-sched_tailclipper = [
-  "masa",
-  "masa-core/sched_tailclipper",
-  "tokio/sched_prio",
-  "tokio/tailclipper",
-]
-sched_fifo = ["masa", "masa-core/sched_fifo", "tokio/sched_fifo"]
-sched_oracle = ["masa", "masa-core/sched_oracle", "tokio/sched_prio"]
-abort_slo = ["masa-core/abort_slo"]
-abort_slack = ["masa-core/abort_slack"]
-signal_slack = ["masa-core/signal_slack"]
-estimator = ["masa-core/estimator"]
-sched_pred = ["estimator", "sched_slo", "masa-core/sched_pred"]
-ac_pred = ["estimator", "masa-core/ac_pred"]
-ac_rajomon = ["masa-core/ac_rajomon"]
 
 [cargo."libs/masa/Cargo.toml"]
 features = [

@@ -1,4 +1,5 @@
 use crate::server::social_graph::social_graph_service_server::SocialGraphServiceServer;
+use masa::MasaServerExt;
 use std::env;
 use tonic::transport::Server;
 use tracing::Level;

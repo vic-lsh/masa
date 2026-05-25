@@ -1,5 +1,6 @@
 use anyhow::Result;
 use masa::transport::LoadBalancedChannel;
+use masa::MasaServerExt;
 use masa::MethodId;
 use service_stubs::service_client::ServiceClient;
 use std::env;

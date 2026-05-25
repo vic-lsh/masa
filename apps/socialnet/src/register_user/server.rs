@@ -2,6 +2,7 @@ use std::env;
 use std::net::SocketAddr;
 
 use masa::transport::LoadBalancedChannel;
+use masa::MasaServerExt;
 use tonic::async_trait;
 use tonic::transport::Server;
 use tonic::{Request, Response, Status};

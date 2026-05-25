@@ -1,4 +1,5 @@
 use crate::server::home_timeline::home_timeline_service_server::HomeTimelineServiceServer;
+use masa::MasaServerExt;
 use std::env;
 use tonic::transport::Server;
 use tracing::Level;

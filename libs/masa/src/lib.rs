@@ -36,6 +36,7 @@ pub type DefaultHooks = tonic::masa::noop::NoopHooks;
 pub type DefaultHooks = masa_policy::PolicyHooks;
 
 pub mod transport;
+pub use transport::MasaServerExt;
 
 /// Utility function to create a Masa Context.
 ///

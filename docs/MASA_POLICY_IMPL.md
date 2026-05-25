@@ -376,7 +376,7 @@ Queue latency tracking is active under all scheduling policies via `PolicyHooks`
 For an application to use Masa's features, it must:
 
 1.  **Compile with Feature Flags**: Select the desired policy (e.g., `--features sched_slo`).
-2.  **Use `serve_with_masa`**: In the server initialization code (e.g., `main.rs`), the application calls `.serve_with_masa(addr)` instead of the standard `.serve(addr)`.
+2.  **Use `serve_with_masa`**: In the server initialization code (e.g., `main.rs`), the application imports `masa::MasaServerExt` and calls `.serve_with_masa(addr)` instead of the standard `.serve(addr)`.
     *   This configures the `hyper` server to use the `Exec::Masa` executor, ensuring that priorities are passed to `tokio`.
     *   Using `.serve(addr)` will use `Exec::Default`, which calls standard `tokio::spawn()` and **ignores priorities entirely**.
 3.  **Runtime Configuration**: **must** use `#[tokio::main(flavor = "current_thread")]`. The priority-aware scheduler is only implemented in the single-threaded runtime. The multi-threaded runtime will silently ignore priorities.
@@ -385,7 +385,7 @@ For an application to use Masa's features, it must:
 
 Services connect to downstream replicas using `masa::transport::LoadBalancedChannel` (`libs/masa/src/transport.rs`). It:
 *   Eagerly connects to all replicas on construction.
-*   Uses `masa_core::balance::Balance` for fixed-list round-robin load balancing.
+*   Uses fixed-list round-robin load balancing in the lower-level Tonic channel.
 *   Spawns the internal buffer worker task with `PriorityHint::infra()` (highest priority), ensuring channel infrastructure is never starved by request tasks.
 
 ### `x-queue-latency` Response Header

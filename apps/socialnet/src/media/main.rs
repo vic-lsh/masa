@@ -1,4 +1,5 @@
 use crate::server::create_service;
+use masa::MasaServerExt;
 use std::env;
 use std::net::SocketAddr;
 use tonic::transport::Server;

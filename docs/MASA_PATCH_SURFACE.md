@@ -59,8 +59,9 @@ The extraction keeps these paths stable:
   clients and servers: no scheduling features select
   `tonic::masa::noop::NoopHooks`; scheduling features select
   `masa_policy::PolicyHooks`.
-- `tonic::transport::Server::serve_with_masa` remains the server entry point
-  that selects Hyper's `Exec::Masa` executor.
+- `masa::MasaServerExt::serve_with_masa` is the server entry point that wraps
+  Tonic's generic `serve_with_executor` hook and selects Hyper's `Exec::Masa`
+  executor.
 - `masa::transport::LoadBalancedChannel` is the application-facing
   client-side replica channel used by applications and experiment deployment
   scripts. It wraps the lower-level `tonic::transport::masa_channel::Channel`.
@@ -76,13 +77,13 @@ The following Masa logic lives outside vendored Tonic or Tower:
 - Metadata context helpers and `MasaRequestExt`/`MasaResponseExt`/
   `MasaStatusExt` moved to `libs/masa-policy/src/context_ext.rs`.
 - HTTP header context readers (`read_context`, `read_context_from_headers`,
-  `read_priority_from_headers`) moved to `libs/masa-core/src/header.rs` so
-  Tonic can extract stream priority without depending on `masa-policy`.
+  `read_priority_from_headers`) live in `libs/masa-core/src/header.rs`;
+  the Masa crate uses them to configure Hyper stream priorities through
+  Tonic's generic executor hook.
 - Scheduling, estimation, deadline guard, queue latency, and admission control
   layers moved to `libs/masa-policy/src/layer/`.
-- The fixed-list round-robin balance helper moved out of vendored Tower into
-  `libs/masa-core/src/balance.rs`; the lower-level Masa channel now imports
-  `masa_core::balance::Balance`.
+- The lower-level Masa channel owns its small fixed-list round-robin helper
+  locally, avoiding a Masa-core dependency from vendored Tonic.
 - The application-facing `LoadBalancedChannel` moved out of vendored Tonic into
   `libs/masa/src/transport.rs`.
 - Tower crates now come from crates.io rather than the root `[patch.crates-io]`
@@ -95,8 +96,8 @@ The following Masa logic lives outside vendored Tonic or Tower:
 | Tokio task and scheduler internals | `libs/tokio/tokio/src/task/spawn.rs`, `libs/tokio/tokio/src/task/local.rs`, `libs/tokio/tokio/src/runtime/task/core.rs`, `libs/tokio/tokio/src/runtime/task/poll_hook.rs`, `libs/tokio/tokio/src/runtime/context.rs`, `libs/tokio/tokio/src/runtime/scheduler/current_thread/queue/` | Masa priority is a task scheduling property. The runtime must store priority and poll hooks in task headers, inherit hooks across spawned child tasks, reprioritize running tasks, and choose ready tasks before their futures are polled. This cannot be reproduced by a Tonic or Tower layer after the task is already queued. | `libs/tokio/tokio/tests/masa_priority.rs`, queue unit tests in `libs/tokio/tokio/src/runtime/scheduler/current_thread/queue/`, `libs/masa-core/tests/priority_hint_behavior.rs`, and the `tokio (masa priority suite)` step in `scripts/test.sh`. |
 | Hyper HTTP/2 stream priority before spawn | `libs/hyper/src/common/exec.rs`, `libs/hyper/src/proto/h2/server.rs` | Hyper is the layer that sees a new HTTP/2 stream and its headers before the stream future is spawned. Masa must read the `ctx` header and pass `PriorityHint` into the executor at that moment so first-poll ordering is correct. Waiting until Tonic receives the request is too late for initial scheduling. | Unit tests in `libs/hyper/src/common/exec.rs`; end-to-end priority behavior in `libs/tonic/tests/masa_integration_tests/tests/serve_behavior.rs`; feature-matrix compile coverage from `scripts/check.sh`. |
 | Tonic unary handler-boundary hooks | `libs/tonic/tonic/src/server/grpc.rs`, `libs/tonic/tonic-build/src/client.rs`, `libs/tonic/tonic-build/src/server.rs`, `libs/tonic/tonic-build/src/code_gen.rs`, `libs/tonic/tonic-build/src/prost.rs` | Masa hooks must run at exact Tonic boundaries: create a server context before handler execution, set parent context before each handler poll, reset it after each poll, call child RPC hooks around generated client calls, and run finalize hooks before and after response serialization. These boundaries are not exposed as stable upstream extension points. | `libs/tonic/tests/masa_integration_tests/tests/masa_context.rs`, `libs/tonic/tests/masa_integration_tests/tests/metadata_helpers.rs`, and feature-specific policy tests in `libs/tonic/tests/masa_integration_tests/tests/policy_behavior.rs`. |
-| Tonic executor glue | `libs/tonic/tonic/src/transport/server/mod.rs`, `libs/tonic/tonic/src/transport/service/executor.rs` | Applications need an explicit `serve_with_masa` entry point that selects Hyper's Masa executor without changing ordinary `serve` behavior. The shared executor trait also carries `PriorityHint` so internal transport workers can choose infrastructure priority where needed. | `libs/tonic/tests/masa_integration_tests/tests/serve_behavior.rs` verifies `serve_with_masa` priority behavior; application builds in `scripts/check.sh` verify the public API remains usable. |
-| Masa lower-level channel internals | `libs/tonic/tonic/src/transport/masa_channel/mod.rs` | `masa::transport::LoadBalancedChannel` still depends on Tonic's transport internals for eager endpoint connection, `GrpcService` compatibility, and infrastructure-priority buffer workers. Keeping this lower-level channel in Tonic avoids widening unstable transport internals while the public API is owned by `masa`. | `libs/masa-core/src/balance.rs` owns unit coverage for round-robin order. Current channel coverage is indirect through application compile/e2e paths that instantiate `LoadBalancedChannel`, plus mssim service tests in `apps/mssim/generic-service/src/core.rs` that inject it through `new_from_service_name`. Add dedicated coverage for replica expansion, Docker Compose service-name mode, connection retry behavior, and buffer-worker priority before changing these internals. |
+| Tonic executor glue | `libs/tonic/tonic/src/transport/server/mod.rs`, `libs/tonic/tonic/src/transport/service/executor.rs` | Tonic keeps the generic `serve_with_executor` hook so Masa can select Hyper's priority executor from the `masa` crate without changing ordinary `serve` behavior. The shared executor trait also carries `PriorityHint` so internal transport workers can choose infrastructure priority where needed. | `libs/tonic/tests/masa_integration_tests/tests/serve_behavior.rs` verifies `masa::MasaServerExt::serve_with_masa` priority behavior; application builds in `scripts/check.sh` verify the public API remains usable. |
+| Masa lower-level channel internals | `libs/tonic/tonic/src/transport/masa_channel/mod.rs` | `masa::transport::LoadBalancedChannel` still depends on Tonic's transport internals for eager endpoint connection, `GrpcService` compatibility, and infrastructure-priority buffer workers. Keeping this lower-level channel in Tonic avoids widening unstable transport internals while the public API is owned by `masa`. | Current channel coverage is indirect through application compile/e2e paths that instantiate `LoadBalancedChannel`, plus mssim service tests in `apps/mssim/generic-service/src/core.rs` that inject it through `new_from_service_name`. Add dedicated coverage for replica expansion, Docker Compose service-name mode, connection retry behavior, round-robin order, and buffer-worker priority before changing these internals. |
 
 ## Code That Can Move Later
 
@@ -108,9 +109,6 @@ The following code is intended to be movable once validation exists:
   widening Tonic internals.
 - Some generated-code hook calls could shrink if upstream Tonic exposes stable
   client and server lifecycle hooks at the same boundaries.
-- `serve_with_masa` could become an extension trait if Hyper and Tonic expose a
-  stable way to choose a per-stream priority executor without patching their
-  server transport.
 
 The following code must remain patched unless upstream provides equivalent
 extension points:

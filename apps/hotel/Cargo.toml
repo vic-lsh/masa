@@ -72,7 +72,7 @@ ac_rajomon = ["masa/ac_rajomon", "app-utils/ac_rajomon"]
 est_rms = ["masa/est_rms"]
 est_hist = ["masa/est_hist"]
 est_mean_var = ["masa/est_mean_var"]
-trace_queue_latency = ["masa/trace_queue_latency", "tonic/trace_queue_latency"]
+trace_queue_latency = ["masa/trace_queue_latency"]
 
 synthetic = []
 workload_stats = []
