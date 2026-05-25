@@ -272,14 +272,14 @@ Poll hooks are Masa's mechanism for intercepting every `Future::poll` invocation
 
 Poll hooks operate at two layers — tonic and tokio — with different responsibilities.
 
-### Tonic Layer: `ParentHooks` and `AbortableFuture`
+### Tonic Layer: `ParentHooks` and Internal Future Wrapper
 
 The `ParentHooks` trait (`libs/tonic/tonic/src/masa/hooks.rs`) defines `before_poll` and `after_poll` methods on the per-request `ParentContext`:
 
 *   **`before_poll<Ret>(&self) -> Result<(), Result<Response<Ret>, Status>>`**: Called before the handler future is polled. Returning `Err(response)` short-circuits the poll and immediately resolves the future with that response.
 *   **`after_poll<Ret>(&self, poll: &Poll<...>) -> Result<(), Result<Response<Ret>, Status>>`**: Called after the handler future is polled. Receives the poll result (`Pending` or `Ready`). Can also short-circuit by returning an error response.
 
-In `masa_unary` (`libs/tonic/tonic/src/server/grpc.rs`), the service handler future is wrapped with `AbortableFuture` (`libs/tonic/tonic/src/masa/future.rs`, reexported through `libs/tonic/tonic/src/util.rs`):
+In `masa_unary` (`libs/tonic/tonic/src/server/grpc.rs`), the service handler future is wrapped with Tonic's crate-internal `AbortableFuture` helper (`libs/tonic/tonic/src/masa/future.rs`):
 
 ```
 service.call(request)

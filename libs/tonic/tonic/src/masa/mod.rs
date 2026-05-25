@@ -3,7 +3,7 @@
 //! Policy hook selection and concrete context extension traits are owned by
 //! `masa`.
 
-mod future;
+pub(crate) mod future;
 mod hooks;
 mod thread_local;
 
@@ -14,7 +14,6 @@ pub mod noop;
 #[cfg(feature = "transport")]
 pub mod runtime;
 
-pub use future::{Abortable, AbortableFuture, AbortableFutureBuilder, AfterPollFn, BeforePollFn};
 pub use hooks::{
     resolve_method_name_from_http, resolve_method_name_from_request, ClientHooks, Hooks,
     ParentHooks, ServerHooks, METHOD_NAME_OVERRIDE_HEADER, SERVICE_NAME_OVERRIDE_HEADER,

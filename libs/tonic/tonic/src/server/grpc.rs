@@ -305,7 +305,7 @@ where
         };
 
         // [NOTE] Into service call.
-        use crate::util::Abortable;
+        use crate::masa::future::Abortable;
         let fut = service
             .call(request)
             .abortable()
