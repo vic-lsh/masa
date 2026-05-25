@@ -1,6 +1,5 @@
 use anyhow::Result;
 use masa::transport::LoadBalancedChannel;
-use masa::MasaServerExt;
 use masa::MethodId;
 use service_stubs::service_client::ServiceClient;
 use std::env;
@@ -221,7 +220,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     Server::builder()
         .add_service(ServiceServer::new(svc))
-        .serve_with_masa(addr)
+        .serve(addr)
         .await?;
     queue_monitor_task.abort();
     let _ = queue_monitor_task.await;

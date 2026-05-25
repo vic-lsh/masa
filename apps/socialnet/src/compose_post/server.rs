@@ -6,7 +6,6 @@ use std::net::SocketAddr;
 use chrono::Utc;
 use log::info;
 use masa::transport::LoadBalancedChannel;
-use masa::MasaServerExt;
 use once_cell::sync::Lazy;
 use regex::Regex;
 use tonic::async_trait;
@@ -578,7 +577,7 @@ pub async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
 
     Server::builder()
         .add_service(ComposePostServiceServer::new(service_impl))
-        .serve_with_masa(addr)
+        .serve(addr)
         .await?;
     Ok(())
 }

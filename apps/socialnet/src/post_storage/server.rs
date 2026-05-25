@@ -5,7 +5,6 @@ use std::sync::Arc;
 use async_memcached::AsciiProtocol;
 use async_memcached::Client as McClient;
 use futures::stream::TryStreamExt;
-use masa::MasaServerExt;
 use mongodb::bson::{doc, oid::ObjectId, Bson};
 use mongodb::options::ClientOptions;
 use mongodb::{Client as MongoClient, Collection};
@@ -440,7 +439,7 @@ pub async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
 
     Server::builder()
         .add_service(PostStorageServiceServer::new(service_impl))
-        .serve_with_masa(listen_addr)
+        .serve(listen_addr)
         .await?;
 
     Ok(())

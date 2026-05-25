@@ -4,7 +4,6 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use masa::MasaRequestExt;
-use masa::MasaServerExt;
 use masa_core::{time_now, ContextBuilder};
 use masa_integration_tests::pb::{
     child_service_client::ChildServiceClient,
@@ -59,7 +58,7 @@ async fn high_priority_request_preempts_under_masa() {
             .add_service(
                 ChildServiceServer::<_, masa_policy::PolicyHooks>::with_custom_context(svc),
             )
-            .serve_with_masa(addr)
+            .serve(addr)
             .await
             .unwrap();
     });

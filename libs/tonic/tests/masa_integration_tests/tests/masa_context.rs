@@ -8,7 +8,7 @@ use std::{
     time::Duration,
 };
 
-use masa::{MasaRequestExt, MasaServerExt};
+use masa::MasaRequestExt;
 use masa_core::{time_now, ContextBuilder};
 use masa_integration_tests::pb::{
     child_service_client::ChildServiceClient,
@@ -163,7 +163,7 @@ where
     let child_svc = tokio::spawn(async {
         Server::builder()
             .add_service(ChildServiceServer::<_, M>::with_custom_context(ChildSvc))
-            .serve_with_masa(child_svc_addr.parse().unwrap())
+            .serve(child_svc_addr.parse().unwrap())
             .await
             .unwrap();
     });
@@ -173,7 +173,7 @@ where
             .add_service(ParentServiceServer::<_, M>::with_custom_context(
                 ParentSvc::<M>::new(child_svc_addr, fanout_factor),
             ))
-            .serve_with_masa(parent_svc_addr.parse().unwrap())
+            .serve(parent_svc_addr.parse().unwrap())
             .await
             .unwrap();
     });
@@ -211,7 +211,7 @@ async fn test_service_ctx_construction() {
                     .add_service(ChildServiceServer::<_, MockHooks>::with_custom_context(
                         ChildSvc,
                     ))
-                    .serve_with_masa(addr.parse().unwrap())
+                    .serve(addr.parse().unwrap())
                     .await
                     .unwrap();
             });

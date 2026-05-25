@@ -36,6 +36,7 @@ tower-service = "0.3"
 tokio = { path = "../tokio/tokio", features = ["sync"] }
 want = "0.3"
 log = "0.4"
+masa-core = { path = "../masa-core", optional = true }
 
 # Optional
 
@@ -90,6 +91,7 @@ http2 = ["h2"]
 # Client/Server
 client = []
 server = []
+masa = ["dep:masa-core"]
 
 # `impl Stream` for things
 stream = []

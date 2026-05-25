@@ -7,7 +7,6 @@ use std::fs::File;
 use std::io::BufReader;
 use std::path::PathBuf;
 
-use masa::MasaServerExt;
 use structopt::StructOpt;
 use tonic::transport::Server;
 
@@ -44,7 +43,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let reservation_service = ReservationImpl::new(reservation).await?;
     Server::builder()
         .add_service(ReservationServer::new(reservation_service))
-        .serve_with_masa(reservation_addr)
+        .serve(reservation_addr)
         .await?;
 
     Ok(())

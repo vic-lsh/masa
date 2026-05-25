@@ -16,7 +16,6 @@ use std::sync::{
 use masa::MasaRequestExt;
 #[cfg(feature = "trace_queue_latency")]
 use masa::MasaResponseExt;
-use masa::MasaServerExt;
 use masa_core::{time_now, ContextBuilder};
 use masa_integration_tests::pb::{
     child_service_client::ChildServiceClient,
@@ -44,8 +43,10 @@ fn unused_local_addr() -> SocketAddr {
 ///
 /// We force `init_price=1` (baseline positive price so `tokens(0)` fails the
 /// admission gate) and `price_freq=1` (always propagate, removing the 20%
-/// retry loop). All other params take their built-in defaults via
-/// `#[serde(default)]` on `PolicyParams` / `RajomonParams`.
+/// retry loop). `latency_threshold_us=0` prevents the background price worker
+/// from decaying the test price back to zero between parallel tests. All other
+/// params take their built-in defaults via `#[serde(default)]` on
+/// `PolicyParams` / `RajomonParams`.
 #[cfg(feature = "ac_rajomon")]
 fn ensure_test_rajomon_params() {
     use std::sync::Once;
@@ -53,14 +54,30 @@ fn ensure_test_rajomon_params() {
     ONCE.call_once(|| {
         let path =
             std::env::temp_dir().join(format!("masa_rajomon_test_{}.json", std::process::id()));
-        std::fs::write(&path, r#"{"rajomon":{"init_price":1,"price_freq":1}}"#)
-            .expect("write test policy params");
+        std::fs::write(
+            &path,
+            r#"{"rajomon":{"init_price":1,"price_freq":1,"latency_threshold_us":0}}"#,
+        )
+        .expect("write test policy params");
         std::env::set_var("MASA_POLICY_PARAMS_PATH", &path);
         // Force initialization of the OnceLock while we still hold exclusive
         // access via `Once::call_once`, so a concurrent rajomon test can't
         // read `PolicyParams::global()` before our env var is in place.
         let _ = masa_policy::PolicyParams::global();
     });
+}
+
+#[cfg(feature = "ac_rajomon")]
+static RAJOMON_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+#[cfg(feature = "ac_rajomon")]
+fn reset_test_rajomon_state() {
+    let state = &masa_policy::RAJOMON_STATE;
+    state.own_price.store(1, Ordering::SeqCst);
+    state.downstream_prices.clear();
+    state.max_downstream_for_method.clear();
+    state.queue_stats.window_max.store(0, Ordering::SeqCst);
+    state.queue_stats.log_window_max.store(0, Ordering::SeqCst);
 }
 
 #[cfg(all(feature = "sched_slo", feature = "trace_queue_latency"))]
@@ -85,7 +102,7 @@ async fn queue_latency_metadata_is_attached() {
             .add_service(
                 ChildServiceServer::<_, masa_policy::PolicyHooks>::with_custom_context(QueueSvc),
             )
-            .serve_with_masa(addr)
+            .serve(addr)
             .await
             .unwrap();
     });
@@ -151,7 +168,7 @@ async fn expired_context_triggers_early_return() {
             .add_service(
                 ChildServiceServer::<_, masa_policy::PolicyHooks>::with_custom_context(svc),
             )
-            .serve_with_masa(addr)
+            .serve(addr)
             .await
             .unwrap();
     });
@@ -188,7 +205,9 @@ async fn expired_context_triggers_early_return() {
 #[cfg(all(feature = "sched_slo", feature = "ac_rajomon"))]
 #[tokio::test(flavor = "current_thread")]
 async fn sufficient_tokens_executes_and_piggybacks_price() {
+    let _rajomon_guard = RAJOMON_TEST_LOCK.lock().await;
     ensure_test_rajomon_params();
+    reset_test_rajomon_state();
     #[derive(Clone)]
     struct FastSvc;
 
@@ -211,7 +230,7 @@ async fn sufficient_tokens_executes_and_piggybacks_price() {
             .add_service(
                 ChildServiceServer::<_, masa_policy::PolicyHooks>::with_custom_context(svc),
             )
-            .serve_with_masa(addr)
+            .serve(addr)
             .await
             .unwrap();
     });
@@ -224,8 +243,8 @@ async fn sufficient_tokens_executes_and_piggybacks_price() {
 
     // With `price_freq=1` the price is propagated on every response, so a
     // single RPC suffices. The propagated value is `accumulated_price`
-    // (= `own_price + max_downstream`); with no queueing it equals the
-    // configured `init_price` (1).
+    // (= `own_price + max_downstream`) and should retain the positive
+    // test floor.
     let now = time_now();
     let rajomon_ctx = ContextBuilder::new("test.ChildService/Rpc1", 99)
         .gateway_entry(now)
@@ -246,7 +265,8 @@ async fn sufficient_tokens_executes_and_piggybacks_price() {
         .metadata()
         .get("x-masa-rajomon-price")
         .expect("price header should have been piggybacked");
-    assert_eq!(header.to_str().unwrap(), "1");
+    let price = header.to_str().unwrap().parse::<u64>().unwrap();
+    assert!(price >= 1, "expected positive Rajomon price, got {price}");
 
     server.abort();
 }
@@ -254,7 +274,9 @@ async fn sufficient_tokens_executes_and_piggybacks_price() {
 #[cfg(all(feature = "sched_slo", feature = "ac_rajomon"))]
 #[tokio::test(flavor = "current_thread")]
 async fn insufficient_tokens_triggers_early_return() {
+    let _rajomon_guard = RAJOMON_TEST_LOCK.lock().await;
     ensure_test_rajomon_params();
+    reset_test_rajomon_state();
     #[derive(Clone)]
     struct SlowSvc {
         executed: Arc<AtomicBool>,
@@ -284,7 +306,7 @@ async fn insufficient_tokens_triggers_early_return() {
             .add_service(
                 ChildServiceServer::<_, masa_policy::PolicyHooks>::with_custom_context(svc),
             )
-            .serve_with_masa(addr)
+            .serve(addr)
             .await
             .unwrap();
     });

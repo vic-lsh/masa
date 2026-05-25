@@ -2373,6 +2373,7 @@ dependencies = [
  "itoa",
  "libc",
  "log",
+ "masa-core",
  "matches",
  "num_cpus",
  "pin-project-lite",
@@ -2984,7 +2985,6 @@ dependencies = [
  "masa-policy",
  "tokio",
  "tonic",
- "tower-layer",
 ]
 
 [[package]]

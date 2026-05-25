@@ -215,9 +215,11 @@ can delay new streams before their first policy poll, inflate observed child wal
 latency, and feed back into more pessimistic admission control.
 
 ### Executor Interface
-The `Exec` enum in `libs/hyper/src/common/exec.rs` has three variants:
-*   `Exec::Default`: Uses standard `tokio::spawn()` — **ignores priority**.
-*   `Exec::Masa`: Uses `tokio::task::spawn_with_prio()` — forwards priority to the scheduler.
+The `Exec` enum in `libs/hyper/src/common/exec.rs` keeps the upstream-shaped
+variants:
+*   `Exec::Default`: Uses standard `tokio::spawn()` without `hyper/masa`; under
+    `hyper/masa`, HTTP/2 request streams read the `ctx` priority header and use
+    `tokio::task::spawn_with_prio()`.
 *   `Exec::Executor(...)`: Delegates to a custom executor.
 
 The `ConnStreamExec` trait is extended with `execute_h2stream_with_prio` to pass the priority hint from `hyper` to the underlying executor. Each HTTP/2 stream is an independent task competing in the same priority queue.
@@ -376,9 +378,9 @@ Queue latency tracking is active under all scheduling policies via `PolicyHooks`
 For an application to use Masa's features, it must:
 
 1.  **Compile with Feature Flags**: Select the desired policy (e.g., `--features sched_slo`).
-2.  **Use `serve_with_masa`**: In the server initialization code (e.g., `main.rs`), the application imports `masa::MasaServerExt` and calls `.serve_with_masa(addr)` instead of the standard `.serve(addr)`.
-    *   This configures the `hyper` server to use the `Exec::Masa` executor, ensuring that priorities are passed to `tokio`.
-    *   Using `.serve(addr)` will use `Exec::Default`, which calls standard `tokio::spawn()` and **ignores priorities entirely**.
+2.  **Use `serve`**: In the server initialization code (e.g., `main.rs`), the application calls the standard `.serve(addr)` API.
+    *   When compiled with a Masa scheduling/admission feature, Hyper's default executor path reads HTTP/2 stream priorities from Masa headers and passes them to `tokio`.
+    *   Without a Masa runtime feature, `.serve(addr)` uses `Exec::Default`, which calls standard `tokio::spawn()` and ignores Masa priorities.
 3.  **Runtime Configuration**: **must** use `#[tokio::main(flavor = "current_thread")]`. The priority-aware scheduler is only implemented in the single-threaded runtime. The multi-threaded runtime will silently ignore priorities.
 
 ### `LoadBalancedChannel`
@@ -402,7 +404,7 @@ The total is injected into the outgoing response in `finalize()`, creating a rec
 2.  **Client (Upstream)**: `ParentHooks::before_child_rpc` calculates child deadline/priority, serializes `Context` to bincode+base64, and sets the `ctx` HTTP/2 header.
 3.  **Network**: Request travels with `ctx` header.
 4.  **Server (Downstream) Hyper**: Parses `ctx` header (base64 → bincode → `Context`), extracts `PriorityHint`.
-5.  **Server Executor**: `Exec::Masa` calls `tokio::task::spawn_with_prio(handler_future, priority)`.
+5.  **Server Executor**: Under `hyper/masa`, `Exec::Default` calls `tokio::task::spawn_with_prio(handler_future, priority)` for HTTP/2 request streams.
 6.  **Tokio Runtime**: Enqueues task in priority queue (binary heap, round-robin, or FIFO depending on feature flags).
 7.  **CPU**: Picks highest priority task (lowest `PriorityHint` value) to execute.
 8.  **Each poll cycle**: Tonic's `AbortableFuture` runs `before_poll` (sets thread-local context, checks deadline) -> polls handler -> runs `after_poll` (clears thread-local, checks deadline if `Pending`). Child tasks inherit a tokio `PollHook` that mirrors the thread-local setup/teardown.

@@ -10,7 +10,6 @@ use mongodb::options::{FindOneAndUpdateOptions, FindOneOptions, ReturnDocument};
 use mongodb::{Client, Collection};
 
 use masa::transport::LoadBalancedChannel;
-use masa::MasaServerExt;
 use tonic::async_trait;
 use tonic::transport::Server;
 use tonic::{Request, Response, Status};
@@ -514,7 +513,7 @@ pub async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
 
     Server::builder()
         .add_service(UserTimelineServiceServer::new(service))
-        .serve_with_masa(listen_addr)
+        .serve(listen_addr)
         .await?;
 
     Ok(())

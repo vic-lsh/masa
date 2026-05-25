@@ -1,4 +1,3 @@
-use masa::MasaServerExt;
 use socialnet::text_service::server::create_service;
 use std::env;
 use std::net::SocketAddr;
@@ -17,10 +16,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Text Service listening on {}", addr);
 
     // Run the server
-    Server::builder()
-        .add_service(service)
-        .serve_with_masa(addr)
-        .await?;
+    Server::builder().add_service(service).serve(addr).await?;
 
     Ok(())
 }

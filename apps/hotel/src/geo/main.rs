@@ -7,7 +7,6 @@ use std::fs::File;
 use std::io::BufReader;
 use std::path::PathBuf;
 
-use masa::MasaServerExt;
 use structopt::StructOpt;
 use tonic::transport::Server;
 
@@ -44,7 +43,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     log::warn!("Server listening on {}...", geo_addr);
     Server::builder()
         .add_service(GeoServer::new(geo))
-        .serve_with_masa(geo_addr)
+        .serve(geo_addr)
         .await?;
 
     Ok(())

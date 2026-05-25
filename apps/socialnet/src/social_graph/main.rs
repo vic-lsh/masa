@@ -1,5 +1,4 @@
 use crate::server::social_graph::social_graph_service_server::SocialGraphServiceServer;
-use masa::MasaServerExt;
 use std::env;
 use tonic::transport::Server;
 use tracing::Level;
@@ -76,7 +75,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     Server::builder()
         .add_service(SocialGraphServiceServer::new(service))
-        .serve_with_masa(addr)
+        .serve(addr)
         .await?;
 
     Ok(())

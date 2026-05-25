@@ -6,7 +6,6 @@ use std::fs::File;
 use std::io::BufReader;
 use std::path::PathBuf;
 
-use masa::MasaServerExt;
 use structopt::StructOpt;
 use tonic::transport::Server;
 
@@ -41,7 +40,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     log::info!("Server listening on {}...", frontend_addr);
     Server::builder()
         .add_service(FrontendServer::new(frontend_service))
-        .serve_with_masa(frontend_addr)
+        .serve(frontend_addr)
         .await?;
 
     Ok(())

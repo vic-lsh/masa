@@ -6,7 +6,6 @@ use std::fs::File;
 use std::io::BufReader;
 use std::path::PathBuf;
 
-use masa::MasaServerExt;
 use structopt::StructOpt;
 use tonic::transport::Server;
 
@@ -46,7 +45,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let search_service = SearchImpl::new(geo, rate).await;
     Server::builder()
         .add_service(SearchServer::new(search_service))
-        .serve_with_masa(search_addr)
+        .serve(search_addr)
         .await?;
 
     Ok(())

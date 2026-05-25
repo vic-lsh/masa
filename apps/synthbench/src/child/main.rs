@@ -2,7 +2,6 @@ use std::fs::File;
 use std::io::BufReader;
 use std::path::PathBuf;
 
-use masa::MasaServerExt;
 use structopt::StructOpt;
 use tonic::transport::Server;
 
@@ -41,7 +40,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     log::warn!("Server listening on {}...", child_addr);
     Server::builder()
         .add_service(ChildServer::new(child))
-        .serve_with_masa(child_addr)
+        .serve(child_addr)
         .await?;
 
     Ok(())
