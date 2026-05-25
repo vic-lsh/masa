@@ -35,6 +35,20 @@ use hotel_tonic::{
 
 use hotel::profile_layer::extract_latency_traces;
 
+#[cfg(feature = "trace_queue_latency")]
+fn queueing_latency<T>(response: &Response<T>) -> u64 {
+    response
+        .get_masa_context()
+        .and_then(|ctx| ctx.queue_latencies().cloned())
+        .map(|ql| ql.initial + ql.resume)
+        .unwrap_or(0)
+}
+
+#[cfg(not(feature = "trace_queue_latency"))]
+fn queueing_latency<T>(_response: &Response<T>) -> u64 {
+    0
+}
+
 pub struct FrontendImpl {
     search_client: SearchClient<LoadBalancedChannel>,
     reservation_client: ReservationClient<LoadBalancedChannel>,
@@ -130,11 +144,7 @@ impl Frontend for FrontendImpl {
         };
         let search_start_time = time_now();
         let search_resp = search_client.handle_nearby(search_req).await?;
-        let search_q_lat = search_resp
-            .get_masa_context()
-            .and_then(|ctx| ctx.queue_latencies)
-            .map(|ql| ql.initial + ql.resume)
-            .unwrap_or(0);
+        let search_q_lat = queueing_latency(&search_resp);
         let search_header = search_resp.metadata();
         match search_header.get("X-Latency-Traces") {
             Some(_) => {
@@ -159,11 +169,7 @@ impl Frontend for FrontendImpl {
 
         let reservation_start_time = time_now();
         let span_response = reservation_client.check_availability(span_request).await?;
-        let reservation_q_lat = span_response
-            .get_masa_context()
-            .and_then(|ctx| ctx.queue_latencies)
-            .map(|ql| ql.initial + ql.resume)
-            .unwrap_or(0);
+        let reservation_q_lat = queueing_latency(&span_response);
         let reservation_header = span_response.metadata();
         match reservation_header.get("X-Latency-Traces") {
             Some(_) => {
@@ -185,11 +191,7 @@ impl Frontend for FrontendImpl {
         };
         let profile_start_time = time_now();
         let profile_response = profile_client.get_profiles(profile_request).await?;
-        let profile_q_lat = profile_response
-            .get_masa_context()
-            .and_then(|ctx| ctx.queue_latencies)
-            .map(|ql| ql.initial + ql.resume)
-            .unwrap_or(0);
+        let profile_q_lat = queueing_latency(&profile_response);
         let profile_header = profile_response.metadata();
         match profile_header.get("X-Latency-Traces") {
             Some(_) => {
@@ -244,11 +246,7 @@ impl Frontend for FrontendImpl {
             password: request.password,
         };
         let user_response = user_client.check_user(user_request).await?;
-        let user_q_lat = user_response
-            .get_masa_context()
-            .and_then(|ctx| ctx.queue_latencies)
-            .map(|ql| ql.initial + ql.resume)
-            .unwrap_or(0);
+        let user_q_lat = queueing_latency(&user_response);
         let response = user_response.into_inner();
 
         if !response.success {
@@ -270,11 +268,7 @@ impl Frontend for FrontendImpl {
         let reservation_response = reservation_client
             .make_reservation(reservation_request)
             .await?;
-        let res_q_lat = reservation_response
-            .get_masa_context()
-            .and_then(|ctx| ctx.queue_latencies)
-            .map(|ql| ql.initial + ql.resume)
-            .unwrap_or(0);
+        let res_q_lat = queueing_latency(&reservation_response);
         let response = reservation_response.into_inner();
 
         let response = frontend::ReservationResponse {

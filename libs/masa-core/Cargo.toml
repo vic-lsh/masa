@@ -18,6 +18,7 @@ est_rms = []
 est_hist = []
 ac_pred = ["estimator"]
 ac_rajomon = []
+trace_queue_latency = []
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }

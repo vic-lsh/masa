@@ -17,6 +17,7 @@ flag_combos=(
     "sched_slo,abort_slo"
     "sched_tailclipper,abort_slo"
     "sched_oracle"
+    "sched_slo,trace_queue_latency"
     "sched_slo,ac_rajomon"
     "sched_slo,ac_pred,est_mean_var"
     "sched_pred,abort_slo,ac_pred,est_mean_var"

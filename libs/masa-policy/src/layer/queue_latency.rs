@@ -94,16 +94,16 @@ mod inner {
         ) -> Result<(), Status> {
             if let Ok(resp) = response {
                 if let Some(ctx) = resp.get_masa_context() {
-                    if let Some(ql) = ctx.queue_latencies {
+                    if let Some(ql) = ctx.queue_latencies() {
                         self.initial_q_lat.fetch_add(ql.initial, Ordering::AcqRel);
                         self.resume_q_lat.fetch_add(ql.resume, Ordering::AcqRel);
                         if !ql.queue_lengths.is_empty() {
                             let mut child_qls = self.child_queue_lengths.lock().unwrap();
-                            for (svc, len) in ql.queue_lengths {
+                            for (svc, len) in ql.queue_lengths.iter() {
                                 child_qls
-                                    .entry(svc)
-                                    .and_modify(|e| *e = (*e).max(len))
-                                    .or_insert(len);
+                                    .entry(svc.clone())
+                                    .and_modify(|e| *e = (*e).max(*len))
+                                    .or_insert(*len);
                             }
                         }
                     }
@@ -119,7 +119,7 @@ mod inner {
             let own_len = self.own_queue_len.load(Ordering::Acquire);
             let mut queue_lengths = std::mem::take(&mut *self.child_queue_lengths.lock().unwrap());
             queue_lengths.insert(service_name().to_string(), own_len);
-            ctx.queue_latencies = Some(QueueLatencies {
+            ctx.set_queue_latencies(QueueLatencies {
                 initial,
                 resume,
                 queue_lengths,

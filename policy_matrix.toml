@@ -38,6 +38,7 @@ check = [
   "sched_slo,abort_slo",
   "sched_tailclipper,abort_slo",
   "sched_oracle",
+  "sched_slo,trace_queue_latency",
   "sched_slo,ac_rajomon",
   "sched_slo,ac_pred,est_mean_var",
   "sched_pred,abort_slo,ac_pred,est_mean_var",
@@ -123,6 +124,7 @@ features = [
   "est_hist",
   "ac_pred",
   "ac_rajomon",
+  "trace_queue_latency",
 ]
 
 [cargo."libs/masa-core/Cargo.toml".deps]
@@ -151,7 +153,7 @@ features = [
 ]
 
 [cargo."libs/masa-policy/Cargo.toml".deps]
-trace_queue_latency = ["tokio"]
+trace_queue_latency = ["masa-core/trace_queue_latency", "tokio"]
 sched_slo = ["masa", "masa-core/sched_slo"]
 sched_tailclipper = ["masa", "masa-core/sched_tailclipper"]
 sched_fifo = ["masa", "masa-core/sched_fifo"]
@@ -251,4 +253,9 @@ ac_rajomon = [
   "tonic/masa",
   "masa-policy/ac_rajomon",
 ]
-trace_queue_latency = ["hyper/masa", "tonic/masa", "masa-policy/trace_queue_latency"]
+trace_queue_latency = [
+  "hyper/masa",
+  "masa-core/trace_queue_latency",
+  "tonic/masa",
+  "masa-policy/trace_queue_latency",
+]

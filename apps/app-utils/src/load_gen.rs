@@ -385,12 +385,40 @@ impl TraceRecord {
     }
 }
 
+#[cfg(feature = "trace_queue_latency")]
 fn format_queue_lengths(ql: &HashMap<String, u64>) -> String {
     if ql.is_empty() {
         return String::new();
     }
     let pairs: Vec<String> = ql.iter().map(|(k, v)| format!("\"{}\":{}", k, v)).collect();
     format!("{{{}}}", pairs.join(","))
+}
+
+#[derive(Debug, Default)]
+struct QueueLatencyTraceFields {
+    initial_us: u64,
+    resume_us: u64,
+    queue_lengths_json: String,
+}
+
+#[cfg(feature = "trace_queue_latency")]
+fn queue_latency_from_metadata(metadata: &MetadataMap) -> QueueLatencyTraceFields {
+    if let Some(ctx_str) = metadata.get("ctx").and_then(|v| v.to_str().ok()) {
+        let ctx = Context::from_header_string(ctx_str);
+        if let Some(ql) = ctx.queue_latencies() {
+            return QueueLatencyTraceFields {
+                initial_us: ql.initial,
+                resume_us: ql.resume,
+                queue_lengths_json: format_queue_lengths(&ql.queue_lengths),
+            };
+        }
+    }
+    QueueLatencyTraceFields::default()
+}
+
+#[cfg(not(feature = "trace_queue_latency"))]
+fn queue_latency_from_metadata(_metadata: &MetadataMap) -> QueueLatencyTraceFields {
+    QueueLatencyTraceFields::default()
 }
 
 impl<R, C> RequestStats<R, C>
@@ -415,21 +443,9 @@ where
     }
 
     fn to_trace_record(&self) -> TraceRecord {
-        let (init_lat, resume_lat, queue_lengths) = match &self.response {
-            Some((metadata, _)) => {
-                if let Some(ctx_str) = metadata.get("ctx").and_then(|v| v.to_str().ok()) {
-                    let ctx = Context::from_header_string(ctx_str);
-                    if let Some(ql) = ctx.queue_latencies {
-                        let ql_json = format_queue_lengths(&ql.queue_lengths);
-                        (ql.initial, ql.resume, ql_json)
-                    } else {
-                        (0, 0, String::new())
-                    }
-                } else {
-                    (0, 0, String::new())
-                }
-            }
-            None => (0, 0, String::new()),
+        let queue_latency = match &self.response {
+            Some((metadata, _)) => queue_latency_from_metadata(metadata),
+            None => QueueLatencyTraceFields::default(),
         };
 
         let additional = match &self.response {
@@ -445,9 +461,9 @@ where
             deadline: self.ctx.deadline(),
             latency: self.latency,
             error: self.error.clone(),
-            q_lat_init: init_lat,
-            q_lat_resume: resume_lat,
-            queue_lengths,
+            q_lat_init: queue_latency.initial_us,
+            q_lat_resume: queue_latency.resume_us,
+            queue_lengths: queue_latency.queue_lengths_json,
             additional_metrics: additional,
         }
     }

@@ -298,18 +298,42 @@ pub async fn run_replay_load(
     Ok(())
 }
 
-pub fn extract_queue_latencies(metadata: &MetadataMap) -> Option<(u64, u64, String)> {
+#[derive(Debug, Default)]
+pub struct QueueLatencyTraceFields {
+    pub initial_us: u64,
+    pub resume_us: u64,
+    pub queue_lengths_json: String,
+}
+
+pub fn extract_queue_latencies(metadata: &MetadataMap) -> Option<QueueLatencyTraceFields> {
+    #[cfg(feature = "trace_queue_latency")]
+    {
+        return extract_queue_latencies_enabled(metadata);
+    }
+    #[cfg(not(feature = "trace_queue_latency"))]
+    {
+        let _ = metadata;
+        None
+    }
+}
+
+#[cfg(feature = "trace_queue_latency")]
+fn extract_queue_latencies_enabled(metadata: &MetadataMap) -> Option<QueueLatencyTraceFields> {
     if let Some(ctx_str) = metadata.get("ctx").and_then(|v| v.to_str().ok()) {
         let ctx = masa::Context::from_header_string(ctx_str);
-        if let Some(ql) = ctx.queue_latencies {
-            let ql_json = format_queue_lengths(&ql.queue_lengths);
-            return Some((ql.initial, ql.resume, ql_json));
+        if let Some(ql) = ctx.queue_latencies() {
+            return Some(QueueLatencyTraceFields {
+                initial_us: ql.initial,
+                resume_us: ql.resume,
+                queue_lengths_json: format_queue_lengths(&ql.queue_lengths),
+            });
         }
     }
 
     None
 }
 
+#[cfg(feature = "trace_queue_latency")]
 fn format_queue_lengths(ql: &std::collections::HashMap<String, u64>) -> String {
     if ql.is_empty() {
         return String::new();

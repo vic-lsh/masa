@@ -128,7 +128,8 @@ async fn queue_latency_metadata_is_attached() {
         .get_masa_context()
         .expect("response missing masa context");
     let queue_latencies = masa_ctx
-        .queue_latencies
+        .queue_latencies()
+        .cloned()
         .expect("queue latency metadata not injected");
     assert!(queue_latencies.initial < 5_000_000);
     assert!(queue_latencies.resume < 5_000_000);

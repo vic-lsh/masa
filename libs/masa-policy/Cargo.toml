@@ -22,7 +22,7 @@ tokio = { path = "../tokio/tokio", features = ["rt", "macros"] }
 [features]
 default = []
 masa = []
-trace_queue_latency = ["tokio"]
+trace_queue_latency = ["tokio", "masa-core/trace_queue_latency"]
 sched_slo = ["masa", "masa-core/sched_slo"]
 sched_tailclipper = ["masa", "masa-core/sched_tailclipper"]
 sched_fifo = ["masa", "masa-core/sched_fifo"]

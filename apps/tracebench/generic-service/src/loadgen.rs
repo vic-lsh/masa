@@ -364,9 +364,9 @@ async fn run_root_load(
                     match res {
                         Ok(resp) => {
                             stats.ok.fetch_add(1, Ordering::Relaxed);
-                            let (q_init, q_resume, q_lengths) =
+                            let queue_latency =
                                 extract_queue_latencies(resp.metadata())
-                                    .unwrap_or((0, 0, String::new()));
+                                    .unwrap_or_default();
                             if record_sample {
                                 let sample = RootLatencySample {
                                     graph: entry.graph,
@@ -375,9 +375,9 @@ async fn run_root_load(
                                     req_id,
                                     slo_us: entry.slo_ms * 1000,
                                     start_at,
-                                    queue_latency_init_us: q_init,
-                                    queue_latency_resume_us: q_resume,
-                                    queue_lengths: q_lengths,
+                                    queue_latency_init_us: queue_latency.initial_us,
+                                    queue_latency_resume_us: queue_latency.resume_us,
+                                    queue_lengths: queue_latency.queue_lengths_json,
                                     e2e_latency_us: elapsed,
                                 };
                                 {

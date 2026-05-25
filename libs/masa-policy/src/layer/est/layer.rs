@@ -58,7 +58,7 @@ impl Layer for EstimationLayer {
         let resolved_method_id = MethodRegistry::global().get_or_register(method.clone());
         // Set root_method at ingress (hop_count == 0)
         if ctx.hop_count() == 0 {
-            ctx.root_method = Some(RootMethod {
+            ctx.set_root_method(RootMethod {
                 service: method.service().to_string(),
                 method: method.method().to_string(),
             });
