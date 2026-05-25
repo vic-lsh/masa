@@ -5,6 +5,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 PYTHON_BIN="${PYTHON:-python3}"
 
 "$PYTHON_BIN" "$REPO_ROOT/scripts/validate_policy_matrix.py"
+"$PYTHON_BIN" "$REPO_ROOT/scripts/validate_tonic_masa_boundary.py"
 
 # Parse arguments
 PARALLEL_JOBS=1
