@@ -10,6 +10,7 @@ use mongodb::options::{FindOneAndUpdateOptions, FindOneOptions, ReturnDocument};
 use mongodb::{Client, Collection};
 
 use masa::transport::LoadBalancedChannel;
+use masa::MasaServerExt;
 use tonic::async_trait;
 use tonic::transport::Server;
 use tonic::{Request, Response, Status};

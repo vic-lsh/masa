@@ -5,6 +5,7 @@ use std::sync::Arc;
 use async_memcached::AsciiProtocol;
 use async_memcached::Client as McClient;
 use futures::stream::TryStreamExt;
+use masa::MasaServerExt;
 use mongodb::bson::{doc, oid::ObjectId, Bson};
 use mongodb::options::ClientOptions;
 use mongodb::{Client as MongoClient, Collection};

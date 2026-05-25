@@ -54,7 +54,6 @@ use std::{
     time::Duration,
 };
 use tokio::io::{AsyncRead, AsyncWrite};
-use tokio::task::TaskPriority;
 use tokio_stream::Stream;
 use tower::{
     layer::util::{Identity, Stack},
@@ -69,10 +68,6 @@ type BoxService = tower::util::BoxService<Request<Body>, Response<BoxHttpBody>, 
 type TraceInterceptor = Arc<dyn Fn(&http::Request<()>) -> tracing::Span + Send + Sync + 'static>;
 
 const DEFAULT_HTTP2_KEEPALIVE_TIMEOUT_SECS: u64 = 20;
-
-fn masa_h2_stream_priority(headers: &http::HeaderMap) -> TaskPriority {
-    TaskPriority::new(masa_core::read_priority_from_headers(headers).value())
-}
 
 /// A default batteries included `transport` server.
 ///
@@ -636,22 +631,6 @@ impl<L> Router<L> {
                 None,
                 Exec::Default,
             )
-            .await
-    }
-
-    /// Consume this [`Server`] creating a future that will execute on Masa.
-    ///
-    /// [`Server`]: struct.Server.html
-    pub async fn serve_with_masa<ResBody>(self, addr: SocketAddr) -> Result<(), super::Error>
-    where
-        L: Layer<Routes>,
-        L::Service: Service<Request<Body>, Response = Response<ResBody>> + Clone + Send + 'static,
-        <<L as Layer<Routes>>::Service as Service<Request<Body>>>::Future: Send + 'static,
-        <<L as Layer<Routes>>::Service as Service<Request<Body>>>::Error: Into<crate::Error> + Send,
-        ResBody: http_body::Body<Data = Bytes> + Send + 'static,
-        ResBody::Error: Into<crate::Error>,
-    {
-        self.serve_with_executor(addr, Exec::masa(masa_h2_stream_priority))
             .await
     }
 

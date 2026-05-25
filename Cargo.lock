@@ -2979,10 +2979,12 @@ dependencies = [
 name = "masa"
 version = "0.1.0"
 dependencies = [
+ "hyper",
  "masa-core",
  "masa-policy",
  "tokio",
  "tonic",
+ "tower-layer",
 ]
 
 [[package]]
@@ -5742,7 +5744,6 @@ dependencies = [
  "hyper",
  "hyper-timeout",
  "log",
- "masa-core",
  "once_cell",
  "percent-encoding",
  "pin-project",

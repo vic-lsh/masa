@@ -6,8 +6,10 @@ edition = "2021"
 [dependencies]
 masa-core = { path = "../masa-core" }
 masa-policy = { path = "../masa-policy" }
-tokio = { path = "../tokio/tokio", optional = true }
+hyper = { path = "../hyper" }
+tokio = { path = "../tokio/tokio" }
 tonic = { path = "../tonic/tonic" }
+tower-layer = "0.3"
 
 
 [features]

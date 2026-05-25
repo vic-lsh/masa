@@ -2,6 +2,7 @@ use std::fs::File;
 use std::io::BufReader;
 use std::path::PathBuf;
 
+use masa::MasaServerExt;
 use structopt::StructOpt;
 use tonic::transport::Server;
 

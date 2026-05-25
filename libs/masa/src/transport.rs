@@ -1,12 +1,55 @@
 //! Masa-owned transport APIs.
 
-use std::task::{Context, Poll};
+use std::{
+    future::Future,
+    net::SocketAddr,
+    pin::Pin,
+    task::{Context, Poll},
+};
 
+use hyper::rt::Exec;
+use tokio::task::TaskPriority;
 use tonic::body::BoxBody;
 use tonic::client::GrpcService;
-use tonic::codegen::Service;
+use tonic::codegen::{Body, Bytes, Service, StdError};
 use tonic::http;
-use tonic::transport::Endpoint;
+use tonic::transport::{server::Routes, Endpoint, Error};
+use tower_layer::Layer;
+
+fn h2_stream_priority(headers: &http::HeaderMap) -> TaskPriority {
+    TaskPriority::new(crate::read_priority_from_headers(headers).value())
+}
+
+/// Masa-owned extension methods for tonic servers.
+pub trait MasaServerExt<ResBody> {
+    /// Consume this server and serve it with Masa's H2 stream-priority executor.
+    fn serve_with_masa(
+        self,
+        addr: SocketAddr,
+    ) -> Pin<Box<dyn Future<Output = Result<(), Error>> + Send>>;
+}
+
+impl<L, ResBody> MasaServerExt<ResBody> for tonic::transport::server::Router<L>
+where
+    L: Layer<Routes> + Send + 'static,
+    L::Service: Service<http::Request<tonic::transport::Body>, Response = http::Response<ResBody>>
+        + Clone
+        + Send
+        + 'static,
+    <<L as Layer<Routes>>::Service as Service<http::Request<tonic::transport::Body>>>::Future:
+        Send + 'static,
+    <<L as Layer<Routes>>::Service as Service<http::Request<tonic::transport::Body>>>::Error:
+        Into<StdError> + Send,
+    ResBody: Body<Data = Bytes> + Send + 'static,
+    ResBody::Error: Into<StdError>,
+{
+    fn serve_with_masa(
+        self,
+        addr: SocketAddr,
+    ) -> Pin<Box<dyn Future<Output = Result<(), Error>> + Send>> {
+        Box::pin(self.serve_with_executor(addr, Exec::masa(h2_stream_priority)))
+    }
+}
 
 /// A channel that load balances across a static number of replicas.
 #[derive(Clone)]

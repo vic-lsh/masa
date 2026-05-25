@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-trace_queue_latency = ["masa/trace_queue_latency", "tonic/trace_queue_latency"]
+trace_queue_latency = ["masa/trace_queue_latency"]
 
 [dependencies]
 masa = { path = "../../libs/masa" }
