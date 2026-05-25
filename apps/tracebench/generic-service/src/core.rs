@@ -461,9 +461,7 @@ mod tests {
     use super::*;
     use crate::service_stubs::{self, InvokeRequest, InvokeResponse};
     use masa::transport::LoadBalancedChannel;
-    use masa::{
-        MasaRequestExt, MethodId, METHOD_NAME_OVERRIDE_HEADER, SERVICE_NAME_OVERRIDE_HEADER,
-    };
+    use masa::{MasaRequestExt, MethodId};
     use std::collections::HashMap;
     use tonic::async_trait;
     use tonic::transport::Server;
@@ -486,15 +484,8 @@ mod tests {
         req.set_method_name_override("test-method")
             .expect("failed to set method override");
 
-        let metadata = req.metadata();
-        assert_eq!(
-            metadata.get(SERVICE_NAME_OVERRIDE_HEADER).unwrap(),
-            "test-service"
-        );
-        assert_eq!(
-            metadata.get(METHOD_NAME_OVERRIDE_HEADER).unwrap(),
-            "test-method"
-        );
+        assert_eq!(req.get_service_name_override().unwrap(), "test-service");
+        assert_eq!(req.get_method_name_override().unwrap(), "test-method");
     }
 
     // --- Helpers ---
@@ -509,15 +500,12 @@ mod tests {
             &self,
             request: tonic::Request<InvokeRequest>,
         ) -> Result<tonic::Response<InvokeResponse>, tonic::Status> {
-            let meta = request.metadata();
-            let svc_override = meta
-                .get(SERVICE_NAME_OVERRIDE_HEADER)
-                .and_then(|v| v.to_str().ok())
+            let svc_override = request
+                .get_service_name_override()
                 .unwrap_or_default()
                 .to_string();
-            let method_override = meta
-                .get(METHOD_NAME_OVERRIDE_HEADER)
-                .and_then(|v| v.to_str().ok())
+            let method_override = request
+                .get_method_name_override()
                 .unwrap_or_default()
                 .to_string();
             let variant_id = request.into_inner().variant_id;

@@ -14,8 +14,5 @@ pub mod noop;
 #[cfg(feature = "transport")]
 pub mod runtime;
 
-pub use hooks::{
-    resolve_method_name_from_http, resolve_method_name_from_request, ClientHooks, Hooks,
-    ParentHooks, ServerHooks, METHOD_NAME_OVERRIDE_HEADER, SERVICE_NAME_OVERRIDE_HEADER,
-};
+pub use hooks::{ClientHooks, Hooks, ParentHooks, ServerHooks};
 pub use thread_local::{client, server};

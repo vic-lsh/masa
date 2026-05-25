@@ -12,7 +12,11 @@
 use std::sync::Arc;
 use std::task::Poll;
 
-use crate::context_ext::{read_context, MasaRequestExt, MasaResponseExt, MasaStatusExt};
+use crate::context_ext::{
+    get_method_name_override_from_headers, get_method_name_override_from_metadata,
+    get_service_name_override_from_headers, get_service_name_override_from_metadata, read_context,
+    MasaRequestExt, MasaResponseExt, MasaStatusExt,
+};
 #[cfg(feature = "ac_pred")]
 use crate::layer::AdmissionDeps;
 use crate::layer::{
@@ -20,14 +24,42 @@ use crate::layer::{
     Layer, LayerChild, OracleLayer, QueueLatencyLayer,
 };
 use masa_core::{Context, ContextBuilder};
-use tonic::masa::resolve_method_name_from_http;
-use tonic::masa::resolve_method_name_from_request;
 use tonic::masa::{ClientHooks, Hooks, ParentHooks, ServerHooks};
 use tonic::{CowGrpcMethod, GrpcMethod, Request, Response, Status};
 
 #[derive(Debug)]
 #[allow(dead_code)]
 pub struct PolicyHooks;
+
+fn resolve_method_name_impl(
+    method: GrpcMethod,
+    method_override: Option<&str>,
+    service_override: Option<&str>,
+) -> CowGrpcMethod {
+    if let Some(method_name) = method_override {
+        if let Some(service_name) = service_override {
+            return CowGrpcMethod::new(service_name.to_string(), method_name.to_string());
+        }
+        return CowGrpcMethod::new(method.service(), method_name.to_string());
+    }
+    CowGrpcMethod::new(method.service(), method.method())
+}
+
+fn resolve_method_name_from_http<B>(method: GrpcMethod, req: &http::Request<B>) -> CowGrpcMethod {
+    resolve_method_name_impl(
+        method,
+        get_method_name_override_from_headers(req.headers()),
+        get_service_name_override_from_headers(req.headers()),
+    )
+}
+
+fn resolve_method_name_from_request<T>(method: GrpcMethod, request: &Request<T>) -> CowGrpcMethod {
+    resolve_method_name_impl(
+        method,
+        get_method_name_override_from_metadata(request.metadata()),
+        get_service_name_override_from_metadata(request.metadata()),
+    )
+}
 
 impl Hooks for PolicyHooks {
     type ServerContext = ServerContext;
@@ -351,14 +383,16 @@ mod tests {
 
     #[cfg(feature = "estimator")]
     mod est_tests {
-        use super::super::{ChildContext, ParentContext, ServerContext};
+        use super::super::{
+            resolve_method_name_from_http, resolve_method_name_from_request, ChildContext,
+            ParentContext, ServerContext,
+        };
         use crate::context_ext::MASA_CONTEXT_HEADER;
         use crate::layer::est::latency_map::ParentToChildKey;
         use crate::layer::est::state::LatencyEstimators;
         use crate::MethodRegistry;
         use masa_core::{ContextBuilder, LatencyRms};
         use std::sync::Arc;
-        use tonic::masa::resolve_method_name_from_http;
         use tonic::masa::{ClientHooks, ParentHooks, ServerHooks};
         use tonic::{CowGrpcMethod, GrpcMethod, Request, Response};
 
@@ -398,8 +432,9 @@ mod tests {
 
         #[test]
         fn test_resolve_method_name_from_http_with_overrides() {
-            use http::HeaderValue;
-            use tonic::masa::{METHOD_NAME_OVERRIDE_HEADER, SERVICE_NAME_OVERRIDE_HEADER};
+            use crate::context_ext::{
+                set_method_name_override_in_headers, set_service_name_override_in_headers,
+            };
 
             let method = GrpcMethod::new("TestService", "TestMethod");
             let mut req = http::Request::new(());
@@ -408,18 +443,12 @@ mod tests {
             assert_eq!(resolved.service(), "TestService");
             assert_eq!(resolved.method(), "TestMethod");
 
-            req.headers_mut().insert(
-                METHOD_NAME_OVERRIDE_HEADER,
-                HeaderValue::from_static("OverriddenMethod"),
-            );
+            set_method_name_override_in_headers(req.headers_mut(), "OverriddenMethod").unwrap();
             let resolved = resolve_method_name_from_http(method, &req);
             assert_eq!(resolved.service(), "TestService");
             assert_eq!(resolved.method(), "OverriddenMethod");
 
-            req.headers_mut().insert(
-                SERVICE_NAME_OVERRIDE_HEADER,
-                HeaderValue::from_static("OverriddenService"),
-            );
+            set_service_name_override_in_headers(req.headers_mut(), "OverriddenService").unwrap();
             let resolved = resolve_method_name_from_http(method, &req);
             assert_eq!(resolved.service(), "OverriddenService");
             assert_eq!(resolved.method(), "OverriddenMethod");
@@ -427,11 +456,7 @@ mod tests {
 
         #[test]
         fn test_resolve_method_name_from_request_with_overrides() {
-            use tonic::masa::{
-                resolve_method_name_from_request, METHOD_NAME_OVERRIDE_HEADER,
-                SERVICE_NAME_OVERRIDE_HEADER,
-            };
-            use tonic::metadata::MetadataValue;
+            use crate::MasaRequestExt;
 
             let method = GrpcMethod::new("TestService", "TestMethod");
             let mut req = Request::new(());
@@ -440,18 +465,12 @@ mod tests {
             assert_eq!(resolved.service(), "TestService");
             assert_eq!(resolved.method(), "TestMethod");
 
-            req.metadata_mut().insert(
-                METHOD_NAME_OVERRIDE_HEADER,
-                MetadataValue::from_static("OverriddenMethod"),
-            );
+            req.set_method_name_override("OverriddenMethod").unwrap();
             let resolved = resolve_method_name_from_request(method, &req);
             assert_eq!(resolved.service(), "TestService");
             assert_eq!(resolved.method(), "OverriddenMethod");
 
-            req.metadata_mut().insert(
-                SERVICE_NAME_OVERRIDE_HEADER,
-                MetadataValue::from_static("OverriddenService"),
-            );
+            req.set_service_name_override("OverriddenService").unwrap();
             let resolved = resolve_method_name_from_request(method, &req);
             assert_eq!(resolved.service(), "OverriddenService");
             assert_eq!(resolved.method(), "OverriddenMethod");

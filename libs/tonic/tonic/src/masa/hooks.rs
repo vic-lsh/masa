@@ -6,7 +6,7 @@
 use std::{sync::Arc, task::Poll};
 
 use crate::body::BoxBody;
-use crate::{http, CowGrpcMethod, GrpcMethod, Request, Response, Status};
+use crate::{http, GrpcMethod, Request, Response, Status};
 
 // TODO: add notes on trait bounds
 /// Trait for specifying the set of hooks to apply.
@@ -137,128 +137,15 @@ where
     fn finalize_after_serialization(&self, response: &mut http::Response<BoxBody>) {}
 }
 
-/// Header key for overriding the gRPC method name in latency tracking.
-///
-/// When a service uses a generic gRPC method (e.g., `invoke`) to simulate multiple methods,
-/// this header can be set to specify the actual method name being simulated. This allows
-/// per-method latency estimates to be maintained accurately.
-pub const METHOD_NAME_OVERRIDE_HEADER: &str = "x-masa-method-name";
-
-/// Header key for overriding the gRPC service name in latency tracking.
-///
-/// When a service uses a generic gRPC service to simulate multiple services,
-/// this header can be set to specify the actual service name being simulated.
-pub const SERVICE_NAME_OVERRIDE_HEADER: &str = "x-masa-service-name";
-
-/// Resolve the method name, applying override headers if present.
-fn resolve_method_name_impl(
-    method: GrpcMethod,
-    method_override: Option<&str>,
-    service_override: Option<&str>,
-) -> CowGrpcMethod {
-    if let Some(method_name) = method_override {
-        if let Some(service_name) = service_override {
-            return CowGrpcMethod::new(service_name.to_string(), method_name.to_string());
-        }
-        return CowGrpcMethod::new(method.service(), method_name.to_string());
-    }
-    CowGrpcMethod::new(method.service(), method.method())
-}
-
-fn header_to_str(value: Option<&http::HeaderValue>) -> Option<&str> {
-    value.and_then(|v| v.to_str().ok())
-}
-
-/// Resolve the method name from HTTP request headers, checking for override header.
-pub fn resolve_method_name_from_http<B>(
-    method: GrpcMethod,
-    req: &http::Request<B>,
-) -> CowGrpcMethod {
-    resolve_method_name_impl(
-        method,
-        header_to_str(req.headers().get(METHOD_NAME_OVERRIDE_HEADER)),
-        header_to_str(req.headers().get(SERVICE_NAME_OVERRIDE_HEADER)),
-    )
-}
-
-/// Resolve the method name from Request metadata, checking for override header.
-pub fn resolve_method_name_from_request<T>(
-    method: GrpcMethod,
-    request: &Request<T>,
-) -> CowGrpcMethod {
-    let meta_to_str = |key| request.metadata().get(key).and_then(|v| v.to_str().ok());
-    resolve_method_name_impl(
-        method,
-        meta_to_str(METHOD_NAME_OVERRIDE_HEADER),
-        meta_to_str(SERVICE_NAME_OVERRIDE_HEADER),
-    )
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{
-        resolve_method_name_from_http, resolve_method_name_from_request, ClientHooks, ParentHooks,
-        ServerHooks, METHOD_NAME_OVERRIDE_HEADER, SERVICE_NAME_OVERRIDE_HEADER,
-    };
+    use super::{ClientHooks, ParentHooks, ServerHooks};
     use crate::masa::{client, future::Abortable, noop, server};
-    use crate::metadata::MetadataValue;
     use crate::{http, GrpcMethod, Request, Response};
     use std::cell::Cell;
     use std::future::{poll_fn, Future};
     use std::sync::Arc;
     use std::task::{Context, Poll, Waker};
-
-    #[test]
-    fn resolves_method_name_from_http_with_overrides() {
-        let method = GrpcMethod::new("TestService", "TestMethod");
-        let mut req = http::Request::new(());
-
-        let resolved = resolve_method_name_from_http(method, &req);
-        assert_eq!(resolved.service(), "TestService");
-        assert_eq!(resolved.method(), "TestMethod");
-
-        req.headers_mut().insert(
-            METHOD_NAME_OVERRIDE_HEADER,
-            http::HeaderValue::from_static("OverriddenMethod"),
-        );
-        let resolved = resolve_method_name_from_http(method, &req);
-        assert_eq!(resolved.service(), "TestService");
-        assert_eq!(resolved.method(), "OverriddenMethod");
-
-        req.headers_mut().insert(
-            SERVICE_NAME_OVERRIDE_HEADER,
-            http::HeaderValue::from_static("OverriddenService"),
-        );
-        let resolved = resolve_method_name_from_http(method, &req);
-        assert_eq!(resolved.service(), "OverriddenService");
-        assert_eq!(resolved.method(), "OverriddenMethod");
-    }
-
-    #[test]
-    fn resolves_method_name_from_request_with_overrides() {
-        let method = GrpcMethod::new("TestService", "TestMethod");
-        let mut req = Request::new(());
-
-        let resolved = resolve_method_name_from_request(method, &req);
-        assert_eq!(resolved.service(), "TestService");
-        assert_eq!(resolved.method(), "TestMethod");
-
-        req.metadata_mut().insert(
-            METHOD_NAME_OVERRIDE_HEADER,
-            MetadataValue::from_static("OverriddenMethod"),
-        );
-        let resolved = resolve_method_name_from_request(method, &req);
-        assert_eq!(resolved.service(), "TestService");
-        assert_eq!(resolved.method(), "OverriddenMethod");
-
-        req.metadata_mut().insert(
-            SERVICE_NAME_OVERRIDE_HEADER,
-            MetadataValue::from_static("OverriddenService"),
-        );
-        let resolved = resolve_method_name_from_request(method, &req);
-        assert_eq!(resolved.service(), "OverriddenService");
-        assert_eq!(resolved.method(), "OverriddenMethod");
-    }
 
     #[test]
     fn noop_hooks_keep_default_lifecycle_empty() {
