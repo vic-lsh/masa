@@ -1,5 +1,4 @@
 use crate::server::home_timeline::home_timeline_service_server::HomeTimelineServiceServer;
-use masa::MasaServerExt;
 use std::env;
 use tonic::transport::Server;
 use tracing::Level;
@@ -62,7 +61,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     Server::builder()
         .add_service(HomeTimelineServiceServer::new(service))
-        .serve_with_masa(addr)
+        .serve(addr)
         .await?;
 
     Ok(())

@@ -1,4 +1,3 @@
-use masa::MasaServerExt;
 use socialnet::url_shorten::server::create_service;
 use std::env;
 use std::net::SocketAddr;
@@ -25,10 +24,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("URL Shortening Service listening on {}", addr);
 
-    Server::builder()
-        .add_service(service)
-        .serve_with_masa(addr)
-        .await?;
+    Server::builder().add_service(service).serve(addr).await?;
 
     Ok(())
 }

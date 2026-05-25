@@ -5,7 +5,6 @@ use tracing_subscriber::FmtSubscriber;
 mod server;
 use server::{social_network::user_service_server::UserServiceServer, UserServer};
 
-use masa::MasaServerExt;
 use mongodb::{options::IndexOptions, Client as MongoClient, IndexModel};
 use std::env;
 use tonic::transport::Server;
@@ -95,7 +94,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     Server::builder()
         .add_service(UserServiceServer::new(user_service))
-        .serve_with_masa(addr)
+        .serve(addr)
         .await?;
 
     Ok(())

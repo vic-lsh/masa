@@ -40,8 +40,6 @@ pub(crate) type BoxSendFuture = Pin<Box<dyn Future<Output = ()> + Send>>;
 pub enum Exec {
     /// Use tokio by default.
     Default,
-    /// Use masa-specific runtime.
-    Masa(fn(&HeaderMap) -> TaskPriority),
     /// Use custom executor.
     Executor(Arc<dyn Executor<BoxSendFuture> + Send + Sync>),
 }
@@ -49,20 +47,6 @@ pub enum Exec {
 // ===== impl Exec =====
 
 impl Exec {
-    #[cfg(feature = "server")]
-    /// Use the Masa runtime with an HTTP/2 stream priority extractor.
-    pub fn masa(h2_stream_priority: fn(&HeaderMap) -> TaskPriority) -> Self {
-        Exec::Masa(h2_stream_priority)
-    }
-
-    #[cfg(feature = "server")]
-    pub(crate) fn h2_stream_priority(&self, headers: &HeaderMap) -> TaskPriority {
-        match self {
-            Exec::Masa(extract) => extract(headers),
-            Exec::Default | Exec::Executor(_) => TaskPriority::infra(),
-        }
-    }
-
     pub(crate) fn execute<F>(&self, fut: F)
     where
         F: Future<Output = ()> + Send + 'static,
@@ -79,13 +63,6 @@ impl Exec {
                     panic!("executor must be set")
                 }
             }
-            Exec::Masa(_) => {
-                tokio::task::spawn(fut);
-                #[cfg(any())]
-                {
-                    async_executor::spawn(fut).fallible().detach();
-                }
-            }
             Exec::Executor(ref e) => {
                 e.execute(Box::pin(fut));
             }
@@ -99,22 +76,39 @@ impl fmt::Debug for Exec {
     }
 }
 
-#[cfg(feature = "server")]
+#[cfg(all(feature = "server", not(feature = "masa")))]
+impl<F, B> ConnStreamExec<F, B> for Exec
+where
+    H2Stream<F, B>: Future<Output = ()> + Send + 'static,
+    B: HttpBody,
+{
+    fn execute_h2stream_with_prio(&mut self, fut: H2Stream<F, B>, prio: TaskPriority) {
+        let _ = prio;
+        self.execute(fut);
+    }
+}
+
+#[cfg(all(feature = "server", feature = "masa"))]
 impl<F, B> ConnStreamExec<F, B> for Exec
 where
     H2Stream<F, B>: Future<Output = ()> + Send + 'static,
     B: HttpBody,
 {
     fn h2_stream_priority(&self, headers: &HeaderMap) -> TaskPriority {
-        Exec::h2_stream_priority(self, headers)
+        match self {
+            Exec::Default => {
+                TaskPriority::new(masa_core::read_priority_from_headers(headers).value())
+            }
+            Exec::Executor(_) => TaskPriority::infra(),
+        }
     }
 
     fn execute_h2stream_with_prio(&mut self, fut: H2Stream<F, B>, prio: TaskPriority) {
         match self {
-            Exec::Masa(_) => {
+            Exec::Default => {
                 tokio::task::spawn_with_prio(fut, prio);
             }
-            _ => self.execute(fut),
+            Exec::Executor(_) => self.execute(fut),
         }
     }
 }
@@ -160,41 +154,43 @@ where
 }
 
 #[cfg(all(test, feature = "server"))]
-mod h2_priority_extractor_tests {
+mod h2_priority_tests {
     use super::*;
 
+    type TestFuture = std::future::Ready<Result<http::Response<Body>, crate::Error>>;
+
+    fn default_priority(headers: &HeaderMap) -> TaskPriority {
+        <Exec as ConnStreamExec<TestFuture, Body>>::h2_stream_priority(&Exec::Default, headers)
+    }
+
     #[test]
+    #[cfg(not(feature = "masa"))]
     fn default_executor_uses_infra_priority() {
         let headers = HeaderMap::new();
 
-        assert_eq!(
-            Exec::Default.h2_stream_priority(&headers),
-            TaskPriority::infra()
-        );
+        assert_eq!(default_priority(&headers), TaskPriority::infra(),);
     }
 
     #[test]
-    fn masa_executor_uses_configured_priority_extractor() {
+    #[cfg(feature = "masa")]
+    fn default_executor_reads_context_priority_header() {
         let mut headers = HeaderMap::new();
-        headers.insert("x-test-priority", "42".parse().unwrap());
-        let exec = Exec::masa(|headers| {
-            headers
-                .get("x-test-priority")
-                .and_then(|value| value.to_str().ok())
-                .and_then(|value| value.parse().ok())
-                .map(TaskPriority::new)
-                .unwrap_or_else(TaskPriority::infra)
-        });
+        let ctx = masa_core::ContextBuilder::new("test.Service/Rpc", 7)
+            .prio_hint(masa_core::PriorityHint::new(42))
+            .build();
+        headers.insert(
+            masa_core::MASA_CONTEXT_HEADER,
+            ctx.to_header_string().parse().unwrap(),
+        );
 
-        assert_eq!(exec.h2_stream_priority(&headers), TaskPriority::new(42));
+        assert_eq!(default_priority(&headers), TaskPriority::new(42));
     }
 
     #[test]
-    #[should_panic(expected = "extractor panic")]
-    fn masa_executor_preserves_extractor_panic_behavior() {
-        let exec = Exec::masa(|_| panic!("extractor panic"));
-
-        let _ = exec.h2_stream_priority(&HeaderMap::new());
+    #[should_panic(expected = "missing MASA context header `ctx`")]
+    #[cfg(feature = "masa")]
+    fn default_executor_preserves_missing_context_panic_behavior() {
+        let _ = default_priority(&HeaderMap::new());
     }
 }
 

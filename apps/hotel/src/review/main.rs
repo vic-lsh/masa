@@ -2,7 +2,6 @@ use std::{fs::File, io::BufReader, path::PathBuf};
 
 use app_utils::logging::init_logging;
 use config::HotelConfig;
-use masa::MasaServerExt;
 use server::{hotel_tonic::review::review_server::ReviewServer, ReviewImpl};
 use structopt::StructOpt;
 use tonic::transport::Server;
@@ -38,7 +37,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     log::warn!("Server listening on {}...", review_addr);
     Server::builder()
         .add_service(ReviewServer::new(review_service))
-        .serve_with_masa(review_addr)
+        .serve(review_addr)
         .await?;
 
     Ok(())

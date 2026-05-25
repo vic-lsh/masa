@@ -7,7 +7,6 @@ use std::fs::File;
 use std::io::BufReader;
 use std::path::PathBuf;
 
-use masa::MasaServerExt;
 use structopt::StructOpt;
 use tonic::transport::Server;
 
@@ -44,7 +43,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     log::info!("Server listening on {}...", rec_addr);
     Server::builder()
         .add_service(RecommendationServer::new(rec))
-        .serve_with_masa(rec_addr)
+        .serve(rec_addr)
         .await?;
 
     Ok(())

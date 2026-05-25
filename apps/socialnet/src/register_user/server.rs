@@ -2,7 +2,6 @@ use std::env;
 use std::net::SocketAddr;
 
 use masa::transport::LoadBalancedChannel;
-use masa::MasaServerExt;
 use tonic::async_trait;
 use tonic::transport::Server;
 use tonic::{Request, Response, Status};
@@ -88,7 +87,7 @@ pub async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
 
     Server::builder()
         .add_service(RegisterUserServiceServer::new(service_impl))
-        .serve_with_masa(addr)
+        .serve(addr)
         .await?;
     Ok(())
 }

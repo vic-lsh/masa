@@ -9,25 +9,24 @@ masa-policy = { path = "../masa-policy" }
 hyper = { path = "../hyper" }
 tokio = { path = "../tokio/tokio" }
 tonic = { path = "../tonic/tonic" }
-tower-layer = "0.3"
 
 
 [features]
-sched_slo = ["masa-core/sched_slo", "tokio/sched_prio", "masa-policy/sched_slo"]
-sched_tailclipper = ["masa-core/sched_tailclipper", "tokio/sched_prio", "tokio/tailclipper", "masa-policy/sched_tailclipper"]
-sched_fifo  = ["masa-core/sched_fifo",  "tokio/sched_fifo", "masa-policy/sched_fifo"]
-sched_oracle = ["masa-core/sched_oracle", "tokio/sched_prio", "masa-policy/sched_oracle"]
+sched_slo = ["hyper/masa", "tonic/masa", "masa-core/sched_slo", "tokio/sched_prio", "masa-policy/sched_slo"]
+sched_tailclipper = ["hyper/masa", "tonic/masa", "masa-core/sched_tailclipper", "tokio/sched_prio", "tokio/tailclipper", "masa-policy/sched_tailclipper"]
+sched_fifo  = ["hyper/masa", "tonic/masa", "masa-core/sched_fifo",  "tokio/sched_fifo", "masa-policy/sched_fifo"]
+sched_oracle = ["hyper/masa", "tonic/masa", "masa-core/sched_oracle", "tokio/sched_prio", "masa-policy/sched_oracle"]
 sched_pred = ["masa-core/sched_pred", "sched_slo", "masa-policy/sched_pred"]
 
-abort_slo = ["masa-core/abort_slo", "masa-policy/abort_slo"]
-abort_slack = ["estimator", "masa-core/abort_slack", "masa-policy/abort_slack"]
-signal_slack = ["estimator", "ac_pred", "masa-core/signal_slack", "masa-policy/signal_slack"]
+abort_slo = ["hyper/masa", "tonic/masa", "masa-core/abort_slo", "masa-policy/abort_slo"]
+abort_slack = ["hyper/masa", "tonic/masa", "estimator", "masa-core/abort_slack", "masa-policy/abort_slack"]
+signal_slack = ["hyper/masa", "tonic/masa", "estimator", "ac_pred", "masa-core/signal_slack", "masa-policy/signal_slack"]
 estimator = ["masa-core/estimator", "masa-policy/estimator"]
 
 est_rms = ["masa-policy/est_rms"]
 est_hist = ["masa-policy/est_hist"]
 est_mean_var = ["masa-policy/est_mean_var"]
 
-ac_pred = ["masa-core/ac_pred", "masa-policy/ac_pred"]
-ac_rajomon = ["masa-core/ac_rajomon", "masa-policy/ac_rajomon"]
-trace_queue_latency = ["masa-policy/trace_queue_latency"]
+ac_pred = ["hyper/masa", "tonic/masa", "masa-core/ac_pred", "masa-policy/ac_pred"]
+ac_rajomon = ["hyper/masa", "tonic/masa", "masa-core/ac_rajomon", "masa-policy/ac_rajomon"]
+trace_queue_latency = ["hyper/masa", "tonic/masa", "masa-policy/trace_queue_latency"]

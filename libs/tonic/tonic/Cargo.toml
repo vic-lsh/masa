@@ -27,6 +27,7 @@ codegen = ["dep:async-trait"]
 gzip = ["dep:flate2"]
 zstd = ["dep:zstd"]
 default = ["transport", "codegen", "prost"]
+masa = ["transport", "hyper/masa"]
 prost = ["dep:prost"]
 tls = [
   "dep:rustls-pki-types",
