@@ -197,10 +197,10 @@ pub fn resolve_method_name_from_request<T>(
 #[cfg(test)]
 mod tests {
     use super::{
-        client, noop, resolve_method_name_from_http, resolve_method_name_from_request, server,
-        Abortable, ClientHooks, ParentHooks, ServerHooks, METHOD_NAME_OVERRIDE_HEADER,
-        SERVICE_NAME_OVERRIDE_HEADER,
+        resolve_method_name_from_http, resolve_method_name_from_request, ClientHooks, ParentHooks,
+        ServerHooks, METHOD_NAME_OVERRIDE_HEADER, SERVICE_NAME_OVERRIDE_HEADER,
     };
+    use crate::masa::{client, noop, server, Abortable};
     use crate::metadata::MetadataValue;
     use crate::{http, GrpcMethod, Request, Response};
     use std::cell::Cell;
