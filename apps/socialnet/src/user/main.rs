@@ -14,9 +14,18 @@ use deadpool_redis::{Config, Runtime};
 // Import the AsyncCommands trait from deadpool's re-exported redis crate
 // use deadpool_redis::redis::AsyncCommands;
 
-#[cfg_attr(feature = "sched_mt", tokio::main)]
-#[cfg_attr(not(feature = "sched_mt"), tokio::main(flavor = "current_thread"))]
+#[cfg(feature = "sched_mt")]
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    app_utils::runtime::block_on(main_inner())
+}
+
+#[cfg(not(feature = "sched_mt"))]
+#[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    main_inner().await
+}
+
+async fn main_inner() -> Result<(), Box<dyn std::error::Error>> {
     // 1. Initialize centralized logging
     // This will collect logs from your app, tonic, mongodb, and redis.
     // You can control log level by setting RUST_LOG=info

@@ -44,6 +44,9 @@ def create_gen_config_dict(
     """
     config = copy.deepcopy(template_config)
 
+    # The runner consumes this key, but the strict Rust config parser does not.
+    config.pop("cpus_per_replica", None)
+
     # Parse the original address
     protocol = "http"
     port = "8660"
@@ -514,6 +517,11 @@ class HotelApp(AppPlugin):
                 env_key = f"{service.upper()}_REPLICAS"
                 env_vars[env_key] = str(default_replicas)
             env_vars["FRONTEND_REPLICAS"] = str(default_replicas)
+
+        # A single experiment knob controls both the container CPU quota and
+        # the Tokio worker count.
+        cpus_per_replica = (app_config or {}).get("cpus_per_replica", 4)
+        env_vars["CPUS_PER_REPLICA"] = str(cpus_per_replica)
 
         # Set default log level if not specified
         if "LOG_LEVEL" not in env_vars:

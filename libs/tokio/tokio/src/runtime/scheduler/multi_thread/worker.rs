@@ -185,8 +185,8 @@ pub(crate) struct Shared {
     pub(super) worker_metrics: Box<[WorkerMetrics]>,
 
     /// Single shared priority queue used when `sched_mt` is enabled.
-    /// All workers push and pop through this mutex-protected heap instead
-    /// of per-worker local queues.
+    /// All workers push and pop through the selected queue backend instead of
+    /// per-worker local queues.
     #[cfg(feature = "sched_mt")]
     pub(super) prio_queue: prio_queue::SharedPrioQueue<Notified>,
 
@@ -309,7 +309,7 @@ pub(super) fn create(
             worker_metrics: worker_metrics.into_boxed_slice(),
             _counters: Counters,
             #[cfg(feature = "sched_mt")]
-            prio_queue: prio_queue::SharedPrioQueue::new(),
+            prio_queue: prio_queue::SharedPrioQueue::new(size),
         },
         driver: driver_handle,
         blocking_spawner,
@@ -888,7 +888,6 @@ impl Core {
 
         park.shutdown(&handle.driver);
     }
-
 }
 
 #[cfg(feature = "sched_mt")]

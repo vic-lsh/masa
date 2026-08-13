@@ -64,6 +64,10 @@ class TestParse:
         p = Policy.parse("sched_slo,sched_tailclipper")
         assert p.prio == "oldest"
 
+    def test_multi_thread_queue_backends(self):
+        assert Policy.parse("sched_mt").prio == "e2e_slo_mt"
+        assert Policy.parse("sched_mt,sched_mt_multiqueue").prio == "e2e_slo_mt_mq"
+
     def test_unknown_policy(self):
         p = Policy.parse("custom_thing")
         assert p.prio is None
@@ -118,6 +122,13 @@ class TestDisplayName:
 
     def test_e2e_slo_bare(self):
         assert Policy.parse("sched_slo").display_name == "SLO priority"
+
+    def test_multi_thread_queue_backends(self):
+        assert Policy.parse("sched_mt").display_name == "SLO priority (MT mutex)"
+        assert (
+            Policy.parse("sched_mt_multiqueue").display_name
+            == "SLO priority (MT multiqueue)"
+        )
 
     def test_e2e_slo_with_drop(self):
         assert (
@@ -362,6 +373,10 @@ class TestHatch:
 
     def test_e2e_slo(self):
         assert Policy.parse("sched_slo").hatch == "//"
+
+    def test_multi_thread_backends(self):
+        assert Policy.parse("sched_mt").hatch == "\\\\"
+        assert Policy.parse("sched_mt_multiqueue").hatch == "\\\\"
 
     def test_oldest(self):
         assert Policy.parse("sched_tailclipper").hatch == "xx"

@@ -1,59 +1,113 @@
-use std::collections::{BinaryHeap, VecDeque};
+use std::collections::VecDeque;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
 use crate::runtime::task::{Identifiable, Traceable};
-use masa_core::Prioritize;
+use crate::task::TaskPrioritize;
+
+#[cfg(feature = "sched_mt_multiqueue")]
+type MainQueue<T> = multiqueue_prio_queue::MultiQueue<T>;
+
+#[cfg(not(feature = "sched_mt_multiqueue"))]
+type MainQueue<T> = backend::MutexBackend<T>;
 
 /// Thread-safe priority queue for the multi-thread scheduler under `sched_mt`.
 ///
-/// A single shared heap protected by one mutex. All worker threads push and pop
-/// through this queue, which guarantees global priority ordering (EDF) at the
-/// cost of lock contention. Infrastructure tasks (PriorityHint == 0) are kept
-/// in a separate VecDeque and always drain before user tasks.
-pub(crate) struct SharedPrioQueue<T> {
-    inner: Mutex<Inner<T>>,
+/// Infrastructure tasks are kept in a separate FIFO and drained before user
+/// tasks, regardless of the selected user-task backend.
+pub(crate) struct SharedPrioQueue<T: Ord> {
+    main: MainQueue<T>,
+    infra: Mutex<VecDeque<T>>,
+    infra_pending: AtomicBool,
 }
 
-struct Inner<T> {
-    q: BinaryHeap<T>,
-    infra_q: VecDeque<T>,
-}
+impl<T: Ord + TaskPrioritize + Identifiable + Traceable + Send + 'static> SharedPrioQueue<T> {
+    pub(crate) fn new(num_workers: usize) -> Self {
+        #[cfg(not(feature = "sched_mt_multiqueue"))]
+        let _ = num_workers;
 
-impl<T: Ord + Prioritize + Identifiable + Traceable> SharedPrioQueue<T> {
-    pub(crate) fn new() -> Self {
+        #[cfg(feature = "sched_mt_multiqueue")]
+        let main = multiqueue_prio_queue::MultiQueue::with_threads(num_workers.max(1));
+
+        #[cfg(not(feature = "sched_mt_multiqueue"))]
+        let main = backend::MutexBackend::new();
+
         Self {
-            inner: Mutex::new(Inner {
-                q: BinaryHeap::new(),
-                infra_q: VecDeque::new(),
-            }),
+            main,
+            infra: Mutex::new(VecDeque::new()),
+            infra_pending: AtomicBool::new(false),
         }
     }
 
     pub(crate) fn push(&self, mut item: T) {
         item.timer().set_enqueue_time();
-        let mut inner = self.inner.lock().unwrap();
         if item.priority().value() == 0 {
-            inner.infra_q.push_back(item);
+            let mut infra = self.infra.lock().unwrap();
+            infra.push_back(item);
+            self.infra_pending.store(true, Ordering::Release);
         } else {
-            inner.q.push(item);
+            self.main.push(item);
         }
     }
 
     pub(crate) fn pop(&self) -> Option<T> {
-        let mut inner = self.inner.lock().unwrap();
-        if let Some(mut e) = inner.infra_q.pop_front() {
-            e.timer().record_queue_lat();
-            return Some(e);
+        // Normal user-task pops only read this flag. The shared FIFO lock is
+        // touched only while infrastructure work is actually pending.
+        if self.infra_pending.load(Ordering::Acquire) {
+            let mut infra = self.infra.lock().unwrap();
+            let item = infra.pop_front();
+            if infra.is_empty() {
+                self.infra_pending.store(false, Ordering::Release);
+            }
+            if let Some(mut item) = item {
+                item.timer().record_queue_lat();
+                return Some(item);
+            }
         }
-        inner.q.pop().map(|mut e| {
+
+        #[cfg(feature = "sched_mt_multiqueue")]
+        let item = self.main.pop().or_else(|| self.main.pop_any());
+
+        #[cfg(not(feature = "sched_mt_multiqueue"))]
+        let item = self.main.pop();
+
+        item.map(|mut e| {
             e.timer().record_queue_lat();
             e
         })
     }
 
     pub(crate) fn is_empty(&self) -> bool {
-        let inner = self.inner.lock().unwrap();
-        inner.q.is_empty() && inner.infra_q.is_empty()
+        self.main.is_empty() && !self.infra_pending.load(Ordering::Acquire)
+    }
+}
+
+#[cfg(not(feature = "sched_mt_multiqueue"))]
+mod backend {
+    use std::collections::BinaryHeap;
+    use std::sync::Mutex;
+
+    pub(super) struct MutexBackend<T> {
+        inner: Mutex<BinaryHeap<T>>,
     }
 
+    impl<T: Ord + Send> MutexBackend<T> {
+        pub(super) fn new() -> Self {
+            Self {
+                inner: Mutex::new(BinaryHeap::new()),
+            }
+        }
+
+        pub(super) fn push(&self, item: T) {
+            self.inner.lock().unwrap().push(item);
+        }
+
+        pub(super) fn pop(&self) -> Option<T> {
+            self.inner.lock().unwrap().pop()
+        }
+
+        pub(super) fn is_empty(&self) -> bool {
+            self.inner.lock().unwrap().is_empty()
+        }
+    }
 }

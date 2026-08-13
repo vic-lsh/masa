@@ -439,3 +439,9 @@ The total is injected into the outgoing response in `finalize()`, creating a rec
 **Abort strategies** (`abort_slo`): Aborts requests that have already exceeded their e2e SLO. Composable with any scheduling policy. `sched_pred` additionally performs proactive abort for requests predicted to miss their SLO based on estimated remaining work.
 
 **Admission control** (`ac_pred`, `ac_rajomon`): Mutually exclusive admission strategies. `ac_pred` uses compute-time feasibility and efficiency-based checks. `ac_rajomon` uses token-bucket rate limiting.
+
+
+## Multi-thread scheduling (`sched_mt`)
+
+See [`SCHED_MT.md`](SCHED_MT.md) for the multi-thread priority scheduler and
+MultiQueue backend (`sched_mt_multiqueue`).

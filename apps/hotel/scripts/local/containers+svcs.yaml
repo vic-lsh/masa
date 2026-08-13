@@ -1,3 +1,12 @@
+x-cpu-limit: &cpu-limit
+  resources:
+    limits:
+      cpus: "${CPUS_PER_REPLICA:-4}"
+
+x-service-environment: &service-environment
+  - LOG_LEVEL=${LOG_LEVEL:-info}
+  - CPUS_PER_REPLICA=${CPUS_PER_REPLICA:-4}
+
 services:
   rate-mongo:
     image: mongo:7.0
@@ -7,10 +16,7 @@ services:
       - hotel_network
     volumes:
       - rate:/data
-    deploy:
-      resources:
-        limits:
-          cpus: "4"
+    deploy: *cpu-limit
 
   rate-redis:
     image: redis:7.2
@@ -18,10 +24,7 @@ services:
     restart: always
     networks:
       - hotel_network
-    deploy:
-      resources:
-        limits:
-          cpus: "4"
+    deploy: *cpu-limit
 
   rate-service:
     image: hotel_rate:${HOTEL_IMAGE_TAG:-latest}
@@ -32,17 +35,11 @@ services:
     depends_on:
       - rate-mongo
       - rate-redis
-    environment:
-      - LOG_LEVEL=${LOG_LEVEL:-info}
-      - MASA_FANOUT_AWARE=${MASA_FANOUT_AWARE:-1}
-      - SERVICE_NAME=rate
+    environment: *service-environment
     volumes:
       - ${PROJECT_CONFIG_PATH}:/usr/config.json:ro
       - ${POLICY_PARAMS_PATH}:/usr/policy_params.json:ro
-    deploy:
-      resources:
-        limits:
-          cpus: "4"
+    deploy: *cpu-limit
 
   profile-mongo:
     image: mongo:7.0
@@ -52,10 +49,7 @@ services:
       - hotel_network
     volumes:
       - profile:/data
-    deploy:
-      resources:
-        limits:
-          cpus: "4"
+    deploy: *cpu-limit
 
   profile-redis:
     image: redis:7.2
@@ -63,10 +57,7 @@ services:
     restart: always
     networks:
       - hotel_network
-    deploy:
-      resources:
-        limits:
-          cpus: "4"
+    deploy: *cpu-limit
 
   profile-service:
     image: hotel_profile:${HOTEL_IMAGE_TAG:-latest}
@@ -77,17 +68,11 @@ services:
     depends_on:
       - profile-mongo
       - profile-redis
-    environment:
-      - LOG_LEVEL=${LOG_LEVEL:-info}
-      - MASA_FANOUT_AWARE=${MASA_FANOUT_AWARE:-1}
-      - SERVICE_NAME=profile
+    environment: *service-environment
     volumes:
       - ${PROJECT_CONFIG_PATH}:/usr/config.json:ro
       - ${POLICY_PARAMS_PATH}:/usr/policy_params.json:ro
-    deploy:
-      resources:
-        limits:
-          cpus: "4"
+    deploy: *cpu-limit
 
   reservation-mongo:
     image: mongo:7.0
@@ -97,10 +82,7 @@ services:
       - hotel_network
     volumes:
       - reservation:/data
-    deploy:
-      resources:
-        limits:
-          cpus: "4"
+    deploy: *cpu-limit
 
   reservation-redis:
     image: redis:7.2
@@ -108,10 +90,7 @@ services:
     restart: always
     networks:
       - hotel_network
-    deploy:
-      resources:
-        limits:
-          cpus: "4"
+    deploy: *cpu-limit
 
   reservation-service:
     image: hotel_reservation:${HOTEL_IMAGE_TAG:-latest}
@@ -122,17 +101,11 @@ services:
     depends_on:
       - reservation-mongo
       - reservation-redis
-    environment:
-      - LOG_LEVEL=${LOG_LEVEL:-info}
-      - MASA_FANOUT_AWARE=${MASA_FANOUT_AWARE:-1}
-      - SERVICE_NAME=reservation
+    environment: *service-environment
     volumes:
       - ${PROJECT_CONFIG_PATH}:/usr/config.json:ro
       - ${POLICY_PARAMS_PATH}:/usr/policy_params.json:ro
-    deploy:
-      resources:
-        limits:
-          cpus: "4"
+    deploy: *cpu-limit
 
   user-mongo:
     image: mongo:7.0
@@ -142,10 +115,7 @@ services:
       - hotel_network
     volumes:
       - user:/data
-    deploy:
-      resources:
-        limits:
-          cpus: "4"
+    deploy: *cpu-limit
 
   user-service:
     image: hotel_user:${HOTEL_IMAGE_TAG:-latest}
@@ -155,17 +125,11 @@ services:
       - hotel_network
     depends_on:
       - user-mongo
-    environment:
-      - LOG_LEVEL=${LOG_LEVEL:-info}
-      - MASA_FANOUT_AWARE=${MASA_FANOUT_AWARE:-1}
-      - SERVICE_NAME=user
+    environment: *service-environment
     volumes:
       - ${PROJECT_CONFIG_PATH}:/usr/config.json:ro
       - ${POLICY_PARAMS_PATH}:/usr/policy_params.json:ro
-    deploy:
-      resources:
-        limits:
-          cpus: "4"
+    deploy: *cpu-limit
 
   geo-service:
     image: hotel_geo:${HOTEL_IMAGE_TAG:-latest}
@@ -173,17 +137,11 @@ services:
     restart: always
     networks:
       - hotel_network
-    environment:
-      - LOG_LEVEL=${LOG_LEVEL:-info}
-      - MASA_FANOUT_AWARE=${MASA_FANOUT_AWARE:-1}
-      - SERVICE_NAME=geo
+    environment: *service-environment
     volumes:
       - ${PROJECT_CONFIG_PATH}:/usr/config.json:ro
       - ${POLICY_PARAMS_PATH}:/usr/policy_params.json:ro
-    deploy:
-      resources:
-        limits:
-          cpus: "4"
+    deploy: *cpu-limit
 
   search-service:
     image: hotel_search:${HOTEL_IMAGE_TAG:-latest}
@@ -194,17 +152,11 @@ services:
     depends_on:
       - geo-service
       - rate-service
-    environment:
-      - LOG_LEVEL=${LOG_LEVEL:-info}
-      - MASA_FANOUT_AWARE=${MASA_FANOUT_AWARE:-1}
-      - SERVICE_NAME=search
+    environment: *service-environment
     volumes:
       - ${PROJECT_CONFIG_PATH}:/usr/config.json:ro
       - ${POLICY_PARAMS_PATH}:/usr/policy_params.json:ro
-    deploy:
-      resources:
-        limits:
-          cpus: "4"
+    deploy: *cpu-limit
 
   hotel-frontend-service:
     image: hotel_frontend:${HOTEL_IMAGE_TAG:-latest}
@@ -221,17 +173,11 @@ services:
       - rate-service
       - geo-service
       - search-service
-    environment:
-      - LOG_LEVEL=${LOG_LEVEL:-info}
-      - MASA_FANOUT_AWARE=${MASA_FANOUT_AWARE:-1}
-      - SERVICE_NAME=frontend
+    environment: *service-environment
     volumes:
       - ${PROJECT_CONFIG_PATH}:/usr/config.json:ro
       - ${POLICY_PARAMS_PATH}:/usr/policy_params.json:ro
-    deploy:
-      resources:
-        limits:
-          cpus: "4"
+    deploy: *cpu-limit
 volumes:
   rate:
   profile:

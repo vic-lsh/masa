@@ -32,6 +32,7 @@ members = [
   "libs/masa-core",
   "libs/masa-policy",
   "libs/masa",
+  "libs/multiqueue-prio-queue",
 
   # evaluation applications
   "apps/hotel",

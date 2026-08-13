@@ -349,6 +349,10 @@ impl TraceRecord {
     }
 
     pub fn to_csv_row(&self) -> String {
+        self.to_csv_row_with_additional_metrics(self.additional_metrics.len())
+    }
+
+    fn to_csv_row_with_additional_metrics(&self, expected_additional_metrics: usize) -> String {
         let generic = format!(
             "{},{},{},{},{},{},{},{},{},{}",
             self.api,
@@ -363,16 +367,24 @@ impl TraceRecord {
             Self::escape_csv_field(&self.queue_lengths),
         );
 
-        if self.additional_metrics.is_empty() {
+        assert!(
+            self.additional_metrics.len() <= expected_additional_metrics,
+            "trace record has {} additional metrics but its header has {}",
+            self.additional_metrics.len(),
+            expected_additional_metrics
+        );
+
+        if expected_additional_metrics == 0 {
             generic
         } else {
-            let additional = self
-                .additional_metrics
-                .iter()
-                .map(|field| Self::escape_csv_field(field))
-                .collect::<Vec<_>>()
-                .join(",");
-            format!("{},{}", generic, additional)
+            let mut row = generic;
+            for index in 0..expected_additional_metrics {
+                row.push(',');
+                if let Some(metric) = self.additional_metrics.get(index) {
+                    row.push_str(&Self::escape_csv_field(metric));
+                }
+            }
+            row
         }
     }
 
@@ -468,8 +480,9 @@ where
         }
     }
 
-    fn to_row(&self) -> String {
-        self.to_trace_record().to_csv_row()
+    fn to_row(&self, expected_additional_metrics: usize) -> String {
+        self.to_trace_record()
+            .to_csv_row_with_additional_metrics(expected_additional_metrics)
     }
 }
 
@@ -571,8 +584,9 @@ where
         let mut file =
             File::create(output_path.join(format!("r{}_{}.csv", self.rps, self.api))).unwrap();
         writeln!(file, "{}", self.header_row()).unwrap();
+        let additional_metric_count = self.inner.response_output_headers().len();
         while let Some(stats) = self.trace_rx.recv().await {
-            writeln!(file, "{}", stats.to_row()).unwrap();
+            writeln!(file, "{}", stats.to_row(additional_metric_count)).unwrap();
         }
         log::info!("All traces fetched");
     }
@@ -1008,6 +1022,47 @@ mod tests {
         let cfg = test_gen_config(Some(vec![0.0, 0.0]));
 
         assert!(cfg.validate().is_err());
+    }
+
+    #[test]
+    fn trace_rows_pad_missing_application_metrics() {
+        let record = TraceRecord {
+            api: "Search".to_string(),
+            request_id: 42,
+            slo_us: 200_000,
+            start_at: 1_000_000,
+            deadline: 1_200_000,
+            latency: 5_000_000,
+            error: "/ClientTimeout".to_string(),
+            q_lat_init: 0,
+            q_lat_resume: 0,
+            queue_lengths: String::new(),
+            additional_metrics: Vec::new(),
+        };
+
+        let row = record.to_csv_row_with_additional_metrics(3);
+        assert_eq!(row.split(',').count(), TraceRecord::HEADERS.len() + 3);
+        assert!(row.ends_with(",,,"));
+    }
+    #[test]
+    fn trace_rows_preserve_available_application_metrics() {
+        let record = TraceRecord {
+            api: "Reservation".to_string(),
+            request_id: 7,
+            slo_us: 100_000,
+            start_at: 1_000_000,
+            deadline: 1_100_000,
+            latency: 12_000,
+            error: String::new(),
+            q_lat_init: 1,
+            q_lat_resume: 2,
+            queue_lengths: "[]".to_string(),
+            additional_metrics: vec!["a".to_string(), "b".to_string()],
+        };
+
+        let row = record.to_csv_row_with_additional_metrics(3);
+        assert_eq!(row.split(',').count(), TraceRecord::HEADERS.len() + 3);
+        assert!(row.ends_with(",a,b,"));
     }
 }
 

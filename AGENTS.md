@@ -70,6 +70,7 @@ Key policy flags:
 - `sched_tailclipper`: TailClipper paper's oldest-request-first policy with round-robin fairness
 - `sched_pred`: Adds deadline tightening and dynamic reprioritization using downstream work estimates. Implies `sched_slo` and `estimator`.
 - `sched_mt`: Switches to a multi-threaded Tokio runtime with a single shared priority heap (`Mutex<BinaryHeap>`). Implies `sched_slo`. Workers share one lock; no per-worker queues or work-stealing. Composable with `abort_slo`, `ac_pred`, `ac_rajomon`, `sched_pred`, etc.
+- `sched_mt_multiqueue`: Replaces the `sched_mt` mutex heap with a k-relaxed multi-queue (arXiv:1411.1209) of `c×threads` sub-heaps — push to random, pop samples best-of-2. Implies `sched_mt`. Composable with `abort_slo`.
 
 **Estimation infrastructure:**
 - `estimator`: Enables shared latency estimation infrastructure (estimator type selection, latency maps, estimation state). Implied by `sched_pred` and `ac_pred`. Does not require `abort_slo` on its own.
@@ -83,7 +84,7 @@ Key policy flags:
 - `ac_pred`: Progressive cost-aware admission control — uses compute-time estimates and downstream utilization signals. Requires `estimator`.
 - `ac_rajomon`: Token-bucket rate limiting admission control.
 
-`scripts/check.sh` checks: default (no features), `sched_fifo`, `sched_fifo,abort_slo`, `sched_slo`, `sched_slo,abort_slo`, `sched_tailclipper,abort_slo`, `sched_slo,ac_rajomon`, `sched_slo,ac_pred,est_mean_var`, `sched_pred,abort_slo,ac_pred,est_mean_var`, `sched_pred,abort_slack,est_mean_var`, `sched_pred,signal_slack,ac_pred,est_mean_var`, `sched_mt`, `sched_mt,abort_slo`, `sched_mt,ac_rajomon`.
+`scripts/check.sh` checks: default (no features), `sched_fifo`, `sched_fifo,abort_slo`, `sched_slo`, `sched_slo,abort_slo`, `sched_tailclipper,abort_slo`, `sched_slo,ac_rajomon`, `sched_slo,ac_pred,est_mean_var`, `sched_pred,abort_slo,ac_pred,est_mean_var`, `sched_pred,abort_slack,est_mean_var`, `sched_pred,signal_slack,ac_pred,est_mean_var`, `sched_mt`, `sched_mt,abort_slo`, `sched_mt,ac_rajomon`, `sched_mt_multiqueue`, `sched_mt_multiqueue,abort_slo`.
 
 ## Architecture
 
@@ -95,7 +96,7 @@ Key policy flags:
 
 ### Application Integration Requirements
 - Use normal `.serve(addr)`; Masa-aware execution is enabled by compile-time scheduling/admission features
-- Use `#[tokio::main(flavor = "current_thread")]` — the priority scheduler is implemented in the single-threaded runtime
+- Use `#[tokio::main(flavor = "current_thread")]` for normal policies; `sched_mt` and its queue backends require Tokio's multi-thread runtime
 - `PriorityHint::infra()` (value 0) is reserved for infrastructure tasks and always runs first
 
 ### libs/masa & libs/masa-core

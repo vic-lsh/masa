@@ -26,6 +26,8 @@ flag_combos=(
     "sched_mt"
     "sched_mt,abort_slo"
     "sched_mt,ac_rajomon"
+    "sched_mt_multiqueue"
+    "sched_mt_multiqueue,abort_slo"
 )
 
 CONTINUE_ON_ERROR=false
