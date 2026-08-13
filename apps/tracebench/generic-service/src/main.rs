@@ -203,22 +203,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Spawn a task that prints the queue length every second
+    #[cfg(not(feature = "sched_mt"))]
     let queue_monitor_task = tokio::spawn(async {
         let mut interval = tokio::time::interval(Duration::from_secs(1));
         let start_time = Instant::now();
         loop {
             interval.tick().await;
-            #[cfg(not(feature = "sched_mt"))]
-            {
-                let queue_len = current_thread_queue_len();
-                let elapsed = start_time.elapsed();
-                info!(
-                    "current_thread_queue_len: {} (elapsed: {:?})",
-                    queue_len, elapsed
-                );
-            }
-            #[cfg(feature = "sched_mt")]
-            let _ = start_time.elapsed();
+            let queue_len = current_thread_queue_len();
+            let elapsed = start_time.elapsed();
+            info!(
+                "current_thread_queue_len: {} (elapsed: {:?})",
+                queue_len, elapsed
+            );
         }
     });
 
@@ -229,8 +225,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .add_service(ServiceServer::new(svc))
         .serve(addr)
         .await?;
-    queue_monitor_task.abort();
-    let _ = queue_monitor_task.await;
+    #[cfg(not(feature = "sched_mt"))]
+    {
+        queue_monitor_task.abort();
+        let _ = queue_monitor_task.await;
+    }
 
     Ok(())
 }

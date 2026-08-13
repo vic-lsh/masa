@@ -44,9 +44,6 @@ def create_gen_config_dict(
     """
     config = copy.deepcopy(template_config)
 
-    # The runner consumes this key, but the strict Rust config parser does not.
-    config.pop("cpus_per_replica", None)
-
     # Parse the original address
     protocol = "http"
     port = "8660"
@@ -75,6 +72,9 @@ def create_hotel_config_dict(
     - "rate_mongo" -> "{project_name}-rate-mongo-1"
     """
     config = copy.deepcopy(template_config)
+
+    # The runner consumes this key, but the strict Rust config parser does not.
+    config.pop("cpus_per_replica", None)
 
     # Service name mappings: config key -> (compose service name, is_scaled)
     # Scaled services use service name for DNS load balancing
