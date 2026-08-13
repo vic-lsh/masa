@@ -5,6 +5,8 @@ known = [
   "sched_tailclipper",
   "sched_oracle",
   "sched_pred",
+  "sched_mt",
+  "sched_mt_multiqueue",
   "abort_slo",
   "abort_slack",
   "signal_slack",
@@ -19,6 +21,8 @@ known = [
 
 [implies]
 sched_pred = ["estimator", "sched_slo"]
+sched_mt = ["sched_slo"]
+sched_mt_multiqueue = ["sched_mt"]
 abort_slack = ["estimator"]
 signal_slack = ["estimator", "ac_pred"]
 ac_pred = ["estimator"]
@@ -44,6 +48,11 @@ check = [
   "sched_pred,abort_slo,ac_pred,est_mean_var",
   "sched_pred,abort_slack,est_mean_var",
   "sched_pred,signal_slack,ac_pred,est_mean_var",
+  "sched_mt",
+  "sched_mt,abort_slo",
+  "sched_mt,ac_rajomon",
+  "sched_mt_multiqueue",
+  "sched_mt_multiqueue,abort_slo",
 ]
 test = [
   "sched_slo,trace_queue_latency",
@@ -66,6 +75,8 @@ sched_tailclipper = ["masa/sched_tailclipper"]
 sched_fifo = ["masa/sched_fifo"]
 sched_oracle = ["masa/sched_oracle"]
 sched_pred = ["masa/sched_pred"]
+sched_mt = ["masa/sched_mt"]
+sched_mt_multiqueue = ["sched_mt", "masa/sched_mt_multiqueue"]
 abort_slo = ["masa/abort_slo"]
 abort_slack = ["masa/abort_slack"]
 signal_slack = ["masa/signal_slack"]
@@ -83,12 +94,16 @@ sched_slo = "e2e_slo"
 sched_tailclipper = "oldest"
 sched_oracle = "oracle"
 sched_pred = "slack"
+sched_mt = "e2e_slo_mt"
+sched_mt_multiqueue = "e2e_slo_mt_mq"
 
 [python_policy]
 prio_precedence = [
   "sched_pred",
   "sched_tailclipper",
   "sched_oracle",
+  "sched_mt_multiqueue",
+  "sched_mt",
   "sched_slo",
   "sched_fifo",
 ]
@@ -173,6 +188,8 @@ features = [
   "sched_fifo",
   "sched_oracle",
   "sched_pred",
+  "sched_mt",
+  "sched_mt_multiqueue",
   "abort_slo",
   "abort_slack",
   "signal_slack",
@@ -216,6 +233,8 @@ sched_oracle = [
   "masa-policy/sched_oracle",
 ]
 sched_pred = ["masa-core/sched_pred", "sched_slo", "masa-policy/sched_pred"]
+sched_mt = ["sched_slo", "tokio/sched_mt"]
+sched_mt_multiqueue = ["sched_mt", "tokio/sched_mt_multiqueue"]
 abort_slo = [
   "hyper/masa",
   "masa-core/abort_slo",

@@ -104,6 +104,21 @@ jobs:
           - label: sched_pred_signal_slack_ac_pred_est_mean_var
             features: "sched_pred,signal_slack,ac_pred,est_mean_var"
             cache_key: sched-pred-signal-slack-ac-pred-est-mean-var
+          - label: sched_mt
+            features: "sched_mt"
+            cache_key: sched-mt
+          - label: sched_mt_abort_slo
+            features: "sched_mt,abort_slo"
+            cache_key: sched-mt-abort-slo
+          - label: sched_mt_ac_rajomon
+            features: "sched_mt,ac_rajomon"
+            cache_key: sched-mt-ac-rajomon
+          - label: sched_mt_multiqueue
+            features: "sched_mt_multiqueue"
+            cache_key: sched-mt-multiqueue
+          - label: sched_mt_multiqueue_abort_slo
+            features: "sched_mt_multiqueue,abort_slo"
+            cache_key: sched-mt-multiqueue-abort-slo
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@master
