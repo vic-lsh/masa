@@ -1,0 +1,6 @@
+version: 1
+id: rajomon_tailclipper
+description: Rajomon overload control with TailClipper scheduling.
+features:
+  - sched_tailclipper
+  - ac_rajomon

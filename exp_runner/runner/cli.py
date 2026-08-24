@@ -22,6 +22,7 @@ from .pred_optimizer import PredOptimizerConfig, PredOptimizer
 from .plotting import generate_all_plots
 from .plotting.all import PLOT_MODULES
 from .plotting.replicas import generate_replicas_plots
+from .reproduction import ReproductionManifestError, ReproductionSuite
 
 
 def _split_csv(value: str | None) -> list[str]:
@@ -208,6 +209,88 @@ def cmd_run_experiment(args: argparse.Namespace) -> None:
         if experiment.current_output_dir and os.environ.get("CI") == "true":
             experiment._print_log_tails(experiment.current_output_dir)
         sys.exit(1)
+
+
+def _load_reproduction_suite(args: argparse.Namespace) -> ReproductionSuite:
+    repo_root = find_repo_root()
+    suite_path = Path(args.suite)
+    if not suite_path.is_absolute():
+        suite_path = repo_root / suite_path
+    try:
+        return ReproductionSuite.load(suite_path, repo_root)
+    except ReproductionManifestError as error:
+        logger.error("Invalid reproduction suite: %s", error)
+        raise SystemExit(1) from error
+
+
+def cmd_reproduce_validate(args: argparse.Namespace) -> None:
+    """Validate semantic declarations and their executable runner bindings."""
+
+    suite = _load_reproduction_suite(args)
+    print(
+        f"Validated {len(suite.experiments)} experiment(s) "
+        f"in reproduction suite '{suite.name}'."
+    )
+
+
+def cmd_reproduce_plan(args: argparse.Namespace) -> None:
+    """Print the executable plan for semantic experiment declarations."""
+
+    suite = _load_reproduction_suite(args)
+    try:
+        experiments = suite.select(args.select)
+    except ReproductionManifestError as error:
+        logger.error("Invalid reproduction selection: %s", error)
+        raise SystemExit(1) from error
+
+    print(f"Suite: {suite.name}")
+    for experiment in experiments:
+        policies = ", ".join(policy.id for policy in experiment.policies)
+        print(f"\n{experiment.id}")
+        print(f"  Study: {experiment.study_id}")
+        print(f"  Runner: {experiment.runner.app}/{experiment.runner.experiment}")
+        print(f"  Offered RPS: {', '.join(map(str, experiment.offered_rps))}")
+        print(f"  Policies: {policies}")
+        print(
+            "  Command: uv run -m exp_runner run "
+            f"{experiment.runner.app} {experiment.runner.experiment}"
+        )
+
+
+def cmd_reproduce_run(args: argparse.Namespace) -> None:
+    """Execute semantic declarations through their current runner bindings."""
+
+    suite = _load_reproduction_suite(args)
+    try:
+        experiments = suite.select(args.select)
+    except ReproductionManifestError as error:
+        logger.error("Invalid reproduction selection: %s", error)
+        raise SystemExit(1) from error
+
+    for experiment in experiments:
+        logger.info(
+            "Running semantic experiment %s via %s/%s",
+            experiment.id,
+            experiment.runner.app,
+            experiment.runner.experiment,
+        )
+        cmd_run_experiment(
+            Namespace(
+                app=experiment.runner.app,
+                experiment=experiment.runner.experiment,
+                plot=args.plot,
+                only=None,
+                skip=None,
+                summary_only=False,
+                no_plot_cache=False,
+                no_cache=args.no_cache,
+                rm_data=args.rm_data,
+                dry_run=args.dry_run,
+                smoke_test=args.smoke_test,
+                k8s=args.k8s,
+                kind=args.kind,
+            )
+        )
 
 
 def cmd_queue_experiments(args: argparse.Namespace) -> None:
@@ -553,6 +636,10 @@ Examples:
 
   # Run with verbose logging
   uv run -m exp_runner run hotel exp1 --verbose
+
+  # Validate and plan semantically named evaluation experiments
+  uv run -m exp_runner reproduce validate artifact/eval/suite.yaml
+  uv run -m exp_runner reproduce plan artifact/eval/suite.yaml
         """,
     )
 
@@ -562,6 +649,69 @@ Examples:
 
     subparsers = parser.add_subparsers(dest="command", help="Command to execute")
     subparsers.required = True
+
+    # reproduce command
+    reproduce_parser = subparsers.add_parser(
+        "reproduce",
+        help="Validate, plan, or run semantically named evaluation experiments",
+        description=(
+            "Operate on versioned evaluation declarations whose identity is "
+            "independent of manuscript figure numbering"
+        ),
+    )
+    reproduce_subparsers = reproduce_parser.add_subparsers(
+        dest="reproduce_command", help="Reproduction action"
+    )
+    reproduce_subparsers.required = True
+
+    reproduce_validate = reproduce_subparsers.add_parser(
+        "validate", help="Validate a reproduction suite and runner bindings"
+    )
+    reproduce_validate.add_argument("suite", help="Path to the suite YAML file")
+    reproduce_validate.set_defaults(func=cmd_reproduce_validate)
+
+    reproduce_plan = reproduce_subparsers.add_parser(
+        "plan", help="Show how semantic experiments map to executable runner inputs"
+    )
+    reproduce_plan.add_argument("suite", help="Path to the suite YAML file")
+    reproduce_plan.add_argument(
+        "--select", help="Run only the experiment with this semantic ID"
+    )
+    reproduce_plan.set_defaults(func=cmd_reproduce_plan)
+
+    reproduce_run = reproduce_subparsers.add_parser(
+        "run", help="Run experiments selected from a semantic reproduction suite"
+    )
+    reproduce_run.add_argument("suite", help="Path to the suite YAML file")
+    reproduce_run.add_argument(
+        "--select", help="Run only the experiment with this semantic ID"
+    )
+    reproduce_run.add_argument(
+        "--plot", action="store_true", help="Generate plots after each experiment"
+    )
+    reproduce_run.add_argument(
+        "--no-cache", action="store_true", help="Disable Docker build caching"
+    )
+    reproduce_run.add_argument(
+        "--rm-data",
+        action="store_true",
+        help="Remove existing output before each experiment",
+    )
+    reproduce_run.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print execution steps without running containers",
+    )
+    reproduce_run.add_argument(
+        "--smoke-test",
+        action="store_true",
+        help="Verify experiment results after each run",
+    )
+    reproduce_run.add_argument("--k8s", action="store_true", help="Run on Kubernetes")
+    reproduce_run.add_argument(
+        "--kind", action="store_true", help="Run on Kind (implies Kubernetes)"
+    )
+    reproduce_run.set_defaults(func=cmd_reproduce_run)
 
     # run command
     run_parser = subparsers.add_parser(

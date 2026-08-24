@@ -1,0 +1,8 @@
+version: 1
+id: masa
+description: Masa slack scheduling, load shedding, and predictive admission.
+features:
+  - sched_pred
+  - abort_slack
+  - ac_pred
+  - est_mean_var

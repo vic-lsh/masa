@@ -38,6 +38,22 @@ uv sync
 
 ## Quick Start
 
+### Semantic evaluation suites
+
+Paper evaluation experiments can be grouped by scientific question using a
+versioned reproduction suite. Semantic IDs remain stable when manuscript figure
+numbers change. The suite validator also checks that current application-oriented
+runner inputs have not drifted from their declarations.
+
+```bash
+uv run -m exp_runner reproduce validate artifact/eval/suite.yaml
+uv run -m exp_runner reproduce plan artifact/eval/suite.yaml
+uv run -m exp_runner reproduce run artifact/eval/suite.yaml \
+  --select fixed_capacity/trace_short_sequential_branching --k8s --plot
+```
+
+See `artifact/eval/README.md` for the declaration layout and extension workflow.
+
 ### Run a Single Experiment
 
 ```bash
