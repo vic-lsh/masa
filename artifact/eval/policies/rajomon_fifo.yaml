@@ -1,6 +1,0 @@
-version: 1
-id: rajomon_fifo
-description: Rajomon overload control with FIFO scheduling.
-features:
-  - sched_fifo
-  - ac_rajomon
