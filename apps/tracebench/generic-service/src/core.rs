@@ -221,6 +221,9 @@ impl ServiceCore {
 
             // Process each child in this step
             for entry in step {
+                if rand::random::<f64>() >= entry.probability {
+                    continue;
+                }
                 let child_svc_name = &entry.service_name;
 
                 // Skip if this is a self-call or creates a cycle
@@ -592,6 +595,7 @@ mod tests {
                     service_name: child_svc.clone(),
                     method_name: method.to_string().into(),
                     callee_variants: Vec::new(),
+                    probability: 1.0,
                 }]],
             },
         );
@@ -668,6 +672,7 @@ mod tests {
                         variant_id: "v007".to_string(),
                         probability: 1.0,
                     }],
+                    probability: 1.0,
                 }]],
             },
         );
@@ -725,6 +730,7 @@ mod tests {
                     service_name: child_svc.clone(),
                     method_name: MethodId::from("wrong-method"),
                     callee_variants: Vec::new(),
+                    probability: 1.0,
                 }]],
             },
         );
@@ -740,6 +746,7 @@ mod tests {
                         variant_id: "child-v002".to_string(),
                         probability: 1.0,
                     }],
+                    probability: 1.0,
                 }]],
             },
         );
