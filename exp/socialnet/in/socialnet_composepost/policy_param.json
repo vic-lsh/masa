@@ -1,0 +1,19 @@
+{
+  "rajomon": {
+    "latency_threshold_us": 10647,
+    "price_update_rate_ms": 4,
+    "price_step_up": 20,
+    "price_step_down": 4,
+    "price_cap": 66,
+    "init_price": 0,
+    "price_freq": 5,
+    "tokens_left_init": 285,
+    "token_update_rate_ms": 4,
+    "token_update_step": 3,
+    "max_token": 285
+  },
+  "pred": {
+    "tau_er": 2.0,
+    "estimator_k": 0.0
+  }
+}
