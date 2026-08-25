@@ -104,6 +104,9 @@ jobs:
           - label: sched_pred_signal_slack_ac_pred_est_mean_var
             features: "sched_pred,signal_slack,ac_pred,est_mean_var"
             cache_key: sched-pred-signal-slack-ac-pred-est-mean-var
+          - label: sched_pred_abort_slack_ac_pred_est_mean_var_deadline_equals_slack
+            features: "sched_pred,abort_slack,ac_pred,est_mean_var,deadline_equals_slack"
+            cache_key: sched-pred-abort-slack-ac-pred-est-mean-var-deadline-equals-slack
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@master

@@ -5,6 +5,14 @@ from exp_runner.runner.policy import Policy
 
 
 class TestParse:
+    def test_deadline_equals_slack(self):
+        policy = Policy.parse(
+            "sched_pred,abort_slack,ac_pred,est_mean_var,deadline_equals_slack"
+        )
+        assert policy.deadline_equals_slack
+        assert policy.display_name == "Masa (deadline = slack)"
+        assert policy.linestyle == "--"
+
     def test_fifo(self):
         p = Policy.parse("sched_fifo")
         assert p.prio == "fifo"

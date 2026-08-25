@@ -1,0 +1,11 @@
+{
+  "Repeats": 1,
+  "Rps": [100, 200, 400, 600],
+  "Addr": "http://synthbench_frontend:8000",
+  "WarmupSecs": 15,
+  "DurationSecs": 60,
+  "Apis": ["a"],
+  "Slos": [100000],
+  "Timeouts_ms": [1000],
+  "Gap": "exp"
+}
