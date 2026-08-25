@@ -8,6 +8,9 @@ from pathlib import Path
 
 from exp_runner.runner.apps import get_app_plugin
 from exp_runner.runner.config import ExperimentConfig
+from exp_runner.runner.plotting.tracebench import _compute_goodput
+
+import pandas as pd
 
 
 def test_get_app_plugin_tracebench() -> None:
@@ -82,3 +85,33 @@ def test_tracebench_extra_env_records_service_forwarding_keys() -> None:
         env["TRACEBENCH_SERVICE_EXTRA_ENV_KEYS"]
         == "MASA_ESTIMATOR_STATS_LOG,MASA_FANOUT_AWARE"
     )
+
+
+def test_tracebench_exports_per_graph_slos() -> None:
+    app = get_app_plugin("tracebench")
+
+    env = app.generate_env_vars(
+        {"DurationSecs": 1, "WarmupSecs": 0, "Rps": [200]},
+        {
+            "slo_ms": 100,
+            "slo_ms_by_graph": {"S_14677443": 100, "S_98493745": 75},
+        },
+        Path("/unused"),
+    )
+
+    assert json.loads(env["SLO_MS_BY_GRAPH"]) == {
+        "S_14677443": 100,
+        "S_98493745": 75,
+    }
+
+
+def test_tracebench_goodput_uses_per_request_slo() -> None:
+    requests = pd.DataFrame(
+        {
+            "e2e_latency_ms": [90.0, 90.0],
+            "slo_us": [100_000, 75_000],
+            "error": ["/None", "/None"],
+        }
+    )
+
+    assert _compute_goodput(requests, slo_ms=100, duration_sec=1) == 1.0
