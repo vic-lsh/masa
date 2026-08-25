@@ -36,6 +36,6 @@
     "estimator_k": 0.0,
     "aimd_alpha": 0.05,
     "aimd_beta": 0.875,
-    "aimd_er_threshold": 0.28
+    "aimd_er_threshold": 0.10
   }
 }
