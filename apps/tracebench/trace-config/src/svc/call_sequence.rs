@@ -16,6 +16,9 @@ pub struct CallSequenceEntry {
     pub service_name: ServiceName,
     pub method_name: MethodId,
     pub callee_variants: Vec<VariantChoice>,
+    /// Marginal probability of issuing this call. Conditional traces use 1.0;
+    /// legacy traces record an independent probability for each child.
+    pub probability: f64,
 }
 
 /// A possible variant for the downstream call target.
@@ -86,6 +89,7 @@ impl TryFrom<&str> for CallSequenceEntry {
             service_name: ServiceName::from_string(parts[0].to_string()),
             method_name: parts[1].to_string().into(),
             callee_variants: Vec::new(),
+            probability: 1.0,
         })
     }
 }
@@ -126,15 +130,30 @@ pub fn load_call_sequence(config_dir: &PathBuf, graph_id: &GraphId) -> Result<Ca
     let content = std::fs::read_to_string(&call_sequence_path)
         .with_context(|| format!("Failed to read call_sequence.json from {:?}", config_dir))?;
 
-    let graphs: HashMap<String, RawGraph> =
+    let graphs: serde_json::Value =
         serde_json::from_str(&content).with_context(|| "Failed to parse call_sequence.json")?;
-
-    let raw_graph = graphs.get(graph_id.as_str()).ok_or_else(|| {
+    let raw_graph_value = graphs.get(graph_id.as_str()).ok_or_else(|| {
         anyhow::anyhow!(
             "graph_id '{}' not found in call_sequence.json",
             graph_id.as_str()
         )
     })?;
+
+    if raw_graph_value
+        .get("format")
+        .and_then(|value| value.as_str())
+        != Some("conditional_variants")
+    {
+        return parse_legacy_call_sequence(raw_graph_value).with_context(|| {
+            format!(
+                "Failed to parse legacy call sequence for graph '{}'",
+                graph_id.as_str()
+            )
+        });
+    }
+
+    let raw_graph: RawGraph = serde_json::from_value(raw_graph_value.clone())
+        .with_context(|| "Failed to parse conditional call sequence")?;
 
     if raw_graph.format.as_deref() != Some("conditional_variants") {
         anyhow::bail!(
@@ -160,6 +179,67 @@ pub fn load_call_sequence(config_dir: &PathBuf, graph_id: &GraphId) -> Result<Ca
     Ok(CallSequence { methods })
 }
 
+fn parse_legacy_call_sequence(raw_graph: &serde_json::Value) -> Result<CallSequence> {
+    let services: HashMap<String, Vec<HashMap<String, f64>>> =
+        serde_json::from_value(raw_graph.clone())?;
+    let mut methods_by_service: HashMap<ServiceName, Vec<MethodId>> = HashMap::new();
+
+    for steps in services.values() {
+        for step in steps {
+            for target in step.keys() {
+                let entry = CallSequenceEntry::try_from(target.as_str())?;
+                let methods = methods_by_service.entry(entry.service_name).or_default();
+                if !methods.contains(&entry.method_name) {
+                    methods.push(entry.method_name);
+                }
+            }
+        }
+    }
+
+    let mut methods = HashMap::new();
+    for (service, steps) in services {
+        let sequence = steps
+            .into_iter()
+            .map(|step| {
+                step.into_iter()
+                    .map(|(target, probability)| {
+                        let mut entry = CallSequenceEntry::try_from(target.as_str())?;
+                        entry.probability = probability.clamp(0.0, 1.0);
+                        Ok(entry)
+                    })
+                    .collect::<Result<Vec<_>, CallSequenceParseError>>()
+            })
+            .collect::<Result<Vec<_>, CallSequenceParseError>>()?;
+        let variant = CallSequenceVariant {
+            variant_id: "legacy".to_string(),
+            probability: 1.0,
+            sequence,
+        };
+        let method_sequence = MethodCallSequence {
+            variants: HashMap::from([("legacy".to_string(), variant)]),
+        };
+
+        if service == "USER" {
+            methods.insert(MethodId::from("USER"), method_sequence);
+            continue;
+        }
+
+        let service_name = ServiceName::from_string(service);
+        for method in methods_by_service
+            .get(&service_name)
+            .cloned()
+            .unwrap_or_default()
+        {
+            methods.insert(
+                MethodId::from(format!("{}::{}", service_name.as_str(), method)),
+                method_sequence.clone(),
+            );
+        }
+    }
+
+    Ok(CallSequence { methods })
+}
+
 /// Get all graph IDs from a new-format `call_sequence.json` file.
 pub fn get_all_graph_ids(config_dir: &PathBuf) -> Result<Vec<GraphId>> {
     let call_sequence_path = config_dir.join("call_sequence.json");
@@ -171,10 +251,13 @@ pub fn get_all_graph_ids(config_dir: &PathBuf) -> Result<Vec<GraphId>> {
     let content = std::fs::read_to_string(&call_sequence_path)
         .with_context(|| format!("Failed to read call_sequence.json from {:?}", config_dir))?;
 
-    let graphs: HashMap<String, RawGraph> =
+    let graphs: serde_json::Value =
         serde_json::from_str(&content).with_context(|| "Failed to parse call_sequence.json")?;
+    let graph_object = graphs
+        .as_object()
+        .ok_or_else(|| anyhow::anyhow!("call_sequence.json must contain a JSON object"))?;
 
-    Ok(graphs
+    Ok(graph_object
         .keys()
         .map(|k| GraphId::from_string(k.clone()))
         .collect())
@@ -363,24 +446,35 @@ mod tests {
     }
 
     #[test]
-    fn test_load_call_sequence_rejects_old_format() {
+    fn test_load_call_sequence_accepts_old_format() {
         let temp = TempDir::new().unwrap();
         let config_dir = temp.path().to_path_buf();
         fs::write(
             config_dir.join("call_sequence.json"),
             r#"{
   "S_123": {
+    "USER": [{ "svc-a::root": 1.0 }],
     "svc-a": [
-      { "svc-b::method": 1.0 }
-    ]
+      { "svc-b::method": 0.25 }
+    ],
+    "svc-b": []
   }
 }"#,
         )
         .unwrap();
 
         let graph_id = GraphId::from_string("S_123".to_string());
-        let result = load_call_sequence(&config_dir, &graph_id);
-        assert!(result.is_err());
+        let result = load_call_sequence(&config_dir, &graph_id).unwrap();
+        let root = result.get_method(&MethodId::from("USER")).unwrap();
+        assert_eq!(
+            root.get_variant("legacy").unwrap().sequence[0][0].probability,
+            1.0
+        );
+
+        let service = result.get_method(&MethodId::from("svc-a::root")).unwrap();
+        let call = &service.get_variant("legacy").unwrap().sequence[0][0];
+        assert_eq!(call.service_name.as_str(), "svc-b");
+        assert_eq!(call.probability, 0.25);
     }
 
     #[test]
