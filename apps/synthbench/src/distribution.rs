@@ -2,6 +2,10 @@ use app_utils::timing::time_now;
 use rand::thread_rng;
 use rand_distr::{Distribution, Exp, LogNormal, Normal, WeightedIndex};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use std::sync::{
+    Arc,
+    atomic::{AtomicU64, Ordering},
+};
 
 fn lognormal_from_mean_std(mean: f64, std: f64) -> Result<LogNormal<f64>, String> {
     if mean <= 0.0 {
@@ -72,6 +76,16 @@ pub enum LatencyDistribution {
         fast_latency: u64,
         slow_duration_ms: u16,
     },
+    ShiftedNormal {
+        after_secs: u64,
+        before_mean: f64,
+        before_std: f64,
+        after_mean: f64,
+        after_std: f64,
+        before_dist: Normal<f64>,
+        after_dist: Normal<f64>,
+        first_sample_us: Arc<AtomicU64>,
+    },
 }
 
 impl LatencyDistribution {
@@ -109,6 +123,31 @@ impl LatencyDistribution {
                 } else {
                     *fast_latency
                 }
+            }
+            LatencyDistribution::ShiftedNormal {
+                after_secs,
+                before_dist,
+                after_dist,
+                first_sample_us,
+                ..
+            } => {
+                let now_us = time_now();
+                let start_us = match first_sample_us.compare_exchange(
+                    0,
+                    now_us,
+                    Ordering::Relaxed,
+                    Ordering::Relaxed,
+                ) {
+                    Ok(_) => now_us,
+                    Err(existing) => existing,
+                };
+                let shift_after_us = after_secs.saturating_mul(1_000_000);
+                let dist = if now_us.saturating_sub(start_us) >= shift_after_us {
+                    after_dist
+                } else {
+                    before_dist
+                };
+                dist.sample(&mut thread_rng()).round().max(0.0) as u64
             }
         }
     }
@@ -151,6 +190,24 @@ impl Clone for LatencyDistribution {
                 fast_latency: *fast_latency,
                 slow_duration_ms: *slow_duration_ms,
             },
+            LatencyDistribution::ShiftedNormal {
+                after_secs,
+                before_mean,
+                before_std,
+                after_mean,
+                after_std,
+                first_sample_us,
+                ..
+            } => LatencyDistribution::ShiftedNormal {
+                after_secs: *after_secs,
+                before_mean: *before_mean,
+                before_std: *before_std,
+                after_mean: *after_mean,
+                after_std: *after_std,
+                before_dist: Normal::new(*before_mean, *before_std).unwrap(),
+                after_dist: Normal::new(*after_mean, *after_std).unwrap(),
+                first_sample_us: Arc::clone(first_sample_us),
+            },
         }
     }
 }
@@ -184,6 +241,13 @@ impl Serialize for LatencyDistribution {
                 fast_latency: u64,
                 slow_duration_ms: u16,
             },
+            ShiftedNormal {
+                after_secs: u64,
+                before_mean: f64,
+                before_std: f64,
+                after_mean: f64,
+                after_std: f64,
+            },
         }
 
         let ser = match self {
@@ -215,6 +279,20 @@ impl Serialize for LatencyDistribution {
                 slow_latency: *slow_latency,
                 fast_latency: *fast_latency,
                 slow_duration_ms: *slow_duration_ms,
+            },
+            LatencyDistribution::ShiftedNormal {
+                after_secs,
+                before_mean,
+                before_std,
+                after_mean,
+                after_std,
+                ..
+            } => LatencyDistributionSer::ShiftedNormal {
+                after_secs: *after_secs,
+                before_mean: *before_mean,
+                before_std: *before_std,
+                after_mean: *after_mean,
+                after_std: *after_std,
             },
         };
         ser.serialize(serializer)
@@ -256,6 +334,13 @@ impl<'de> Deserialize<'de> for LatencyDistribution {
                 slow_latency: u64,
                 fast_latency: u64,
                 slow_duration_ms: u16,
+            },
+            ShiftedNormal {
+                after_secs: u64,
+                before_mean: f64,
+                before_std: f64,
+                after_mean: f64,
+                after_std: f64,
             },
         }
 
@@ -343,6 +428,23 @@ impl<'de> Deserialize<'de> for LatencyDistribution {
                 slow_latency,
                 fast_latency,
                 slow_duration_ms,
+            },
+            LatencyDistributionDe::ShiftedNormal {
+                after_secs,
+                before_mean,
+                before_std,
+                after_mean,
+                after_std,
+            } => LatencyDistribution::ShiftedNormal {
+                after_secs,
+                before_mean,
+                before_std,
+                after_mean,
+                after_std,
+                before_dist: Normal::new(before_mean, before_std)
+                    .map_err(serde::de::Error::custom)?,
+                after_dist: Normal::new(after_mean, after_std).map_err(serde::de::Error::custom)?,
+                first_sample_us: Arc::new(AtomicU64::new(0)),
             },
         })
     }
@@ -437,5 +539,22 @@ mod tests {
             "Sample mean {} should be close to 1000.0",
             computed_mean
         );
+    }
+
+    #[test]
+    fn test_shifted_normal_uses_after_distribution_when_shift_is_immediate() {
+        let config = json!({
+            "ShiftedNormal": {
+                "after_secs": 0,
+                "before_mean": 100.0,
+                "before_std": 1.0,
+                "after_mean": 22000.0,
+                "after_std": 1.0
+            }
+        });
+        let dist: LatencyDistribution =
+            serde_json::from_value(config).expect("parse shifted normal");
+
+        assert!(dist.sample() > 10_000);
     }
 }
