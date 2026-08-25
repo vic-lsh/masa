@@ -1,0 +1,14 @@
+{
+  "rajomon": {
+    "sched_tailclipper": {
+      "latency_threshold_us": 36754,
+      "price_update_rate_ms": 10,
+      "price_step_up": 18,
+      "init_price": 993,
+      "price_freq": 3,
+      "tokens_left_init": 277412,
+      "token_update_rate_ms": 1,
+      "token_update_step": 361701
+    }
+  }
+}

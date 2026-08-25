@@ -414,5 +414,20 @@ class TestResolvePolicyParams:
         assert result["pred"] == {"tau": 2.0, "probe_min": 0.15}
 
 
+def test_k8s_loadgen_repeats_completion_marker(tmp_path: Path) -> None:
+    spec = HotelApp().get_loadgen_spec(
+        output_dir=tmp_path,
+        features="sched_fifo",
+        env_vars={},
+        use_k8s=True,
+    )
+
+    assert spec.wait_for_log_pattern == "HOTEL_LOADGEN_DONE"
+    assert spec.command is not None
+    command = spec.command[-1]
+    assert "/usr/entrypoint.sh || exit $?" in command
+    assert "while true; do echo HOTEL_LOADGEN_DONE; sleep 10; done" in command
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

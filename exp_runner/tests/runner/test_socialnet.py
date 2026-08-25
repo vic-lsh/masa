@@ -5,7 +5,7 @@ Tests for the socialnet application module.
 import tempfile
 from pathlib import Path
 
-from exp_runner.runner.apps.socialnet import SocialnetBuilder
+from exp_runner.runner.apps.socialnet import SocialnetApp, SocialnetBuilder
 from exp_runner.runner.cli import create_parser
 from exp_runner.runner.executor import MockCommandExecutor
 
@@ -58,3 +58,18 @@ def test_cli_accepts_socialnet():
     parser = create_parser()
     args = parser.parse_args(["run", "socialnet", "exp1"])
     assert args.app == "socialnet"
+
+
+def test_k8s_loadgen_repeats_completion_marker(tmp_path: Path) -> None:
+    spec = SocialnetApp().get_loadgen_spec(
+        output_dir=tmp_path,
+        features="sched_fifo",
+        env_vars={},
+        use_k8s=True,
+    )
+
+    assert spec.wait_for_log_pattern == "SOCIALNET_LOADGEN_DONE"
+    assert spec.command is not None
+    command = spec.command[-1]
+    assert "/usr/entrypoint.sh || exit $?" in command
+    assert "while true; do echo SOCIALNET_LOADGEN_DONE; sleep 10; done" in command

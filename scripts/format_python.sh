@@ -1,6 +1,8 @@
 #!/bin/bash
 set -e
 
+RUFF_VERSION="0.15.6"
+
 # Parse arguments
 CHECK_MODE=false
 for arg in "$@"; do
@@ -12,8 +14,8 @@ done
 
 if [ "$CHECK_MODE" = true ]; then
   echo "Checking Python formatting..."
-  uvx ruff format --check exp_runner scripts
+  uvx --from "ruff==$RUFF_VERSION" ruff format --check exp_runner scripts
 else
   echo "Formatting Python code..."
-  uvx ruff format exp_runner scripts
+  uvx --from "ruff==$RUFF_VERSION" ruff format exp_runner scripts
 fi

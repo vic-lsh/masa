@@ -259,7 +259,9 @@ impl EstimationLayer {
             // Priority is a soft scheduling signal, so use the full estimate.
             // The propagated deadline is a hard abort threshold; use the floor
             // estimate to avoid converting estimator variance into false ERs.
-            let deadline = ctx.deadline().saturating_sub(deadline_est_remaining);
+            let hard_deadline_estimate =
+                hard_deadline_estimate(priority_est_remaining, deadline_est_remaining);
+            let deadline = ctx.deadline().saturating_sub(hard_deadline_estimate);
             let priority_deadline = ctx.deadline().saturating_sub(priority_est_remaining);
             let priority_remaining = priority_deadline.saturating_sub(masa_core::time_now());
             (deadline, PriorityHint::new(priority_remaining))
@@ -269,6 +271,33 @@ impl EstimationLayer {
             let d = ctx.deadline().saturating_sub(deadline_est_remaining);
             (d, ctx.prio_hint())
         }
+    }
+}
+
+#[inline]
+#[cfg(any(feature = "sched_pred", test))]
+fn hard_deadline_estimate(slack_estimate: u64, deadline_estimate: u64) -> u64 {
+    if cfg!(feature = "deadline_equals_slack") {
+        slack_estimate
+    } else {
+        deadline_estimate
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::hard_deadline_estimate;
+
+    #[cfg(feature = "deadline_equals_slack")]
+    #[test]
+    fn tied_deadline_uses_slack_estimate() {
+        assert_eq!(hard_deadline_estimate(90, 40), 90);
+    }
+
+    #[cfg(not(feature = "deadline_equals_slack"))]
+    #[test]
+    fn default_deadline_uses_conservative_estimate() {
+        assert_eq!(hard_deadline_estimate(90, 40), 40);
     }
 }
 

@@ -1,0 +1,15 @@
+{
+  "callgraph_dirs": [
+    "trace-analysis/graph_branch/S_86516878",
+    "trace-analysis/graph_branch/S_98493745"
+  ],
+  "slo_ms": 100,
+  "slo_ms_by_graph": {
+    "S_86516878": 100,
+    "S_98493745": 75
+  },
+  "orchestrator": "localhost:50051",
+  "replay_path": null,
+  "stats_interval_sec": 1,
+  "extra_env": {}
+}
