@@ -6,7 +6,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 RUNNER_COMMAND = re.compile(
-    r"exec uv run -m exp_runner run (?P<app>[a-z0-9_-]+) "
+    r"exec uv run -m exp_runner (?:run|run-group) (?P<app>[a-z0-9_-]+) "
     r'(?P<experiment>[a-z0-9_-]+) "\$@"'
 )
 
