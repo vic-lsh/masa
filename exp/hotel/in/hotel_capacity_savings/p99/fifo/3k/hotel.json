@@ -7,7 +7,7 @@
   "frontend": {
     "ip": "127.0.0.1",
     "port": 8660,
-    "replicas": 7
+    "replicas": 15
   },
   "geo": {
     "ip": "local-geo-service",

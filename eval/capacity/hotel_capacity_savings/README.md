@@ -9,10 +9,10 @@ nested by attainment target, policy, and target goodput.
 The offered rate is `target_goodput / attainment`. Search and Reservation are
 equally weighted and retain their 200 ms and 100 ms SLOs. The eight backend
 services remain at one replica each; the committed configurations vary the
-shared frontend bottleneck. Thus the totals below include those eight fixed
-backend replicas.
+shared frontend bottleneck. The counts below are replicas of that bottleneck,
+matching the capacity metric in the paper.
 
-| Attainment | Policy | Total replicas at 3k / 5k / 7k / 9k goodput |
+| Attainment | Policy | Bottleneck replicas at 3k / 5k / 7k / 9k goodput |
 | --- | --- | --- |
 | 90% | Rajomon-FIFO | 12 / 15 / 40 / 61 |
 | 90% | Rajomon-TailClipper | 12 / 14 / 30 / 48 |
@@ -37,5 +37,5 @@ uv run -m exp_runner run hotel hotel_capacity_savings/p90/masa/3k --kind
 ```
 
 Kind is suitable for functional validation, not comparison with the paper's
-capacity numbers. Running the full group requires up to 120 cores and belongs
-on the evaluation cluster.
+capacity numbers. The largest point provisions 120 bottleneck replicas, so the
+full group belongs on the evaluation cluster.
