@@ -1,3 +1,0 @@
-This experiment intends to see the synergy between normal FIFO and our admission control. 
-Our admission control use the early return rate as signal for admission decision.
-This is designed for our admission control as we have predictive early return which compensates the delay of signal in admission control.
