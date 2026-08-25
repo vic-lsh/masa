@@ -2,7 +2,7 @@
   "Repeats": 1,
   "Apis": ["Search", "Reservation"],
   "Slos": [200000, 100000],
-  "Rps": [100, 1000, 1600, 2000, 3000],
+  "Rps": [100, 1000, 1600, 2000, 3000, 4000, 5000, 6000, 8000],
   "Gap": "exp",
   "WarmupSecs": 25,
   "DurationSecs": 60,
