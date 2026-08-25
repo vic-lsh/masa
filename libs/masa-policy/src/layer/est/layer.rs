@@ -275,6 +275,7 @@ impl EstimationLayer {
 }
 
 #[inline]
+#[cfg(any(feature = "sched_pred", test))]
 fn hard_deadline_estimate(slack_estimate: u64, deadline_estimate: u64) -> u64 {
     if cfg!(feature = "deadline_equals_slack") {
         slack_estimate
