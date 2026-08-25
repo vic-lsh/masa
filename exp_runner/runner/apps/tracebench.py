@@ -203,6 +203,9 @@ class TracebenchApp(AppPlugin):
         env: dict[str, str] = {}
 
         env["SLO_MS"] = str(int(cfg["slo_ms"]))
+        slo_ms_by_graph = cfg.get("slo_ms_by_graph")
+        if slo_ms_by_graph:
+            env["SLO_MS_BY_GRAPH"] = json.dumps(slo_ms_by_graph, sort_keys=True)
         env["ORCHESTRATOR"] = str(cfg.get("orchestrator", "localhost:50051"))
 
         duration = int(gen_config.get("DurationSecs", 0) or 0)

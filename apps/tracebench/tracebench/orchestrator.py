@@ -121,8 +121,12 @@ def generate_frontend_config(
     callgraph_dirs: list[Path],
 ) -> None:
     """Generate frontend.json configuration for the load generator."""
-    # Get SLO from environment or use default
+    # A single SLO remains the default for existing experiments. Mixed-API
+    # workloads can override it by callgraph directory name.
     default_slo_ms = int(os.environ.get("SLO_MS", "400"))
+    slo_ms_by_graph = json.loads(os.environ.get("SLO_MS_BY_GRAPH", "{}"))
+    if not isinstance(slo_ms_by_graph, dict):
+        raise ValueError("SLO_MS_BY_GRAPH must be a JSON object")
 
     frontend_targets = []
     for callgraph_dir in callgraph_dirs:
@@ -140,7 +144,7 @@ def generate_frontend_config(
                 "port": info.port,
                 "replicas": info.replicas,
                 "graph": graph_name,
-                "slo_ms": default_slo_ms,
+                "slo_ms": int(slo_ms_by_graph.get(callgraph_dir.name, default_slo_ms)),
                 "probability": 1.0,  # Will be normalized below
             }
         )
