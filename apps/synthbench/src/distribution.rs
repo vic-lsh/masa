@@ -3,8 +3,8 @@ use rand::thread_rng;
 use rand_distr::{Distribution, Exp, LogNormal, Normal, WeightedIndex};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::sync::{
-    Arc,
     atomic::{AtomicU64, Ordering},
+    Arc,
 };
 
 fn lognormal_from_mean_std(mean: f64, std: f64) -> Result<LogNormal<f64>, String> {
