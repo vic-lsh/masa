@@ -2,11 +2,7 @@
   "Repeats": 1,
   "Apis": ["Search", "Reservation"],
   "Slos": [200000, 100000],
-<<<<<<<< HEAD:exp/hotel/in/hotel_search_reservation/gen_config.json
-  "Rps": [100, 1000, 1600, 2000, 3000, 4000, 5000, 6000, 8000],
-========
   "Rps": [500, 1000, 1200, 1300, 1400, 1500, 1550, 1600, 1800],
->>>>>>>> origin/vic/eval-scheduling-only:exp/hotel/in/scheduling_only/gen_config.json
   "Gap": "exp",
   "WarmupSecs": 25,
   "DurationSecs": 60,

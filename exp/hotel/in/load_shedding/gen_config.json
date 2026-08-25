@@ -2,11 +2,7 @@
   "Repeats": 1,
   "Apis": ["Search", "Reservation"],
   "Slos": [200000, 100000],
-<<<<<<<< HEAD:exp/hotel/in/scheduling_overload_control/gen_config.json
-  "Rps": [100, 500, 1200, 1600, 1800, 2000, 2500, 3000, 3500, 4000],
-========
   "Rps": [100, 1000, 1600, 1800, 2000, 4000],
->>>>>>>> origin/vic/eval-load-shedding-ablation:exp/hotel/in/load_shedding/gen_config.json
   "Gap": "exp",
   "WarmupSecs": 25,
   "DurationSecs": 60,
