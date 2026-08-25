@@ -131,12 +131,19 @@ pub struct GenConfig {
     #[serde(rename = "MaxInFlight")]
     #[serde(default = "default_max_in_flight")]
     pub max_in_flight: usize,
+    #[serde(rename = "MatchedDeadlineBurstSize")]
+    #[serde(default = "default_matched_deadline_burst_size")]
+    pub matched_deadline_burst_size: usize,
     #[serde(rename = "Addr")]
     pub addr: String,
 }
 
 fn default_max_in_flight() -> usize {
     0 // 0 means unlimited
+}
+
+fn default_matched_deadline_burst_size() -> usize {
+    1
 }
 
 impl GenConfig {
@@ -149,6 +156,11 @@ impl GenConfig {
         }
         if self.apis.len() != self.slos.len() {
             return Err(invalid_config("Slos length must match Apis length"));
+        }
+        if self.matched_deadline_burst_size == 0 {
+            return Err(invalid_config(
+                "MatchedDeadlineBurstSize must be greater than zero",
+            ));
         }
         if let Some(weights) = &self.api_weights {
             if weights.len() != self.apis.len() {
@@ -763,9 +775,10 @@ where
             None
         };
 
-        // Create arrival timer to manage inter-arrival times
-        let mut arrival_timer =
-            ArrivalTimer::new(self.gen_cfg.gap, self.rps as f64, self.rng.clone());
+        let burst_size = self.gen_cfg.matched_deadline_burst_size;
+        // RPS remains the total request rate. Bursts therefore arrive at RPS / burst_size.
+        let burst_rate = self.rps as f64 / burst_size as f64;
+        let mut arrival_timer = ArrivalTimer::new(self.gen_cfg.gap, burst_rate, self.rng.clone());
 
         while Instant::now() < pause_at {
             // XXX: tokio's sleep has millisecond granularity, so for small intervals this may be
@@ -777,72 +790,97 @@ where
             // This updates elapse internally, so we advance even if we skip this request
             let _interval = arrival_timer.tick();
 
-            // Try to acquire permit for max-in-flight control if semaphore exists
-            // If acquisition fails, skip this request and continue to next iteration
-            let permit = if let Some(ref guard) = inflight_guard {
-                match guard.clone().try_acquire_owned() {
-                    Ok(p) => Some(p),
-                    Err(_) => continue,
-                }
-            } else {
-                None
-            };
-
-            let i = self.sample_api_handler();
-            let handler = Arc::clone(&self.api_handlers[i]);
-
-            #[cfg(feature = "ac_rajomon")]
-            let ctx = {
-                match masa::try_create_context(
-                    handler.api(),
-                    std::time::Duration::from_micros(handler.slo()),
-                ) {
-                    Some(ctx) => ctx,
-                    None => {
-                        counters.increment("client_shed");
-                        continue;
-                    }
-                }
-            };
-            #[cfg(not(feature = "ac_rajomon"))]
-            let ctx = masa::create_context(
-                handler.api(),
-                std::time::Duration::from_micros(handler.slo()),
-            );
-
-            let client = self.client.clone();
-            let ctrs = Arc::clone(&counters);
-            let rng = self.rng.clone();
+            let shared_gateway_entry = masa::time_now();
             let trace = Instant::now() > trace_at;
 
-            set.spawn(async move {
-                let _permit = permit; // Hold permit until task completes
-                ctrs.increment("all");
-
-                let error = handler.send_request(rng, client, ctx, trace).await;
-
-                if trace {
-                    // increment the right counters
-                    let err_str = error.as_str();
-                    if err_str == "/None" {
-                        ctrs.increment("good");
-                    } else if err_str == "/ClientMiss" {
-                        ctrs.increment("deadline_miss");
-                    } else if err_str.starts_with("/EarlyReturn") {
-                        ctrs.increment("early_return");
-                    } else if err_str == "/ClientTimeout" {
-                        ctrs.increment("timeout");
-                    } else {
-                        ctrs.increment("unexpected");
-                        log::error!("unexpected request error '{}'", err_str);
+            for _ in 0..burst_size {
+                // Try to acquire permit for max-in-flight control if semaphore exists.
+                // If acquisition fails, skip this request and continue the burst.
+                let permit = if let Some(ref guard) = inflight_guard {
+                    match guard.clone().try_acquire_owned() {
+                        Ok(p) => Some(p),
+                        Err(_) => continue,
                     }
-                }
-            });
+                } else {
+                    None
+                };
+
+                let i = self.sample_api_handler();
+                let handler = Arc::clone(&self.api_handlers[i]);
+
+                #[cfg(feature = "ac_rajomon")]
+                let ctx = {
+                    match masa::try_create_context(
+                        handler.api(),
+                        std::time::Duration::from_micros(handler.slo()),
+                    ) {
+                        Some(ctx) => ctx,
+                        None => {
+                            counters.increment("client_shed");
+                            continue;
+                        }
+                    }
+                };
+                #[cfg(not(feature = "ac_rajomon"))]
+                let ctx = masa::create_context(
+                    handler.api(),
+                    std::time::Duration::from_micros(handler.slo()),
+                );
+
+                let ctx = if burst_size > 1 {
+                    context_with_gateway_entry(ctx, shared_gateway_entry)
+                } else {
+                    ctx
+                };
+
+                let client = self.client.clone();
+                let ctrs = Arc::clone(&counters);
+                let rng = self.rng.clone();
+
+                set.spawn(async move {
+                    let _permit = permit; // Hold permit until task completes
+                    ctrs.increment("all");
+
+                    let error = handler.send_request(rng, client, ctx, trace).await;
+
+                    if trace {
+                        // increment the right counters
+                        let err_str = error.as_str();
+                        if err_str == "/None" {
+                            ctrs.increment("good");
+                        } else if err_str == "/ClientMiss" {
+                            ctrs.increment("deadline_miss");
+                        } else if err_str.starts_with("/EarlyReturn") {
+                            ctrs.increment("early_return");
+                        } else if err_str == "/ClientTimeout" {
+                            ctrs.increment("timeout");
+                        } else {
+                            ctrs.increment("unexpected");
+                            log::error!("unexpected request error '{}'", err_str);
+                        }
+                    }
+                });
+            }
         }
 
         // wait for all outgoing requests to complete
         while let Some(_) = set.join_next().await {}
     }
+}
+
+fn context_with_gateway_entry(ctx: Context, gateway_entry: u64) -> Context {
+    let deadline = gateway_entry.saturating_add(ctx.slo());
+    // Rebuild the freshly-created ingress context so ContextBuilder derives the
+    // policy-specific priority hint from the shared timestamp as well.
+    let builder = masa::ContextBuilder::new(ctx.api().clone(), ctx.request_id())
+        .slo(ctx.slo())
+        .gateway_entry(gateway_entry)
+        .deadline(deadline);
+
+    #[cfg(feature = "ac_rajomon")]
+    let builder = builder.tokens(ctx.tokens());
+
+    builder.build()
 }
 
 pub async fn load_gen_main<H, C>(
@@ -976,6 +1014,7 @@ mod tests {
             warmup_secs: 1,
             duration_secs: 1,
             max_in_flight: 0,
+            matched_deadline_burst_size: 1,
             addr: "http://localhost:8000".to_string(),
         }
     }
@@ -1008,6 +1047,31 @@ mod tests {
         let cfg = test_gen_config(Some(vec![0.0, 0.0]));
 
         assert!(cfg.validate().is_err());
+    }
+
+    #[test]
+    fn matched_deadline_burst_size_must_be_positive() {
+        let mut cfg = test_gen_config(None);
+        cfg.matched_deadline_burst_size = 0;
+
+        assert!(cfg.validate().is_err());
+    }
+
+    #[test]
+    fn matched_deadline_context_preserves_identity_and_slo() {
+        let original = masa::ContextBuilder::new("a", 42)
+            .slo(50_000)
+            .gateway_entry(100)
+            .deadline(50_100)
+            .build();
+
+        let matched = context_with_gateway_entry(original, 1_000);
+
+        assert_eq!(matched.api().as_str(), "a");
+        assert_eq!(matched.request_id(), 42);
+        assert_eq!(matched.slo(), 50_000);
+        assert_eq!(matched.gateway_entry(), 1_000);
+        assert_eq!(matched.deadline(), 51_000);
     }
 }
 
