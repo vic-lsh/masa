@@ -189,6 +189,7 @@ class TestHotelBuilder:
 
             # Check logging
             assert mock_logger.info.call_count >= 1
+
     @patch("exp_runner.runner.apps.hotel.subprocess.run")
     @patch("exp_runner.runner.apps.hotel.logger")
     def test_build_without_features(self, mock_logger, mock_subprocess):
@@ -411,6 +412,7 @@ class TestResolvePolicyParams:
         result = resolve_policy_params(params, "sched_slo,ac_rajomon,abort_slo")
         assert result["rajomon"] == {"price_cap": 30}
         assert result["pred"] == {"tau": 2.0, "probe_min": 0.15}
+
 
 def test_k8s_loadgen_repeats_completion_marker(tmp_path: Path) -> None:
     spec = HotelApp().get_loadgen_spec(
