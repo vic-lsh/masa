@@ -1,0 +1,91 @@
+{
+  "call_graph": {
+    "entry_points": {
+      "a": [
+        {
+          "shared::a": 1.0
+        }
+      ],
+      "b": [
+        {
+          "shared::b": 1.0
+        }
+      ]
+    },
+    "services": [
+      {
+        "id": "shared",
+        "replicas": 1,
+        "methods": [
+          {
+            "name": "a",
+            "latency_distribution": {
+              "Normal": {
+                "mean": 900,
+                "std": 90
+              }
+            },
+            "busy_spin_ratio": 1.0,
+            "call_sequence": [
+              {
+                "leaf-a::run": 1.0
+              }
+            ]
+          },
+          {
+            "name": "b",
+            "latency_distribution": {
+              "Normal": {
+                "mean": 900,
+                "std": 90
+              }
+            },
+            "busy_spin_ratio": 1.0,
+            "call_sequence": [
+              {
+                "leaf-b::run": 1.0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "leaf-a",
+        "replicas": 1,
+        "methods": [
+          {
+            "name": "run",
+            "latency_distribution": {
+              "ShiftedNormal": {
+                "after_secs": 45,
+                "before_mean": 5000,
+                "before_std": 500,
+                "after_mean": 22000,
+                "after_std": 1500
+              }
+            },
+            "busy_spin_ratio": 0.05,
+            "call_sequence": []
+          }
+        ]
+      },
+      {
+        "id": "leaf-b",
+        "replicas": 1,
+        "methods": [
+          {
+            "name": "run",
+            "latency_distribution": {
+              "Exponential": {
+                "mean": 5000
+              }
+            },
+            "busy_spin_ratio": 0.05,
+            "call_sequence": []
+          }
+        ]
+      }
+    ],
+    "child_cpus_per_replica": 1.0
+  }
+}
