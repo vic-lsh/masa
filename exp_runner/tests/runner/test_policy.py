@@ -32,6 +32,11 @@ class TestParse:
         p = Policy.parse("sched_oracle")
         assert p.prio == "oracle"
 
+    def test_exact_continuation(self):
+        p = Policy.parse("eval_oracle_continuation")
+        assert p.prio == "exact_continuation"
+        assert p.est is None
+
     def test_slack(self):
         p = Policy.parse("sched_pred")
         assert p.prio == "slack"
@@ -138,6 +143,12 @@ class TestDisplayName:
 
     def test_oracle_bare(self):
         assert Policy.parse("sched_oracle").display_name == "Oracle priority"
+
+    def test_exact_continuation_bare(self):
+        assert (
+            Policy.parse("eval_oracle_continuation").display_name
+            == "Exact service continuation"
+        )
 
     def test_oldest_with_drop(self):
         assert (

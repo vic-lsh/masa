@@ -11,6 +11,8 @@ use tonic::{Code, CowGrpcMethod, Response, Status};
 
 use super::super::{ChildRpcContext, Layer, LayerChild, LayerServer};
 use super::default_estimator::DefaultLatencyEstimator;
+#[cfg(feature = "eval_oracle_continuation")]
+use super::state::AfterChildEstimates;
 use super::state::{
     is_early_return_response, ChildRPCTracker, EstimationTracker, LatencyEstimators,
     RequestMetadataTracker,
@@ -116,7 +118,8 @@ impl Layer for EstimationLayer {
         ctx: &Context,
         child_method_name: &CowGrpcMethod,
         child_ctx: &mut EstimationChild,
-        _request: &mut tonic::Request<T>,
+        #[cfg_attr(not(feature = "eval_oracle_continuation"), allow(unused_variables))]
+        request: &mut tonic::Request<T>,
         child_rpc: &mut ChildRpcContext,
     ) -> Result<(), Status> {
         let child_tracker = self.estimation.begin_child(child_method_name);
@@ -125,7 +128,7 @@ impl Layer for EstimationLayer {
             .estimation
             .root_method_id
             .unwrap_or(self.estimation.resolved_method_id);
-        let remaining = self.estimation.est.est_after_child_wallclock_for_group(
+        let learned_remaining = self.estimation.est.est_after_child_wallclock_for_group(
             root,
             self.estimation.resolved_method_id,
             child_tracker.path_prefix,
@@ -135,6 +138,14 @@ impl Layer for EstimationLayer {
             child_tracker.child_id,
             time_left,
         );
+
+        // Keep the estimator path active in both variants so its bookkeeping
+        // and runtime overhead are controlled. The evaluation-only oracle
+        // changes only the value consumed by deadline tightening.
+        #[cfg(feature = "eval_oracle_continuation")]
+        let remaining = exact_continuation_estimate(request, child_method_name, time_left)?;
+        #[cfg(not(feature = "eval_oracle_continuation"))]
+        let remaining = learned_remaining;
 
         self.estimation
             .est
@@ -147,12 +158,20 @@ impl Layer for EstimationLayer {
         // deadlines indefinitely, causing `abort_slack` to kill mid-flight
         // requests that could have completed (the same metastable trap the
         // BCF check now avoids).
-        let decay = crate::layer::est::state::decay_factor(
+        let learned_decay = crate::layer::est::state::decay_factor(
             masa_core::time_now(),
             self.estimation
                 .est
                 .after_child_wallclock_last_obs(child_tracker.key),
         );
+        #[cfg(feature = "eval_oracle_continuation")]
+        let decay = {
+            let _ = learned_decay;
+            let _ = learned_remaining;
+            1.0
+        };
+        #[cfg(not(feature = "eval_oracle_continuation"))]
+        let decay = learned_decay;
         let decayed_full = (remaining.full as f64 * decay) as u64;
         let decayed_floor = (remaining.floor as f64 * decay) as u64;
 
@@ -242,6 +261,48 @@ impl Layer for EstimationLayer {
     }
 }
 
+#[cfg(feature = "eval_oracle_continuation")]
+fn exact_continuation_estimate<T>(
+    request: &tonic::Request<T>,
+    child_method: &CowGrpcMethod,
+    time_left: u64,
+) -> Result<AfterChildEstimates, Status> {
+    let key = masa_core::ORACLE_REMAINING_AFTER_US_HEADER;
+    let value = request.metadata().get(key).ok_or_else(|| {
+        Status::internal(format!(
+            "missing exact-continuation header '{}' for {}::{}",
+            key,
+            child_method.service(),
+            child_method.method()
+        ))
+    })?;
+    let value = value.to_str().map_err(|e| {
+        Status::internal(format!(
+            "invalid exact-continuation header '{}' for {}::{}: {}",
+            key,
+            child_method.service(),
+            child_method.method(),
+            e
+        ))
+    })?;
+    let estimate = value.parse::<u64>().map_err(|e| {
+        Status::internal(format!(
+            "invalid exact-continuation header '{}' value '{}' for {}::{}: {}",
+            key,
+            value,
+            child_method.service(),
+            child_method.method(),
+            e
+        ))
+    })?;
+    let estimate = estimate.min(time_left);
+    Ok(AfterChildEstimates {
+        full: estimate,
+        mean: estimate,
+        floor: estimate,
+    })
+}
+
 impl EstimationLayer {
     /// Compute child deadline and priority hint.
     ///
@@ -287,6 +348,34 @@ fn hard_deadline_estimate(slack_estimate: u64, deadline_estimate: u64) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::hard_deadline_estimate;
+
+    #[cfg(feature = "eval_oracle_continuation")]
+    #[test]
+    fn exact_continuation_reads_and_caps_header() {
+        let mut request = tonic::Request::new(());
+        request.metadata_mut().insert(
+            masa_core::ORACLE_REMAINING_AFTER_US_HEADER,
+            "12000".parse().unwrap(),
+        );
+        let method = tonic::CowGrpcMethod::new("Tail", "Run");
+
+        let estimate = super::exact_continuation_estimate(&request, &method, 10_000).unwrap();
+        assert_eq!(estimate.full, 10_000);
+        assert_eq!(estimate.mean, 10_000);
+        assert_eq!(estimate.floor, 10_000);
+    }
+
+    #[cfg(feature = "eval_oracle_continuation")]
+    #[test]
+    fn exact_continuation_requires_header() {
+        let request = tonic::Request::new(());
+        let method = tonic::CowGrpcMethod::new("Tail", "Run");
+
+        let status = super::exact_continuation_estimate(&request, &method, 10_000).unwrap_err();
+        assert!(status
+            .message()
+            .contains("missing exact-continuation header"));
+    }
 
     #[cfg(feature = "deadline_equals_slack")]
     #[test]

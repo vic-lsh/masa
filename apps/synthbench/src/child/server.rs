@@ -11,9 +11,9 @@ use crate::config::{parse_call_sequences, ServiceMethod, SynthbenchConfig};
 use crate::hop_trace::{encode_hop_traces, HopTrace};
 use crate::service_registry::ServiceRegistry;
 use crate::tonic::{child, child::child_server::Child};
-#[cfg(not(feature = "sched_oracle"))]
+#[cfg(not(any(feature = "sched_oracle", feature = "eval_oracle_continuation")))]
 use crate::util::execute_call_sequence;
-#[cfg(feature = "sched_oracle")]
+#[cfg(any(feature = "sched_oracle", feature = "eval_oracle_continuation"))]
 use crate::util::execute_oracle_call_sequence;
 use crate::util::simulate_work;
 use app_utils::timing::time_now;
@@ -155,7 +155,7 @@ impl Child for ChildImpl {
         &self,
         request: Request<child::MethodRequest>,
     ) -> Result<Response<child::MethodResponse>, Status> {
-        #[cfg(feature = "sched_oracle")]
+        #[cfg(any(feature = "sched_oracle", feature = "eval_oracle_continuation"))]
         let oracle_plan = crate::oracle::ExecutionPlan::from_metadata(request.metadata())?;
 
         let request = request.into_inner();
@@ -166,18 +166,18 @@ impl Child for ChildImpl {
         // Get the method definition
         let method = self.get_method(&request.service_id, &request.method_name)?;
 
-        // Under sched_oracle, execute the same per-request work sampled by the frontend planner.
-        #[cfg(feature = "sched_oracle")]
+        // Oracle-backed evaluations execute the same per-request work sampled by the frontend.
+        #[cfg(any(feature = "sched_oracle", feature = "eval_oracle_continuation"))]
         let duration_us = oracle_plan
             .as_ref()
             .map(|plan| plan.local_work_us)
             .unwrap_or_else(|| method.latency_distribution.sample());
 
-        #[cfg(not(feature = "sched_oracle"))]
+        #[cfg(not(any(feature = "sched_oracle", feature = "eval_oracle_continuation")))]
         let duration_us = method.latency_distribution.sample();
 
         // Execute call sequence
-        #[cfg(feature = "sched_oracle")]
+        #[cfg(any(feature = "sched_oracle", feature = "eval_oracle_continuation"))]
         let child_traces = if let Some(plan) = oracle_plan.as_ref() {
             execute_oracle_call_sequence(&self.service_registry, &plan.child_steps).await?
         } else if !method.parsed_call_sequence.is_empty() {
@@ -189,7 +189,7 @@ impl Child for ChildImpl {
             Vec::new()
         };
 
-        #[cfg(not(feature = "sched_oracle"))]
+        #[cfg(not(any(feature = "sched_oracle", feature = "eval_oracle_continuation")))]
         let child_traces = if !method.parsed_call_sequence.is_empty() {
             execute_call_sequence(&self.service_registry, &method.parsed_call_sequence).await?
         } else {

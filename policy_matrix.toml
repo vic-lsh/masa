@@ -5,6 +5,7 @@ known = [
   "sched_tailclipper",
   "sched_oracle",
   "sched_pred",
+  "eval_oracle_continuation",
   "abort_slo",
   "abort_slack",
   "signal_slack",
@@ -20,6 +21,7 @@ known = [
 
 [implies]
 sched_pred = ["estimator", "sched_slo"]
+eval_oracle_continuation = ["sched_pred"]
 abort_slack = ["estimator"]
 signal_slack = ["estimator", "ac_pred"]
 ac_pred = ["estimator"]
@@ -86,10 +88,12 @@ sched_fifo = "fifo"
 sched_slo = "e2e_slo"
 sched_tailclipper = "oldest"
 sched_oracle = "oracle"
+eval_oracle_continuation = "exact_continuation"
 sched_pred = "slack"
 
 [python_policy]
 prio_precedence = [
+  "eval_oracle_continuation",
   "sched_pred",
   "sched_tailclipper",
   "sched_oracle",
@@ -150,6 +154,7 @@ features = [
   "signal_slack",
   "estimator",
   "sched_pred",
+  "eval_oracle_continuation",
   "ac_pred",
   "ac_rajomon",
   "est_rms",
@@ -169,6 +174,7 @@ abort_slack = ["masa", "estimator", "masa-core/abort_slack"]
 signal_slack = ["masa", "estimator", "ac_pred", "masa-core/signal_slack"]
 estimator = ["masa-core/estimator", "tokio"]
 sched_pred = ["estimator", "sched_slo", "masa-core/sched_pred"]
+eval_oracle_continuation = ["sched_pred"]
 ac_pred = ["estimator", "masa-core/ac_pred"]
 ac_rajomon = ["masa", "masa-core/ac_rajomon", "tokio"]
 deadline_equals_slack = ["sched_pred"]
@@ -180,6 +186,7 @@ features = [
   "sched_fifo",
   "sched_oracle",
   "sched_pred",
+  "eval_oracle_continuation",
   "abort_slo",
   "abort_slack",
   "signal_slack",
@@ -224,6 +231,7 @@ sched_oracle = [
   "masa-policy/sched_oracle",
 ]
 sched_pred = ["masa-core/sched_pred", "sched_slo", "masa-policy/sched_pred"]
+eval_oracle_continuation = ["sched_pred", "masa-policy/eval_oracle_continuation"]
 abort_slo = [
   "hyper/masa",
   "masa-core/abort_slo",

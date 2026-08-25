@@ -239,7 +239,7 @@ pub fn parse_call_sequences(config: &mut CallGraphConfig) -> Result<(), String> 
         }
     }
 
-    #[cfg(feature = "sched_oracle")]
+    #[cfg(any(feature = "sched_oracle", feature = "eval_oracle_continuation"))]
     crate::oracle::validate_supported_call_graph(config)?;
 
     Ok(())
@@ -247,9 +247,11 @@ pub fn parse_call_sequences(config: &mut CallGraphConfig) -> Result<(), String> 
 
 #[cfg(test)]
 mod tests {
+    #[cfg(not(any(feature = "sched_oracle", feature = "eval_oracle_continuation")))]
+    use super::parse_call_sequences;
     use super::{
-        parse_call_sequences, parse_service_method, validate_call_graph, CallGraphConfig,
-        ServiceDefinition, ServiceMethod, SynthbenchConfig,
+        parse_service_method, validate_call_graph, CallGraphConfig, ServiceDefinition,
+        ServiceMethod, SynthbenchConfig,
     };
     #[cfg(feature = "sched_oracle")]
     use super::{
@@ -486,7 +488,7 @@ mod tests {
         assert!(validate_call_graph(&config).is_err());
     }
 
-    #[cfg(not(feature = "sched_oracle"))]
+    #[cfg(not(any(feature = "sched_oracle", feature = "eval_oracle_continuation")))]
     #[test]
     fn test_parse_call_sequences() {
         let mut entry_points = HashMap::new();

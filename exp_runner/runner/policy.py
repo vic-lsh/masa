@@ -22,12 +22,14 @@ _PRIO_MAP: dict[str, str] = {
     "sched_slo": "e2e_slo",
     "sched_tailclipper": "oldest",
     "sched_oracle": "oracle",
+    "eval_oracle_continuation": "exact_continuation",
     "sched_pred": "slack",
 }
 
 # sched_pred and sched_tailclipper imply sched_slo at the Cargo level.
 # When both are present, sched_slo is redundant.
 _PRIO_PRIORITY = [
+    "eval_oracle_continuation",
     "sched_pred",
     "sched_tailclipper",
     "sched_oracle",
@@ -63,6 +65,7 @@ _PRIO_DISPLAY: dict[str, str] = {
     "e2e_slo": "SLO priority",
     "oldest": "TailClipper",
     "oracle": "Oracle priority",
+    "exact_continuation": "Exact service continuation",
     "slack": "Masa priority",
 }
 
@@ -101,6 +104,7 @@ _MARKER_MAP: dict[tuple[str | None, str | None], str] = {
     ("e2e_slo", "rajomon"): "v",
     ("oldest", "rajomon"): "<",
     ("oracle", "rajomon"): "*",
+    ("exact_continuation", None): "*",
     ("slack", "rajomon"): ">",
 }
 
@@ -294,6 +298,7 @@ class Policy:
             ("oracle", "e2e_slo"): "#AA4499",
             ("oracle", "slack"): "#CC6677",
             ("oracle", "slack_signal"): "#AA3377",
+            ("exact_continuation", None): "#0072B2",
             ("slack", None): "#D55E00",
             ("slack", "e2e_slo"): "#E69F00",
             ("slack", "slack"): "#009E73",
@@ -347,6 +352,8 @@ class Policy:
             return "xx"
         if self.prio == "oracle":
             return "\\\\"
+        if self.prio == "exact_continuation":
+            return "++"
         if self.prio == "slack":
             return ".."
         return ""

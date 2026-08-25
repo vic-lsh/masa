@@ -1,0 +1,13 @@
+{
+  "Repeats": 5,
+  "Apis": ["a", "b"],
+  "ApiWeights": [0.5, 0.5],
+  "Slos": [40000, 40000],
+  "Rps": [420, 440, 460],
+  "Gap": "exp",
+  "WarmupSecs": 10,
+  "DurationSecs": 15,
+  "MaxInFlight": 0,
+  "Addr": "http://synthbench_frontend:8000",
+  "Timeouts_ms": [1000, 1000]
+}

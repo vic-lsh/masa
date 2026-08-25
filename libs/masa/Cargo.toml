@@ -17,6 +17,7 @@ sched_tailclipper = ["hyper/masa", "tonic/masa", "masa-core/sched_tailclipper", 
 sched_fifo  = ["hyper/masa", "tonic/masa", "masa-core/sched_fifo",  "tokio/sched_fifo", "masa-policy/sched_fifo"]
 sched_oracle = ["hyper/masa", "tonic/masa", "masa-core/sched_oracle", "tokio/sched_prio", "masa-policy/sched_oracle"]
 sched_pred = ["masa-core/sched_pred", "sched_slo", "masa-policy/sched_pred"]
+eval_oracle_continuation = ["sched_pred", "masa-policy/eval_oracle_continuation"]
 
 abort_slo = ["hyper/masa", "tonic/masa", "masa-core/abort_slo", "masa-policy/abort_slo"]
 abort_slack = ["hyper/masa", "tonic/masa", "estimator", "masa-core/abort_slack", "masa-policy/abort_slack"]

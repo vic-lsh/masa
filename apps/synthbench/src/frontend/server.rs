@@ -4,11 +4,11 @@ use crate::bootstrap::{ConnectionBootstrap, ConnectionBootstrapTask};
 use crate::config::{parse_call_sequences, SynthbenchConfig};
 use crate::hop_trace::encode_hop_traces;
 use crate::service_registry::ServiceRegistry;
-#[cfg(not(feature = "sched_oracle"))]
+#[cfg(not(any(feature = "sched_oracle", feature = "eval_oracle_continuation")))]
 use crate::{config::ParsedCall, util::execute_call_sequence};
-#[cfg(feature = "sched_oracle")]
+#[cfg(any(feature = "sched_oracle", feature = "eval_oracle_continuation"))]
 use crate::{oracle::OraclePlanner, util::execute_oracle_call_sequence};
-#[cfg(not(feature = "sched_oracle"))]
+#[cfg(not(any(feature = "sched_oracle", feature = "eval_oracle_continuation")))]
 use std::collections::HashMap;
 
 use tonic::{Request, Response, Status};
@@ -16,9 +16,9 @@ use tonic::{Request, Response, Status};
 use crate::tonic::{frontend, frontend::frontend_server::Frontend};
 
 pub struct FrontendImpl {
-    #[cfg(not(feature = "sched_oracle"))]
+    #[cfg(not(any(feature = "sched_oracle", feature = "eval_oracle_continuation")))]
     parsed_entry_points: HashMap<String, Vec<Vec<ParsedCall>>>,
-    #[cfg(feature = "sched_oracle")]
+    #[cfg(any(feature = "sched_oracle", feature = "eval_oracle_continuation"))]
     oracle_planner: OraclePlanner,
     service_registry: ServiceRegistry,
     _bootstrap_task: Option<ConnectionBootstrapTask>,
@@ -27,7 +27,7 @@ pub struct FrontendImpl {
 impl FrontendImpl {
     pub async fn new(config: SynthbenchConfig) -> Self {
         let mut call_graph = config.call_graph;
-        #[cfg(feature = "sched_oracle")]
+        #[cfg(any(feature = "sched_oracle", feature = "eval_oracle_continuation"))]
         let oracle_work_estimate = config.oracle_work_estimate;
 
         // Read project name from environment variable (set by exp_runner.runner)
@@ -40,7 +40,7 @@ impl FrontendImpl {
             panic!("Failed to parse call graph: {}", e);
         }
 
-        #[cfg(feature = "sched_oracle")]
+        #[cfg(any(feature = "sched_oracle", feature = "eval_oracle_continuation"))]
         let oracle_planner =
             OraclePlanner::new(&call_graph, oracle_work_estimate).unwrap_or_else(|e| {
                 panic!("Failed to initialize oracle planner: {}", e);
@@ -78,9 +78,9 @@ impl FrontendImpl {
         };
 
         FrontendImpl {
-            #[cfg(not(feature = "sched_oracle"))]
+            #[cfg(not(any(feature = "sched_oracle", feature = "eval_oracle_continuation")))]
             parsed_entry_points: call_graph.parsed_entry_points,
-            #[cfg(feature = "sched_oracle")]
+            #[cfg(any(feature = "sched_oracle", feature = "eval_oracle_continuation"))]
             oracle_planner,
             service_registry: registry,
             _bootstrap_task: bootstrap_task,
@@ -108,17 +108,17 @@ impl Frontend for FrontendImpl {
         let start = Instant::now();
 
         // Call the entry point sequence for "a"
-        #[cfg(feature = "sched_oracle")]
+        #[cfg(any(feature = "sched_oracle", feature = "eval_oracle_continuation"))]
         let oracle_plan = self
             .oracle_planner
             .plan_entry_point("a")
             .map_err(Status::internal)?;
 
-        #[cfg(feature = "sched_oracle")]
+        #[cfg(any(feature = "sched_oracle", feature = "eval_oracle_continuation"))]
         let hop_traces =
             execute_oracle_call_sequence(&self.service_registry, &oracle_plan.child_steps).await?;
 
-        #[cfg(not(feature = "sched_oracle"))]
+        #[cfg(not(any(feature = "sched_oracle", feature = "eval_oracle_continuation")))]
         let hop_traces = if let Some(sequence) = self.parsed_entry_points.get("a") {
             execute_call_sequence(&self.service_registry, sequence).await?
         } else {
@@ -127,7 +127,7 @@ impl Frontend for FrontendImpl {
         };
 
         let handler_latency = Instant::now().duration_since(start).as_micros() as u64;
-        #[cfg(feature = "sched_oracle")]
+        #[cfg(any(feature = "sched_oracle", feature = "eval_oracle_continuation"))]
         self.oracle_planner
             .record_entry_point_latency("a", handler_latency, &oracle_plan);
 
@@ -141,21 +141,21 @@ impl Frontend for FrontendImpl {
         &self,
         _request: Request<frontend::BRequest>,
     ) -> Result<Response<frontend::BResponse>, Status> {
-        #[cfg(feature = "sched_oracle")]
+        #[cfg(any(feature = "sched_oracle", feature = "eval_oracle_continuation"))]
         let start = Instant::now();
 
         // Call the entry point sequence for "b"
-        #[cfg(feature = "sched_oracle")]
+        #[cfg(any(feature = "sched_oracle", feature = "eval_oracle_continuation"))]
         let oracle_plan = self
             .oracle_planner
             .plan_entry_point("b")
             .map_err(Status::internal)?;
 
-        #[cfg(feature = "sched_oracle")]
+        #[cfg(any(feature = "sched_oracle", feature = "eval_oracle_continuation"))]
         let hop_traces =
             execute_oracle_call_sequence(&self.service_registry, &oracle_plan.child_steps).await?;
 
-        #[cfg(not(feature = "sched_oracle"))]
+        #[cfg(not(any(feature = "sched_oracle", feature = "eval_oracle_continuation")))]
         let hop_traces = if let Some(sequence) = self.parsed_entry_points.get("b") {
             execute_call_sequence(&self.service_registry, sequence).await?
         } else {
@@ -163,7 +163,7 @@ impl Frontend for FrontendImpl {
             Vec::new()
         };
 
-        #[cfg(feature = "sched_oracle")]
+        #[cfg(any(feature = "sched_oracle", feature = "eval_oracle_continuation"))]
         self.oracle_planner.record_entry_point_latency(
             "b",
             Instant::now().duration_since(start).as_micros() as u64,
