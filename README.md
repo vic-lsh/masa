@@ -211,3 +211,5 @@ policy features.
 - `sched_tailclipper`: oldest request first, implementing the TailClipper paper's policy with round-robin fairness.
 - `sched_oracle`: synthbench-only perfect-information priority scheduling using configured remaining work headers.
 - `sched_pred`: requests are served based on their local deadline with deadline tightening using latency estimates.
+- `eval_oracle_continuation`: synthbench-only exact-continuation intervention on the normal `sched_pred` path.
+- `eval_estimator_audit`: synthbench-only learned/reference telemetry and soft-priority magnitude ablation.

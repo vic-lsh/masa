@@ -29,6 +29,9 @@ sched_oracle = ["masa/sched_oracle"]
 sched_pred = ["masa/sched_pred"]
 # Evaluation-only exact-continuation estimator on the sched_pred code path.
 eval_oracle_continuation = ["masa/eval_oracle_continuation"]
+# Pre-sample per-request plans and log learned/reference continuation pairs
+# without replacing the learned sched_pred value.
+eval_estimator_audit = ["masa/eval_estimator_audit"]
 abort_slo = ["masa/abort_slo"]
 abort_slack = ["masa/abort_slack"]
 signal_slack = ["masa/signal_slack"]

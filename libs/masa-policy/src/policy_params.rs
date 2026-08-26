@@ -168,6 +168,25 @@ pub struct PredParams {
     /// workloads with many interface names; gating them lets lookup fall back
     /// to coarser patterns or legacy per-edge estimates.
     pub fanout_min_samples: u64,
+
+    /// Evaluation-only probability of reversing exact-continuation priority
+    /// order in the matched-deadline Synthbench experiment.
+    ///
+    /// This parameter is consumed only by the `eval_oracle_continuation`
+    /// feature. Requests sharing a gateway-entry timestamp make the same
+    /// deterministic choice, so a matched-deadline burst is either left
+    /// unchanged or has all exact priority estimates complemented together.
+    /// The hard-deadline estimate is never changed. Production policies and
+    /// builds without `eval_oracle_continuation` ignore this field.
+    pub eval_oracle_order_corruption_probability: f64,
+
+    /// Evaluation-only multiplier for the learned soft-priority continuation.
+    ///
+    /// This parameter is consumed only by `eval_estimator_audit`. The learned
+    /// estimate used for hard deadline propagation remains unscaled, so this
+    /// isolates priority magnitude from deadline, admission, and abort
+    /// behavior. Production policies and other builds ignore this field.
+    pub eval_learned_priority_scale: f64,
 }
 
 impl Default for PredParams {
@@ -181,6 +200,8 @@ impl Default for PredParams {
             fanout_deadline_legacy_fraction: 0.0,
             fanout_root_only: false,
             fanout_min_samples: 3,
+            eval_oracle_order_corruption_probability: 0.0,
+            eval_learned_priority_scale: 1.0,
         }
     }
 }
@@ -253,6 +274,8 @@ mod tests {
         assert!(p.pred.aimd_alpha > 0.0);
         assert!(p.pred.aimd_beta > 0.0 && p.pred.aimd_beta < 1.0);
         assert!(p.pred.aimd_er_threshold > 0.0 && p.pred.aimd_er_threshold < 1.0);
+        assert_eq!(p.pred.eval_oracle_order_corruption_probability, 0.0);
+        assert_eq!(p.pred.eval_learned_priority_scale, 1.0);
     }
 
     #[test]
@@ -262,6 +285,8 @@ mod tests {
         assert_eq!(p.rajomon.token_update_step, 200);
         assert_eq!(p.rajomon.price_update_rate_ms, 10);
         assert_eq!(p.pred.tau_er, 2.0);
+        assert_eq!(p.pred.eval_oracle_order_corruption_probability, 0.0);
+        assert_eq!(p.pred.eval_learned_priority_scale, 1.0);
     }
 
     #[test]

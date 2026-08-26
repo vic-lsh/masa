@@ -7,7 +7,11 @@ pub mod distribution;
 pub mod error;
 pub mod frontend;
 pub mod hop_trace;
-#[cfg(any(feature = "sched_oracle", feature = "eval_oracle_continuation"))]
+#[cfg(any(
+    feature = "sched_oracle",
+    feature = "eval_oracle_continuation",
+    feature = "eval_estimator_audit"
+))]
 pub mod oracle;
 pub mod service_registry;
 pub mod tests;

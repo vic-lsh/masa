@@ -35,6 +35,9 @@ sched_pred = ["estimator", "sched_slo", "masa-core/sched_pred"]
 # Evaluation-only: inject exact per-request continuation work into the normal
 # sched_pred priority path so the scheduler itself is held constant.
 eval_oracle_continuation = ["sched_pred"]
+# Evaluation-only: keep learned sched_pred decisions, but expose the learned
+# estimate beside a pre-sampled continuation reference in structured logs.
+eval_estimator_audit = ["sched_pred"]
 ac_pred = ["estimator", "masa-core/ac_pred"]
 ac_rajomon = ["masa", "masa-core/ac_rajomon", "tokio"]
 est_rms = []

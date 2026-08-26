@@ -23,6 +23,7 @@ _PRIO_MAP: dict[str, str] = {
     "sched_tailclipper": "oldest",
     "sched_oracle": "oracle",
     "eval_oracle_continuation": "exact_continuation",
+    "eval_estimator_audit": "slack",
     "sched_pred": "slack",
 }
 
@@ -30,6 +31,7 @@ _PRIO_MAP: dict[str, str] = {
 # When both are present, sched_slo is redundant.
 _PRIO_PRIORITY = [
     "eval_oracle_continuation",
+    "eval_estimator_audit",
     "sched_pred",
     "sched_tailclipper",
     "sched_oracle",

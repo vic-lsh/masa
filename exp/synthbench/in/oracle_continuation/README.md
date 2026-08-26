@@ -29,6 +29,28 @@ The three policies are:
 - `eval_oracle_continuation`: pre-sampled continuation service demand injected into the
   same `sched_pred` priority and reprioritization path.
 
+### Ordering-corruption dose response
+
+The exact-continuation arm supports an evaluation-only corruption probability in
+`policy_param.json`:
+
+```json
+{
+  "pred": {
+    "eval_oracle_order_corruption_probability": 0.25
+  }
+}
+```
+
+Use separate experiment directories for probabilities 0, 0.10, 0.25, and 0.50. The
+decision is deterministic from the gateway-entry timestamp, so every request in one
+matched-deadline burst receives the same treatment. Selected bursts complement the
+exact scheduling estimate around the common SLO, reversing the short/long priority
+order. Only the soft scheduling estimate changes; the exact mean/floor used to propagate
+hard deadlines remains unchanged. Consequently the intervention does not change request
+work, admission, abortion, or the marginal arrival process. Report the realized
+long-before-short ordering rate in addition to the configured probability.
+
 Run the experiment and reproduce the pairwise ordering measurement with:
 
 ```bash
