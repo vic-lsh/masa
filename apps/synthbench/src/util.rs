@@ -137,7 +137,11 @@ pub async fn execute_call_sequence(
     Ok(traces)
 }
 
-#[cfg(feature = "sched_oracle")]
+#[cfg(any(
+    feature = "sched_oracle",
+    feature = "eval_oracle_continuation",
+    feature = "eval_estimator_audit"
+))]
 pub async fn execute_oracle_call_sequence(
     registry: &ServiceRegistry,
     child_steps: &[Vec<crate::oracle::PlannedCall>],

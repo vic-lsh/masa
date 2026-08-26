@@ -1,0 +1,5733 @@
+{
+  "runs": [
+    {
+      "audit": {
+        "available": false,
+        "effective_key_count": null,
+        "labeled_count": 0,
+        "nae_p50": null,
+        "nae_p90": null,
+        "priority_nae_p50": null,
+        "priority_nae_p90": null,
+        "request_coverage": 0.0
+      },
+      "classes": {
+        "long": {
+          "count": 1682,
+          "latency": {
+            "count": 1682,
+            "p50_us": 51305.5,
+            "p90_us": 56308.700000000004
+          },
+          "shared_queue": {
+            "count": 1682,
+            "p50_us": 632.5,
+            "p90_us": 1702.9
+          },
+          "slo_attainment": 0.3692033293697979
+        },
+        "short": {
+          "count": 1622,
+          "latency": {
+            "count": 1622,
+            "p50_us": 27436.5,
+            "p90_us": 29212.6
+          },
+          "shared_queue": {
+            "count": 1622,
+            "p50_us": 1257.0,
+            "p90_us": 2673.9
+          },
+          "slo_attainment": 1.0
+        }
+      },
+      "experiment": "estimator_ordering_corrupt_0",
+      "goodput_rps": 149.1396642755117,
+      "iteration": 0,
+      "latency": {
+        "count": 3304,
+        "p50_us": 43565.5,
+        "p90_us": 54081.40000000001
+      },
+      "ordering": {
+        "cross_key_comparable_pairs": 0,
+        "cross_key_flip_fraction": null,
+        "learned_pair_count": 0,
+        "learned_pair_tie_fraction": null,
+        "learned_top_tie_fraction": null,
+        "matched_deadline_groups": 413,
+        "pairwise_agreement_comparable_pairs": 0,
+        "pairwise_reference_order_agreement": null,
+        "realized_shared_finish_reference_agreement": 0.5839729812711084,
+        "realized_shared_start_reference_agreement": 0.6499846484494934,
+        "same_key_ambiguity": {
+          "gt_10pct_slo": null,
+          "gt_1pct_slo": null,
+          "gt_25pct_slo": null,
+          "gt_5pct_slo": null
+        },
+        "same_key_pairs": 0,
+        "top_choice_reference_agreement": null
+      },
+      "policy": "eval_oracle_continuation",
+      "requests": 3304,
+      "rps": 220,
+      "shadow_feasibility": {
+        "learned": {
+          "count": 0,
+          "false_positive_rate": null,
+          "fn": 0,
+          "fp": 0,
+          "precision": null,
+          "recall": null,
+          "tn": 0,
+          "tp": 0
+        },
+        "reference": {
+          "count": 0,
+          "false_positive_rate": null,
+          "fn": 0,
+          "fp": 0,
+          "precision": null,
+          "recall": null,
+          "tn": 0,
+          "tp": 0
+        }
+      },
+      "shared_queue": {
+        "count": 3304,
+        "p50_us": 888.5,
+        "p90_us": 2280.4000000000005
+      },
+      "slo_attainment": 0.6788740920096852
+    },
+    {
+      "audit": {
+        "available": false,
+        "effective_key_count": null,
+        "labeled_count": 0,
+        "nae_p50": null,
+        "nae_p90": null,
+        "priority_nae_p50": null,
+        "priority_nae_p90": null,
+        "request_coverage": 0.0
+      },
+      "classes": {
+        "long": {
+          "count": 1657,
+          "latency": {
+            "count": 1657,
+            "p50_us": 50983.0,
+            "p90_us": 55677.0
+          },
+          "shared_queue": {
+            "count": 1657,
+            "p50_us": 663.0,
+            "p90_us": 1715.2000000000003
+          },
+          "slo_attainment": 0.3910681955340978
+        },
+        "short": {
+          "count": 1647,
+          "latency": {
+            "count": 1647,
+            "p50_us": 27327.0,
+            "p90_us": 29241.6
+          },
+          "shared_queue": {
+            "count": 1647,
+            "p50_us": 1191.0,
+            "p90_us": 2599.6000000000004
+          },
+          "slo_attainment": 1.0
+        }
+      },
+      "experiment": "estimator_ordering_corrupt_10",
+      "goodput_rps": 152.6261574898444,
+      "iteration": 0,
+      "latency": {
+        "count": 3304,
+        "p50_us": 41960.0,
+        "p90_us": 53763.4
+      },
+      "ordering": {
+        "cross_key_comparable_pairs": 0,
+        "cross_key_flip_fraction": null,
+        "learned_pair_count": 0,
+        "learned_pair_tie_fraction": null,
+        "learned_top_tie_fraction": null,
+        "matched_deadline_groups": 413,
+        "pairwise_agreement_comparable_pairs": 0,
+        "pairwise_reference_order_agreement": null,
+        "realized_shared_finish_reference_agreement": 0.5830685661576305,
+        "realized_shared_start_reference_agreement": 0.6307266577841549,
+        "same_key_ambiguity": {
+          "gt_10pct_slo": null,
+          "gt_1pct_slo": null,
+          "gt_25pct_slo": null,
+          "gt_5pct_slo": null
+        },
+        "same_key_pairs": 0,
+        "top_choice_reference_agreement": null
+      },
+      "policy": "eval_oracle_continuation",
+      "requests": 3304,
+      "rps": 220,
+      "shadow_feasibility": {
+        "learned": {
+          "count": 0,
+          "false_positive_rate": null,
+          "fn": 0,
+          "fp": 0,
+          "precision": null,
+          "recall": null,
+          "tn": 0,
+          "tp": 0
+        },
+        "reference": {
+          "count": 0,
+          "false_positive_rate": null,
+          "fn": 0,
+          "fp": 0,
+          "precision": null,
+          "recall": null,
+          "tn": 0,
+          "tp": 0
+        }
+      },
+      "shared_queue": {
+        "count": 3304,
+        "p50_us": 872.0,
+        "p90_us": 2180.7000000000003
+      },
+      "slo_attainment": 0.6946125907990315
+    },
+    {
+      "audit": {
+        "available": false,
+        "effective_key_count": null,
+        "labeled_count": 0,
+        "nae_p50": null,
+        "nae_p90": null,
+        "priority_nae_p50": null,
+        "priority_nae_p90": null,
+        "request_coverage": 0.0
+      },
+      "classes": {
+        "long": {
+          "count": 1660,
+          "latency": {
+            "count": 1660,
+            "p50_us": 51352.0,
+            "p90_us": 56684.2
+          },
+          "shared_queue": {
+            "count": 1660,
+            "p50_us": 671.0,
+            "p90_us": 1757.0
+          },
+          "slo_attainment": 0.3825301204819277
+        },
+        "short": {
+          "count": 1644,
+          "latency": {
+            "count": 1644,
+            "p50_us": 27360.0,
+            "p90_us": 29277.699999999997
+          },
+          "shared_queue": {
+            "count": 1644,
+            "p50_us": 1030.0,
+            "p90_us": 2606.4
+          },
+          "slo_attainment": 1.0
+        }
+      },
+      "experiment": "estimator_ordering_corrupt_25",
+      "goodput_rps": 151.5921196842068,
+      "iteration": 0,
+      "latency": {
+        "count": 3304,
+        "p50_us": 41069.0,
+        "p90_us": 54270.600000000006
+      },
+      "ordering": {
+        "cross_key_comparable_pairs": 0,
+        "cross_key_flip_fraction": null,
+        "learned_pair_count": 0,
+        "learned_pair_tie_fraction": null,
+        "learned_top_tie_fraction": null,
+        "matched_deadline_groups": 413,
+        "pairwise_agreement_comparable_pairs": 0,
+        "pairwise_reference_order_agreement": null,
+        "realized_shared_finish_reference_agreement": 0.5901990811638591,
+        "realized_shared_start_reference_agreement": 0.584073506891271,
+        "same_key_ambiguity": {
+          "gt_10pct_slo": null,
+          "gt_1pct_slo": null,
+          "gt_25pct_slo": null,
+          "gt_5pct_slo": null
+        },
+        "same_key_pairs": 0,
+        "top_choice_reference_agreement": null
+      },
+      "policy": "eval_oracle_continuation",
+      "requests": 3304,
+      "rps": 220,
+      "shadow_feasibility": {
+        "learned": {
+          "count": 0,
+          "false_positive_rate": null,
+          "fn": 0,
+          "fp": 0,
+          "precision": null,
+          "recall": null,
+          "tn": 0,
+          "tp": 0
+        },
+        "reference": {
+          "count": 0,
+          "false_positive_rate": null,
+          "fn": 0,
+          "fp": 0,
+          "precision": null,
+          "recall": null,
+          "tn": 0,
+          "tp": 0
+        }
+      },
+      "shared_queue": {
+        "count": 3304,
+        "p50_us": 833.0,
+        "p90_us": 2119.0
+      },
+      "slo_attainment": 0.6897699757869249
+    },
+    {
+      "audit": {
+        "available": false,
+        "effective_key_count": null,
+        "labeled_count": 0,
+        "nae_p50": null,
+        "nae_p90": null,
+        "priority_nae_p50": null,
+        "priority_nae_p90": null,
+        "request_coverage": 0.0
+      },
+      "classes": {
+        "long": {
+          "count": 1678,
+          "latency": {
+            "count": 1678,
+            "p50_us": 51215.0,
+            "p90_us": 56045.5
+          },
+          "shared_queue": {
+            "count": 1678,
+            "p50_us": 803.0,
+            "p90_us": 1779.0
+          },
+          "slo_attainment": 0.37902264600715135
+        },
+        "short": {
+          "count": 1626,
+          "latency": {
+            "count": 1626,
+            "p50_us": 27338.5,
+            "p90_us": 29142.5
+          },
+          "shared_queue": {
+            "count": 1626,
+            "p50_us": 857.5,
+            "p90_us": 2164.5
+          },
+          "slo_attainment": 1.0
+        }
+      },
+      "experiment": "estimator_ordering_corrupt_50",
+      "goodput_rps": 150.4625225926595,
+      "iteration": 0,
+      "latency": {
+        "count": 3304,
+        "p50_us": 43521.5,
+        "p90_us": 53616.9
+      },
+      "ordering": {
+        "cross_key_comparable_pairs": 0,
+        "cross_key_flip_fraction": null,
+        "learned_pair_count": 0,
+        "learned_pair_tie_fraction": null,
+        "learned_top_tie_fraction": null,
+        "matched_deadline_groups": 413,
+        "pairwise_agreement_comparable_pairs": 0,
+        "pairwise_reference_order_agreement": null,
+        "realized_shared_finish_reference_agreement": 0.581027264372511,
+        "realized_shared_start_reference_agreement": 0.5139385275196569,
+        "same_key_ambiguity": {
+          "gt_10pct_slo": null,
+          "gt_1pct_slo": null,
+          "gt_25pct_slo": null,
+          "gt_5pct_slo": null
+        },
+        "same_key_pairs": 0,
+        "top_choice_reference_agreement": null
+      },
+      "policy": "eval_oracle_continuation",
+      "requests": 3304,
+      "rps": 220,
+      "shadow_feasibility": {
+        "learned": {
+          "count": 0,
+          "false_positive_rate": null,
+          "fn": 0,
+          "fp": 0,
+          "precision": null,
+          "recall": null,
+          "tn": 0,
+          "tp": 0
+        },
+        "reference": {
+          "count": 0,
+          "false_positive_rate": null,
+          "fn": 0,
+          "fp": 0,
+          "precision": null,
+          "recall": null,
+          "tn": 0,
+          "tp": 0
+        }
+      },
+      "shared_queue": {
+        "count": 3304,
+        "p50_us": 834.5,
+        "p90_us": 1924.4000000000005
+      },
+      "slo_attainment": 0.6846246973365617
+    },
+    {
+      "audit": {
+        "available": true,
+        "effective_key_count": 1,
+        "labeled_count": 3304,
+        "nae_p50": 0.1901,
+        "nae_p90": 0.41745600000000005,
+        "priority_nae_p50": 0.1901,
+        "priority_nae_p90": 0.41745600000000005,
+        "request_coverage": 1.0
+      },
+      "classes": {
+        "long": {
+          "count": 1644,
+          "latency": {
+            "count": 1644,
+            "p50_us": 51397.5,
+            "p90_us": 56461.90000000001
+          },
+          "shared_queue": {
+            "count": 1644,
+            "p50_us": 719.0,
+            "p90_us": 1617.4
+          },
+          "slo_attainment": 0.3759124087591241
+        },
+        "short": {
+          "count": 1660,
+          "latency": {
+            "count": 1660,
+            "p50_us": 26901.5,
+            "p90_us": 29229.1
+          },
+          "shared_queue": {
+            "count": 1660,
+            "p50_us": 670.0,
+            "p90_us": 1613.1000000000001
+          },
+          "slo_attainment": 1.0
+        }
+      },
+      "experiment": "estimator_ordering_hidden",
+      "goodput_rps": 151.4727667857326,
+      "iteration": 0,
+      "latency": {
+        "count": 3304,
+        "p50_us": 31026.0,
+        "p90_us": 54118.70000000001
+      },
+      "ordering": {
+        "cross_key_comparable_pairs": 0,
+        "cross_key_flip_fraction": null,
+        "learned_pair_count": 9725,
+        "learned_pair_tie_fraction": 1.0,
+        "learned_top_tie_fraction": 1.0,
+        "matched_deadline_groups": 413,
+        "pairwise_agreement_comparable_pairs": 0,
+        "pairwise_reference_order_agreement": null,
+        "realized_shared_finish_reference_agreement": 0.48812339331619536,
+        "realized_shared_start_reference_agreement": 0.4917223650385604,
+        "same_key_ambiguity": {
+          "gt_10pct_slo": 0.5549982704946386,
+          "gt_1pct_slo": 0.6708751297129021,
+          "gt_25pct_slo": 0.4982704946385334,
+          "gt_5pct_slo": 0.6412141127637496
+        },
+        "same_key_pairs": 11564,
+        "top_choice_reference_agreement": 0.17433414043583534
+      },
+      "policy": "eval_estimator_audit,est_mean_var",
+      "requests": 3304,
+      "rps": 220,
+      "shadow_feasibility": {
+        "learned": {
+          "count": 3304,
+          "false_positive_rate": 0.0,
+          "fn": 1026,
+          "fp": 0,
+          "precision": null,
+          "recall": 0.0,
+          "tn": 2278,
+          "tp": 0
+        },
+        "reference": {
+          "count": 3304,
+          "false_positive_rate": 0.0,
+          "fn": 541,
+          "fp": 0,
+          "precision": 1.0,
+          "recall": 0.4727095516569201,
+          "tn": 2278,
+          "tp": 485
+        }
+      },
+      "shared_queue": {
+        "count": 3304,
+        "p50_us": 700.5,
+        "p90_us": 1615.4000000000005
+      },
+      "slo_attainment": 0.6894673123486683
+    },
+    {
+      "audit": {
+        "available": false,
+        "effective_key_count": null,
+        "labeled_count": 0,
+        "nae_p50": null,
+        "nae_p90": null,
+        "priority_nae_p50": null,
+        "priority_nae_p90": null,
+        "request_coverage": 0.0
+      },
+      "classes": {
+        "long": {
+          "count": 1656,
+          "latency": {
+            "count": 1656,
+            "p50_us": 51258.0,
+            "p90_us": 56110.5
+          },
+          "shared_queue": {
+            "count": 1656,
+            "p50_us": 618.5,
+            "p90_us": 1658.5
+          },
+          "slo_attainment": 0.39009661835748793
+        },
+        "short": {
+          "count": 1648,
+          "latency": {
+            "count": 1648,
+            "p50_us": 27341.0,
+            "p90_us": 29253.8
+          },
+          "shared_queue": {
+            "count": 1648,
+            "p50_us": 1210.0,
+            "p90_us": 2632.5
+          },
+          "slo_attainment": 1.0
+        }
+      },
+      "experiment": "estimator_ordering_hidden",
+      "goodput_rps": 152.55911599241168,
+      "iteration": 0,
+      "latency": {
+        "count": 3304,
+        "p50_us": 41008.0,
+        "p90_us": 53868.100000000006
+      },
+      "ordering": {
+        "cross_key_comparable_pairs": 0,
+        "cross_key_flip_fraction": null,
+        "learned_pair_count": 0,
+        "learned_pair_tie_fraction": null,
+        "learned_top_tie_fraction": null,
+        "matched_deadline_groups": 413,
+        "pairwise_agreement_comparable_pairs": 0,
+        "pairwise_reference_order_agreement": null,
+        "realized_shared_finish_reference_agreement": 0.5732007381587041,
+        "realized_shared_start_reference_agreement": 0.6571662907525118,
+        "same_key_ambiguity": {
+          "gt_10pct_slo": null,
+          "gt_1pct_slo": null,
+          "gt_25pct_slo": null,
+          "gt_5pct_slo": null
+        },
+        "same_key_pairs": 0,
+        "top_choice_reference_agreement": null
+      },
+      "policy": "eval_oracle_continuation",
+      "requests": 3304,
+      "rps": 220,
+      "shadow_feasibility": {
+        "learned": {
+          "count": 0,
+          "false_positive_rate": null,
+          "fn": 0,
+          "fp": 0,
+          "precision": null,
+          "recall": null,
+          "tn": 0,
+          "tp": 0
+        },
+        "reference": {
+          "count": 0,
+          "false_positive_rate": null,
+          "fn": 0,
+          "fp": 0,
+          "precision": null,
+          "recall": null,
+          "tn": 0,
+          "tp": 0
+        }
+      },
+      "shared_queue": {
+        "count": 3304,
+        "p50_us": 854.5,
+        "p90_us": 2143.100000000001
+      },
+      "slo_attainment": 0.6943099273607748
+    },
+    {
+      "audit": {
+        "available": false,
+        "effective_key_count": null,
+        "labeled_count": 0,
+        "nae_p50": null,
+        "nae_p90": null,
+        "priority_nae_p50": null,
+        "priority_nae_p90": null,
+        "request_coverage": 0.0
+      },
+      "classes": {
+        "long": {
+          "count": 1701,
+          "latency": {
+            "count": 1701,
+            "p50_us": 51373.0,
+            "p90_us": 55980.0
+          },
+          "shared_queue": {
+            "count": 1701,
+            "p50_us": 626.0,
+            "p90_us": 1574.0
+          },
+          "slo_attainment": 0.3497942386831276
+        },
+        "short": {
+          "count": 1603,
+          "latency": {
+            "count": 1603,
+            "p50_us": 26965.0,
+            "p90_us": 29139.8
+          },
+          "shared_queue": {
+            "count": 1603,
+            "p50_us": 618.0,
+            "p90_us": 1579.8
+          },
+          "slo_attainment": 1.0
+        }
+      },
+      "experiment": "estimator_ordering_hidden",
+      "goodput_rps": 146.12724571748444,
+      "iteration": 0,
+      "latency": {
+        "count": 3304,
+        "p50_us": 44188.0,
+        "p90_us": 53988.8
+      },
+      "ordering": {
+        "cross_key_comparable_pairs": 0,
+        "cross_key_flip_fraction": null,
+        "learned_pair_count": 0,
+        "learned_pair_tie_fraction": null,
+        "learned_top_tie_fraction": null,
+        "matched_deadline_groups": 413,
+        "pairwise_agreement_comparable_pairs": 0,
+        "pairwise_reference_order_agreement": null,
+        "realized_shared_finish_reference_agreement": 0.49856144677353065,
+        "realized_shared_start_reference_agreement": 0.4913686806411837,
+        "same_key_ambiguity": {
+          "gt_10pct_slo": null,
+          "gt_1pct_slo": null,
+          "gt_25pct_slo": null,
+          "gt_5pct_slo": null
+        },
+        "same_key_pairs": 0,
+        "top_choice_reference_agreement": null
+      },
+      "policy": "sched_pred,est_mean_var",
+      "requests": 3304,
+      "rps": 220,
+      "shadow_feasibility": {
+        "learned": {
+          "count": 0,
+          "false_positive_rate": null,
+          "fn": 0,
+          "fp": 0,
+          "precision": null,
+          "recall": null,
+          "tn": 0,
+          "tp": 0
+        },
+        "reference": {
+          "count": 0,
+          "false_positive_rate": null,
+          "fn": 0,
+          "fp": 0,
+          "precision": null,
+          "recall": null,
+          "tn": 0,
+          "tp": 0
+        }
+      },
+      "shared_queue": {
+        "count": 3304,
+        "p50_us": 622.5,
+        "p90_us": 1578.0
+      },
+      "slo_attainment": 0.6652542372881356
+    },
+    {
+      "audit": {
+        "available": false,
+        "effective_key_count": null,
+        "labeled_count": 0,
+        "nae_p50": null,
+        "nae_p90": null,
+        "priority_nae_p50": null,
+        "priority_nae_p90": null,
+        "request_coverage": 0.0
+      },
+      "classes": {
+        "long": {
+          "count": 1635,
+          "latency": {
+            "count": 1635,
+            "p50_us": 51348.0,
+            "p90_us": 56613.0
+          },
+          "shared_queue": {
+            "count": 1635,
+            "p50_us": 934.0,
+            "p90_us": 2069.8
+          },
+          "slo_attainment": 0.3510703363914373
+        },
+        "short": {
+          "count": 1669,
+          "latency": {
+            "count": 1669,
+            "p50_us": 26997.0,
+            "p90_us": 29086.8
+          },
+          "shared_queue": {
+            "count": 1669,
+            "p50_us": 911.0,
+            "p90_us": 2116.4
+          },
+          "slo_attainment": 1.0
+        }
+      },
+      "experiment": "estimator_ordering_hidden",
+      "goodput_rps": 149.1684970233137,
+      "iteration": 0,
+      "latency": {
+        "count": 3304,
+        "p50_us": 30647.0,
+        "p90_us": 54162.6
+      },
+      "ordering": {
+        "cross_key_comparable_pairs": 0,
+        "cross_key_flip_fraction": null,
+        "learned_pair_count": 0,
+        "learned_pair_tie_fraction": null,
+        "learned_top_tie_fraction": null,
+        "matched_deadline_groups": 413,
+        "pairwise_agreement_comparable_pairs": 0,
+        "pairwise_reference_order_agreement": null,
+        "realized_shared_finish_reference_agreement": 0.5036960985626283,
+        "realized_shared_start_reference_agreement": 0.4984599589322382,
+        "same_key_ambiguity": {
+          "gt_10pct_slo": null,
+          "gt_1pct_slo": null,
+          "gt_25pct_slo": null,
+          "gt_5pct_slo": null
+        },
+        "same_key_pairs": 0,
+        "top_choice_reference_agreement": null
+      },
+      "policy": "sched_slo",
+      "requests": 3304,
+      "rps": 220,
+      "shadow_feasibility": {
+        "learned": {
+          "count": 0,
+          "false_positive_rate": null,
+          "fn": 0,
+          "fp": 0,
+          "precision": null,
+          "recall": null,
+          "tn": 0,
+          "tp": 0
+        },
+        "reference": {
+          "count": 0,
+          "false_positive_rate": null,
+          "fn": 0,
+          "fp": 0,
+          "precision": null,
+          "recall": null,
+          "tn": 0,
+          "tp": 0
+        }
+      },
+      "shared_queue": {
+        "count": 3304,
+        "p50_us": 925.0,
+        "p90_us": 2093.4000000000005
+      },
+      "slo_attainment": 0.6788740920096852
+    },
+    {
+      "audit": {
+        "available": true,
+        "effective_key_count": 2,
+        "labeled_count": 3304,
+        "nae_p50": 0.06855,
+        "nae_p90": 0.40675400000000006,
+        "priority_nae_p50": 0.06855,
+        "priority_nae_p90": 0.40675400000000006,
+        "request_coverage": 1.0
+      },
+      "classes": {
+        "long": {
+          "count": 1632,
+          "latency": {
+            "count": 1632,
+            "p50_us": 51366.0,
+            "p90_us": 56782.5
+          },
+          "shared_queue": {
+            "count": 1632,
+            "p50_us": 671.5,
+            "p90_us": 1587.9
+          },
+          "slo_attainment": 0.37683823529411764
+        },
+        "short": {
+          "count": 1672,
+          "latency": {
+            "count": 1672,
+            "p50_us": 27179.0,
+            "p90_us": 29277.800000000003
+          },
+          "shared_queue": {
+            "count": 1672,
+            "p50_us": 874.5,
+            "p90_us": 1796.0
+          },
+          "slo_attainment": 1.0
+        }
+      },
+      "experiment": "estimator_ordering_partial",
+      "goodput_rps": 152.11367168016568,
+      "iteration": 0,
+      "latency": {
+        "count": 3304,
+        "p50_us": 30870.0,
+        "p90_us": 54164.9
+      },
+      "ordering": {
+        "cross_key_comparable_pairs": 3847,
+        "cross_key_flip_fraction": 0.13932934754354043,
+        "learned_pair_count": 9665,
+        "learned_pair_tie_fraction": 0.6019658561821004,
+        "learned_top_tie_fraction": 0.7336561743341404,
+        "matched_deadline_groups": 413,
+        "pairwise_agreement_comparable_pairs": 3847,
+        "pairwise_reference_order_agreement": 0.8606706524564596,
+        "realized_shared_finish_reference_agreement": 0.5119503362648733,
+        "realized_shared_start_reference_agreement": 0.5291257113295396,
+        "same_key_ambiguity": {
+          "gt_10pct_slo": 0.44964902807775375,
+          "gt_1pct_slo": 0.5530507559395248,
+          "gt_25pct_slo": 0.4033477321814255,
+          "gt_5pct_slo": 0.5174136069114471
+        },
+        "same_key_pairs": 7408,
+        "top_choice_reference_agreement": 0.3390234059725585
+      },
+      "policy": "eval_estimator_audit,est_mean_var",
+      "requests": 3304,
+      "rps": 220,
+      "shadow_feasibility": {
+        "learned": {
+          "count": 3304,
+          "false_positive_rate": 0.0008745080891998251,
+          "fn": 996,
+          "fp": 2,
+          "precision": 0.9130434782608695,
+          "recall": 0.02064896755162242,
+          "tn": 2285,
+          "tp": 21
+        },
+        "reference": {
+          "count": 3304,
+          "false_positive_rate": 0.0,
+          "fn": 560,
+          "fp": 0,
+          "precision": 1.0,
+          "recall": 0.44936086529006886,
+          "tn": 2287,
+          "tp": 457
+        }
+      },
+      "shared_queue": {
+        "count": 3304,
+        "p50_us": 767.5,
+        "p90_us": 1702.0
+      },
+      "slo_attainment": 0.6921912832929782
+    },
+    {
+      "audit": {
+        "available": false,
+        "effective_key_count": null,
+        "labeled_count": 0,
+        "nae_p50": null,
+        "nae_p90": null,
+        "priority_nae_p50": null,
+        "priority_nae_p90": null,
+        "request_coverage": 0.0
+      },
+      "classes": {
+        "long": {
+          "count": 1648,
+          "latency": {
+            "count": 1648,
+            "p50_us": 50947.5,
+            "p90_us": 55846.2
+          },
+          "shared_queue": {
+            "count": 1648,
+            "p50_us": 605.0,
+            "p90_us": 1675.7999999999997
+          },
+          "slo_attainment": 0.41383495145631066
+        },
+        "short": {
+          "count": 1656,
+          "latency": {
+            "count": 1656,
+            "p50_us": 27307.5,
+            "p90_us": 29155.5
+          },
+          "shared_queue": {
+            "count": 1656,
+            "p50_us": 1229.5,
+            "p90_us": 2687.0
+          },
+          "slo_attainment": 1.0
+        }
+      },
+      "experiment": "estimator_ordering_partial",
+      "goodput_rps": 155.45684097868926,
+      "iteration": 0,
+      "latency": {
+        "count": 3304,
+        "p50_us": 30863.0,
+        "p90_us": 53456.9
+      },
+      "ordering": {
+        "cross_key_comparable_pairs": 0,
+        "cross_key_flip_fraction": null,
+        "learned_pair_count": 0,
+        "learned_pair_tie_fraction": null,
+        "learned_top_tie_fraction": null,
+        "matched_deadline_groups": 413,
+        "pairwise_agreement_comparable_pairs": 0,
+        "pairwise_reference_order_agreement": null,
+        "realized_shared_finish_reference_agreement": 0.5956468424279583,
+        "realized_shared_start_reference_agreement": 0.6515430206417331,
+        "same_key_ambiguity": {
+          "gt_10pct_slo": null,
+          "gt_1pct_slo": null,
+          "gt_25pct_slo": null,
+          "gt_5pct_slo": null
+        },
+        "same_key_pairs": 0,
+        "top_choice_reference_agreement": null
+      },
+      "policy": "eval_oracle_continuation",
+      "requests": 3304,
+      "rps": 220,
+      "shadow_feasibility": {
+        "learned": {
+          "count": 0,
+          "false_positive_rate": null,
+          "fn": 0,
+          "fp": 0,
+          "precision": null,
+          "recall": null,
+          "tn": 0,
+          "tp": 0
+        },
+        "reference": {
+          "count": 0,
+          "false_positive_rate": null,
+          "fn": 0,
+          "fp": 0,
+          "precision": null,
+          "recall": null,
+          "tn": 0,
+          "tp": 0
+        }
+      },
+      "shared_queue": {
+        "count": 3304,
+        "p50_us": 857.0,
+        "p90_us": 2287.5000000000014
+      },
+      "slo_attainment": 0.7076271186440678
+    },
+    {
+      "audit": {
+        "available": false,
+        "effective_key_count": null,
+        "labeled_count": 0,
+        "nae_p50": null,
+        "nae_p90": null,
+        "priority_nae_p50": null,
+        "priority_nae_p90": null,
+        "request_coverage": 0.0
+      },
+      "classes": {
+        "long": {
+          "count": 1673,
+          "latency": {
+            "count": 1673,
+            "p50_us": 51183.0,
+            "p90_us": 56155.6
+          },
+          "shared_queue": {
+            "count": 1673,
+            "p50_us": 583.0,
+            "p90_us": 1553.3999999999996
+          },
+          "slo_attainment": 0.3759713090257023
+        },
+        "short": {
+          "count": 1631,
+          "latency": {
+            "count": 1631,
+            "p50_us": 26922.0,
+            "p90_us": 28942.0
+          },
+          "shared_queue": {
+            "count": 1631,
+            "p50_us": 867.0,
+            "p90_us": 1751.0
+          },
+          "slo_attainment": 1.0
+        }
+      },
+      "experiment": "estimator_ordering_partial",
+      "goodput_rps": 150.27102309898345,
+      "iteration": 0,
+      "latency": {
+        "count": 3304,
+        "p50_us": 42875.0,
+        "p90_us": 53834.3
+      },
+      "ordering": {
+        "cross_key_comparable_pairs": 0,
+        "cross_key_flip_fraction": null,
+        "learned_pair_count": 0,
+        "learned_pair_tie_fraction": null,
+        "learned_top_tie_fraction": null,
+        "matched_deadline_groups": 413,
+        "pairwise_agreement_comparable_pairs": 0,
+        "pairwise_reference_order_agreement": null,
+        "realized_shared_finish_reference_agreement": 0.5137624172185431,
+        "realized_shared_start_reference_agreement": 0.5463576158940397,
+        "same_key_ambiguity": {
+          "gt_10pct_slo": null,
+          "gt_1pct_slo": null,
+          "gt_25pct_slo": null,
+          "gt_5pct_slo": null
+        },
+        "same_key_pairs": 0,
+        "top_choice_reference_agreement": null
+      },
+      "policy": "sched_pred,est_mean_var",
+      "requests": 3304,
+      "rps": 220,
+      "shadow_feasibility": {
+        "learned": {
+          "count": 0,
+          "false_positive_rate": null,
+          "fn": 0,
+          "fp": 0,
+          "precision": null,
+          "recall": null,
+          "tn": 0,
+          "tp": 0
+        },
+        "reference": {
+          "count": 0,
+          "false_positive_rate": null,
+          "fn": 0,
+          "fp": 0,
+          "precision": null,
+          "recall": null,
+          "tn": 0,
+          "tp": 0
+        }
+      },
+      "shared_queue": {
+        "count": 3304,
+        "p50_us": 708.0,
+        "p90_us": 1648.7000000000003
+      },
+      "slo_attainment": 0.6840193704600485
+    },
+    {
+      "audit": {
+        "available": false,
+        "effective_key_count": null,
+        "labeled_count": 0,
+        "nae_p50": null,
+        "nae_p90": null,
+        "priority_nae_p50": null,
+        "priority_nae_p90": null,
+        "request_coverage": 0.0
+      },
+      "classes": {
+        "long": {
+          "count": 1662,
+          "latency": {
+            "count": 1662,
+            "p50_us": 51164.0,
+            "p90_us": 56216.399999999994
+          },
+          "shared_queue": {
+            "count": 1662,
+            "p50_us": 881.5,
+            "p90_us": 2135.9
+          },
+          "slo_attainment": 0.38086642599277976
+        },
+        "short": {
+          "count": 1642,
+          "latency": {
+            "count": 1642,
+            "p50_us": 26943.0,
+            "p90_us": 28845.600000000002
+          },
+          "shared_queue": {
+            "count": 1642,
+            "p50_us": 887.5,
+            "p90_us": 2135.0
+          },
+          "slo_attainment": 1.0
+        }
+      },
+      "experiment": "estimator_ordering_partial",
+      "goodput_rps": 151.31457781935808,
+      "iteration": 0,
+      "latency": {
+        "count": 3304,
+        "p50_us": 42576.0,
+        "p90_us": 53893.00000000001
+      },
+      "ordering": {
+        "cross_key_comparable_pairs": 0,
+        "cross_key_flip_fraction": null,
+        "learned_pair_count": 0,
+        "learned_pair_tie_fraction": null,
+        "learned_top_tie_fraction": null,
+        "matched_deadline_groups": 413,
+        "pairwise_agreement_comparable_pairs": 0,
+        "pairwise_reference_order_agreement": null,
+        "realized_shared_finish_reference_agreement": 0.512438322368421,
+        "realized_shared_start_reference_agreement": 0.4953741776315789,
+        "same_key_ambiguity": {
+          "gt_10pct_slo": null,
+          "gt_1pct_slo": null,
+          "gt_25pct_slo": null,
+          "gt_5pct_slo": null
+        },
+        "same_key_pairs": 0,
+        "top_choice_reference_agreement": null
+      },
+      "policy": "sched_slo",
+      "requests": 3304,
+      "rps": 220,
+      "shadow_feasibility": {
+        "learned": {
+          "count": 0,
+          "false_positive_rate": null,
+          "fn": 0,
+          "fp": 0,
+          "precision": null,
+          "recall": null,
+          "tn": 0,
+          "tp": 0
+        },
+        "reference": {
+          "count": 0,
+          "false_positive_rate": null,
+          "fn": 0,
+          "fp": 0,
+          "precision": null,
+          "recall": null,
+          "tn": 0,
+          "tp": 0
+        }
+      },
+      "shared_queue": {
+        "count": 3304,
+        "p50_us": 885.0,
+        "p90_us": 2135.7000000000003
+      },
+      "slo_attainment": 0.6885593220338984
+    },
+    {
+      "audit": {
+        "available": true,
+        "effective_key_count": 2,
+        "labeled_count": 3304,
+        "nae_p50": 0.02573,
+        "nae_p90": 0.10142200000000001,
+        "priority_nae_p50": 0.01968,
+        "priority_nae_p90": 0.31694600000000006,
+        "request_coverage": 1.0
+      },
+      "classes": {
+        "long": {
+          "count": 1597,
+          "latency": {
+            "count": 1597,
+            "p50_us": 51697.0,
+            "p90_us": 57000.0
+          },
+          "shared_queue": {
+            "count": 1597,
+            "p50_us": 844.0,
+            "p90_us": 1798.6000000000013
+          },
+          "slo_attainment": 0.3343769567939887
+        },
+        "short": {
+          "count": 1707,
+          "latency": {
+            "count": 1707,
+            "p50_us": 27556.0,
+            "p90_us": 29445.0
+          },
+          "shared_queue": {
+            "count": 1707,
+            "p50_us": 1322.0,
+            "p90_us": 2529.2000000000003
+          },
+          "slo_attainment": 1.0
+        }
+      },
+      "experiment": "estimator_ordering_scale_05",
+      "goodput_rps": 148.9880579522991,
+      "iteration": 0,
+      "latency": {
+        "count": 3304,
+        "p50_us": 30325.0,
+        "p90_us": 54462.8
+      },
+      "ordering": {
+        "cross_key_comparable_pairs": 5799,
+        "cross_key_flip_fraction": 0.0,
+        "learned_pair_count": 9729,
+        "learned_pair_tie_fraction": 0.4039469626888683,
+        "learned_top_tie_fraction": 0.9636803874092009,
+        "matched_deadline_groups": 413,
+        "pairwise_agreement_comparable_pairs": 5799,
+        "pairwise_reference_order_agreement": 1.0,
+        "realized_shared_finish_reference_agreement": 0.5379792373316887,
+        "realized_shared_start_reference_agreement": 0.5669647445780656,
+        "same_key_ambiguity": {
+          "gt_10pct_slo": 0.1054640069384215,
+          "gt_1pct_slo": 0.32714657415437987,
+          "gt_25pct_slo": 0.0,
+          "gt_5pct_slo": 0.27146574154379877
+        },
+        "same_key_pairs": 5765,
+        "top_choice_reference_agreement": 0.3931742188400784
+      },
+      "policy": "eval_estimator_audit,est_mean_var",
+      "requests": 3304,
+      "rps": 220,
+      "shadow_feasibility": {
+        "learned": {
+          "count": 3304,
+          "false_positive_rate": 0.0035698348951361,
+          "fn": 1022,
+          "fp": 8,
+          "precision": 0.8367346938775511,
+          "recall": 0.03857008466603951,
+          "tn": 2233,
+          "tp": 41
+        },
+        "reference": {
+          "count": 3304,
+          "false_positive_rate": 0.0004462293618920125,
+          "fn": 570,
+          "fp": 1,
+          "precision": 0.9979757085020243,
+          "recall": 0.46378174976481656,
+          "tn": 2240,
+          "tp": 493
+        }
+      },
+      "shared_queue": {
+        "count": 3304,
+        "p50_us": 1065.5,
+        "p90_us": 2341.0
+      },
+      "slo_attainment": 0.6782687651331719
+    },
+    {
+      "audit": {
+        "available": true,
+        "effective_key_count": 2,
+        "labeled_count": 3304,
+        "nae_p50": 0.02605,
+        "nae_p90": 0.10366800000000001,
+        "priority_nae_p50": 0.40032,
+        "priority_nae_p90": 0.61094,
+        "request_coverage": 1.0
+      },
+      "classes": {
+        "long": {
+          "count": 1669,
+          "latency": {
+            "count": 1669,
+            "p50_us": 51381.0,
+            "p90_us": 56384.6
+          },
+          "shared_queue": {
+            "count": 1669,
+            "p50_us": 603.0,
+            "p90_us": 1208.2
+          },
+          "slo_attainment": 0.36249251048532055
+        },
+        "short": {
+          "count": 1635,
+          "latency": {
+            "count": 1635,
+            "p50_us": 27383.0,
+            "p90_us": 29336.0
+          },
+          "shared_queue": {
+            "count": 1635,
+            "p50_us": 1069.0,
+            "p90_us": 2079.8
+          },
+          "slo_attainment": 1.0
+        }
+      },
+      "experiment": "estimator_ordering_scale_2",
+      "goodput_rps": 148.99472791467446,
+      "iteration": 0,
+      "latency": {
+        "count": 3304,
+        "p50_us": 42005.5,
+        "p90_us": 54254.8
+      },
+      "ordering": {
+        "cross_key_comparable_pairs": 5785,
+        "cross_key_flip_fraction": 0.0,
+        "learned_pair_count": 9837,
+        "learned_pair_tie_fraction": 0.41191420148419233,
+        "learned_top_tie_fraction": 0.9757869249394673,
+        "matched_deadline_groups": 413,
+        "pairwise_agreement_comparable_pairs": 5785,
+        "pairwise_reference_order_agreement": 1.0,
+        "realized_shared_finish_reference_agreement": 0.5333943275388838,
+        "realized_shared_start_reference_agreement": 0.5683643387211548,
+        "same_key_ambiguity": {
+          "gt_10pct_slo": 0.10728499740439522,
+          "gt_1pct_slo": 0.3606160235334833,
+          "gt_25pct_slo": 0.0,
+          "gt_5pct_slo": 0.29416854127011594
+        },
+        "same_key_pairs": 5779,
+        "top_choice_reference_agreement": 0.3822725700449672
+      },
+      "policy": "eval_estimator_audit,est_mean_var",
+      "requests": 3304,
+      "rps": 220,
+      "shadow_feasibility": {
+        "learned": {
+          "count": 3304,
+          "false_positive_rate": 0.0035714285714285713,
+          "fn": 1001,
+          "fp": 8,
+          "precision": 0.8873239436619719,
+          "recall": 0.05921052631578947,
+          "tn": 2232,
+          "tp": 63
+        },
+        "reference": {
+          "count": 3304,
+          "false_positive_rate": 0.0,
+          "fn": 596,
+          "fp": 0,
+          "precision": 1.0,
+          "recall": 0.4398496240601504,
+          "tn": 2240,
+          "tp": 468
+        }
+      },
+      "shared_queue": {
+        "count": 3304,
+        "p50_us": 786.0,
+        "p90_us": 1836.1000000000008
+      },
+      "slo_attainment": 0.6779661016949152
+    },
+    {
+      "audit": {
+        "available": true,
+        "effective_key_count": 2,
+        "labeled_count": 3304,
+        "nae_p50": 0.026,
+        "nae_p90": 0.09021600000000002,
+        "priority_nae_p50": 0.23464,
+        "priority_nae_p90": 1.679152,
+        "request_coverage": 1.0
+      },
+      "classes": {
+        "long": {
+          "count": 1581,
+          "latency": {
+            "count": 1581,
+            "p50_us": 51666.0,
+            "p90_us": 56480.0
+          },
+          "shared_queue": {
+            "count": 1581,
+            "p50_us": 655.0,
+            "p90_us": 1239.0
+          },
+          "slo_attainment": 0.3308032890575585
+        },
+        "short": {
+          "count": 1723,
+          "latency": {
+            "count": 1723,
+            "p50_us": 27380.0,
+            "p90_us": 29444.4
+          },
+          "shared_queue": {
+            "count": 1723,
+            "p50_us": 993.0,
+            "p90_us": 1999.3999999999999
+          },
+          "slo_attainment": 1.0
+        }
+      },
+      "experiment": "estimator_ordering_scale_4",
+      "goodput_rps": 149.3548482339288,
+      "iteration": 0,
+      "latency": {
+        "count": 3304,
+        "p50_us": 30014.0,
+        "p90_us": 54120.90000000001
+      },
+      "ordering": {
+        "cross_key_comparable_pairs": 5653,
+        "cross_key_flip_fraction": 0.0,
+        "learned_pair_count": 9669,
+        "learned_pair_tie_fraction": 0.41514117282035373,
+        "learned_top_tie_fraction": 0.9443099273607748,
+        "matched_deadline_groups": 413,
+        "pairwise_agreement_comparable_pairs": 5655,
+        "pairwise_reference_order_agreement": 0.9996463306808134,
+        "realized_shared_finish_reference_agreement": 0.5279760057917054,
+        "realized_shared_start_reference_agreement": 0.5530044472023994,
+        "same_key_ambiguity": {
+          "gt_10pct_slo": 0.10116731517509728,
+          "gt_1pct_slo": 0.3226188462189139,
+          "gt_25pct_slo": 0.0,
+          "gt_5pct_slo": 0.25968533243106073
+        },
+        "same_key_pairs": 5911,
+        "top_choice_reference_agreement": 0.4004237288135593
+      },
+      "policy": "eval_estimator_audit,est_mean_var",
+      "requests": 3304,
+      "rps": 220,
+      "shadow_feasibility": {
+        "learned": {
+          "count": 3304,
+          "false_positive_rate": 0.004007123775601068,
+          "fn": 1004,
+          "fp": 9,
+          "precision": 0.8571428571428571,
+          "recall": 0.05103969754253308,
+          "tn": 2237,
+          "tp": 54
+        },
+        "reference": {
+          "count": 3304,
+          "false_positive_rate": 0.0,
+          "fn": 595,
+          "fp": 0,
+          "precision": 1.0,
+          "recall": 0.43761814744801514,
+          "tn": 2246,
+          "tp": 463
+        }
+      },
+      "shared_queue": {
+        "count": 3304,
+        "p50_us": 809.5,
+        "p90_us": 1757.4000000000005
+      },
+      "slo_attainment": 0.6797820823244553
+    },
+    {
+      "audit": {
+        "available": true,
+        "effective_key_count": 2,
+        "labeled_count": 1504,
+        "nae_p50": 0.02805,
+        "nae_p90": 0.101674,
+        "priority_nae_p50": 0.02805,
+        "priority_nae_p90": 0.101674,
+        "request_coverage": 1.0
+      },
+      "classes": {
+        "long": {
+          "count": 772,
+          "latency": {
+            "count": 772,
+            "p50_us": 51961.0,
+            "p90_us": 57064.9
+          },
+          "shared_queue": {
+            "count": 772,
+            "p50_us": 743.5,
+            "p90_us": 1462.7999999999997
+          },
+          "slo_attainment": 0.29922279792746115
+        },
+        "short": {
+          "count": 732,
+          "latency": {
+            "count": 732,
+            "p50_us": 28127.0,
+            "p90_us": 30078.3
+          },
+          "shared_queue": {
+            "count": 732,
+            "p50_us": 1117.0,
+            "p90_us": 2600.9
+          },
+          "slo_attainment": 1.0
+        }
+      },
+      "experiment": "estimator_ordering_shadow",
+      "goodput_rps": 64.14371175481142,
+      "iteration": 0,
+      "latency": {
+        "count": 1504,
+        "p50_us": 44909.5,
+        "p90_us": 55049.1
+      },
+      "ordering": {
+        "cross_key_comparable_pairs": 2676,
+        "cross_key_flip_fraction": 0.0,
+        "learned_pair_count": 4492,
+        "learned_pair_tie_fraction": 0.40427426536064115,
+        "learned_top_tie_fraction": 0.973404255319149,
+        "matched_deadline_groups": 188,
+        "pairwise_agreement_comparable_pairs": 2676,
+        "pairwise_reference_order_agreement": 1.0,
+        "realized_shared_finish_reference_agreement": 0.5418521816562778,
+        "realized_shared_start_reference_agreement": 0.554986642920748,
+        "same_key_ambiguity": {
+          "gt_10pct_slo": 0.11553323029366307,
+          "gt_1pct_slo": 0.3516228748068006,
+          "gt_25pct_slo": 0.0,
+          "gt_5pct_slo": 0.2971406491499227
+        },
+        "same_key_pairs": 2588,
+        "top_choice_reference_agreement": 0.3509878419452887
+      },
+      "policy": "eval_estimator_audit,est_mean_var",
+      "requests": 1504,
+      "rps": 100,
+      "shadow_feasibility": {
+        "learned": {
+          "count": 1504,
+          "false_positive_rate": 0.008307372793354102,
+          "fn": 477,
+          "fp": 8,
+          "precision": 0.8888888888888888,
+          "recall": 0.11829944547134935,
+          "tn": 955,
+          "tp": 64
+        },
+        "reference": {
+          "count": 1504,
+          "false_positive_rate": 0.0,
+          "fn": 265,
+          "fp": 0,
+          "precision": 1.0,
+          "recall": 0.5101663585951941,
+          "tn": 963,
+          "tp": 276
+        }
+      },
+      "shared_queue": {
+        "count": 1504,
+        "p50_us": 898.0,
+        "p90_us": 2251.2000000000003
+      },
+      "slo_attainment": 0.6402925531914894
+    },
+    {
+      "audit": {
+        "available": true,
+        "effective_key_count": 2,
+        "labeled_count": 4208,
+        "nae_p50": 0.02748,
+        "nae_p90": 0.10533800000000001,
+        "priority_nae_p50": 0.02748,
+        "priority_nae_p90": 0.10533800000000001,
+        "request_coverage": 1.0
+      },
+      "classes": {
+        "long": {
+          "count": 2170,
+          "latency": {
+            "count": 2170,
+            "p50_us": 51255.5,
+            "p90_us": 56290.3
+          },
+          "shared_queue": {
+            "count": 2170,
+            "p50_us": 528.0,
+            "p90_us": 1237.0
+          },
+          "slo_attainment": 0.371889400921659
+        },
+        "short": {
+          "count": 2038,
+          "latency": {
+            "count": 2038,
+            "p50_us": 27287.5,
+            "p90_us": 29721.1
+          },
+          "shared_queue": {
+            "count": 2038,
+            "p50_us": 977.5,
+            "p90_us": 2272.0999999999995
+          },
+          "slo_attainment": 1.0
+        }
+      },
+      "experiment": "estimator_ordering_shadow",
+      "goodput_rps": 188.92302784446528,
+      "iteration": 0,
+      "latency": {
+        "count": 4208,
+        "p50_us": 43328.5,
+        "p90_us": 54398.3
+      },
+      "ordering": {
+        "cross_key_comparable_pairs": 7350,
+        "cross_key_flip_fraction": 0.0,
+        "learned_pair_count": 12559,
+        "learned_pair_tie_fraction": 0.3838681423680229,
+        "learned_top_tie_fraction": 0.9543726235741445,
+        "matched_deadline_groups": 526,
+        "pairwise_agreement_comparable_pairs": 7738,
+        "pairwise_reference_order_agreement": 0.9758335487205997,
+        "realized_shared_finish_reference_agreement": 0.539692650688749,
+        "realized_shared_start_reference_agreement": 0.5666056214666773,
+        "same_key_ambiguity": {
+          "gt_10pct_slo": 0.11480075901328274,
+          "gt_1pct_slo": 0.3575494714014638,
+          "gt_25pct_slo": 0.0,
+          "gt_5pct_slo": 0.29601518026565465
+        },
+        "same_key_pairs": 7378,
+        "top_choice_reference_agreement": 0.37071790693463696
+      },
+      "policy": "eval_estimator_audit,est_mean_var",
+      "requests": 4208,
+      "rps": 280,
+      "shadow_feasibility": {
+        "learned": {
+          "count": 4208,
+          "false_positive_rate": 0.0017574692442882249,
+          "fn": 1294,
+          "fp": 5,
+          "precision": 0.9324324324324325,
+          "recall": 0.05062362435803375,
+          "tn": 2840,
+          "tp": 69
+        },
+        "reference": {
+          "count": 4208,
+          "false_positive_rate": 0.0,
+          "fn": 800,
+          "fp": 0,
+          "precision": 1.0,
+          "recall": 0.413059427732942,
+          "tn": 2845,
+          "tp": 563
+        }
+      },
+      "shared_queue": {
+        "count": 4208,
+        "p50_us": 693.5,
+        "p90_us": 1847.9000000000005
+      },
+      "slo_attainment": 0.6760931558935361
+    },
+    {
+      "audit": {
+        "available": true,
+        "effective_key_count": 2,
+        "labeled_count": 3304,
+        "nae_p50": 0.03986,
+        "nae_p90": 0.07212,
+        "priority_nae_p50": 0.39,
+        "priority_nae_p90": 0.59,
+        "request_coverage": 1.0
+      },
+      "classes": {
+        "long": {
+          "count": 1665,
+          "latency": {
+            "count": 1665,
+            "p50_us": 51853.0,
+            "p90_us": 56757.80000000001
+          },
+          "shared_queue": {
+            "count": 1665,
+            "p50_us": 1048.0,
+            "p90_us": 2481.0
+          },
+          "slo_attainment": 0.3291291291291291
+        },
+        "short": {
+          "count": 1639,
+          "latency": {
+            "count": 1639,
+            "p50_us": 27335.0,
+            "p90_us": 29289.0
+          },
+          "shared_queue": {
+            "count": 1639,
+            "p50_us": 958.0,
+            "p90_us": 2479.2
+          },
+          "slo_attainment": 1.0
+        }
+      },
+      "experiment": "estimator_ordering_visible",
+      "goodput_rps": 145.42240587573013,
+      "iteration": 0,
+      "latency": {
+        "count": 3304,
+        "p50_us": 42070.0,
+        "p90_us": 54428.2
+      },
+      "ordering": {
+        "cross_key_comparable_pairs": 0,
+        "cross_key_flip_fraction": null,
+        "learned_pair_count": 9740,
+        "learned_pair_tie_fraction": 1.0,
+        "learned_top_tie_fraction": 1.0,
+        "matched_deadline_groups": 413,
+        "pairwise_agreement_comparable_pairs": 0,
+        "pairwise_reference_order_agreement": null,
+        "realized_shared_finish_reference_agreement": 0.5007186858316222,
+        "realized_shared_start_reference_agreement": 0.4950718685831622,
+        "same_key_ambiguity": {
+          "gt_10pct_slo": 0.11494252873563218,
+          "gt_1pct_slo": 0.331103105163836,
+          "gt_25pct_slo": 0.0,
+          "gt_5pct_slo": 0.27723451706982327
+        },
+        "same_key_pairs": 5829,
+        "top_choice_reference_agreement": 0.174636803874092
+      },
+      "policy": "eval_estimator_audit,est_hist",
+      "requests": 3304,
+      "rps": 220,
+      "shadow_feasibility": {
+        "learned": {
+          "count": 3304,
+          "false_positive_rate": 0.0,
+          "fn": 1117,
+          "fp": 0,
+          "precision": null,
+          "recall": 0.0,
+          "tn": 2187,
+          "tp": 0
+        },
+        "reference": {
+          "count": 3304,
+          "false_positive_rate": 0.0,
+          "fn": 591,
+          "fp": 0,
+          "precision": 1.0,
+          "recall": 0.4709042076991943,
+          "tn": 2187,
+          "tp": 526
+        }
+      },
+      "shared_queue": {
+        "count": 3304,
+        "p50_us": 1007.5,
+        "p90_us": 2480.7000000000003
+      },
+      "slo_attainment": 0.6619249394673123
+    },
+    {
+      "audit": {
+        "available": true,
+        "effective_key_count": 2,
+        "labeled_count": 3304,
+        "nae_p50": 0.02652,
+        "nae_p90": 0.10088800000000012,
+        "priority_nae_p50": 0.02652,
+        "priority_nae_p90": 0.10088800000000012,
+        "request_coverage": 1.0
+      },
+      "classes": {
+        "long": {
+          "count": 1646,
+          "latency": {
+            "count": 1646,
+            "p50_us": 51388.0,
+            "p90_us": 56282.5
+          },
+          "shared_queue": {
+            "count": 1646,
+            "p50_us": 592.5,
+            "p90_us": 1320.0
+          },
+          "slo_attainment": 0.36512758201701095
+        },
+        "short": {
+          "count": 1658,
+          "latency": {
+            "count": 1658,
+            "p50_us": 27486.5,
+            "p90_us": 29499.2
+          },
+          "shared_queue": {
+            "count": 1658,
+            "p50_us": 1103.5,
+            "p90_us": 2418.3
+          },
+          "slo_attainment": 1.0
+        }
+      },
+      "experiment": "estimator_ordering_visible",
+      "goodput_rps": 150.22229108611248,
+      "iteration": 0,
+      "latency": {
+        "count": 3304,
+        "p50_us": 31532.5,
+        "p90_us": 54129.7
+      },
+      "ordering": {
+        "cross_key_comparable_pairs": 5794,
+        "cross_key_flip_fraction": 0.0,
+        "learned_pair_count": 9781,
+        "learned_pair_tie_fraction": 0.4076270320008179,
+        "learned_top_tie_fraction": 0.9782082324455206,
+        "matched_deadline_groups": 413,
+        "pairwise_agreement_comparable_pairs": 5794,
+        "pairwise_reference_order_agreement": 1.0,
+        "realized_shared_finish_reference_agreement": 0.5460586852060116,
+        "realized_shared_start_reference_agreement": 0.5826602596871485,
+        "same_key_ambiguity": {
+          "gt_10pct_slo": 0.10173310225303293,
+          "gt_1pct_slo": 0.3369150779896014,
+          "gt_25pct_slo": 0.0,
+          "gt_5pct_slo": 0.27642980935875217
+        },
+        "same_key_pairs": 5770,
+        "top_choice_reference_agreement": 0.3841000807102502
+      },
+      "policy": "eval_estimator_audit,est_mean_var",
+      "requests": 3304,
+      "rps": 220,
+      "shadow_feasibility": {
+        "learned": {
+          "count": 3304,
+          "false_positive_rate": 0.0026560424966799467,
+          "fn": 973,
+          "fp": 6,
+          "precision": 0.9230769230769231,
+          "recall": 0.06889952153110047,
+          "tn": 2253,
+          "tp": 72
+        },
+        "reference": {
+          "count": 3304,
+          "false_positive_rate": 0.0,
+          "fn": 584,
+          "fp": 0,
+          "precision": 1.0,
+          "recall": 0.4411483253588517,
+          "tn": 2259,
+          "tp": 461
+        }
+      },
+      "shared_queue": {
+        "count": 3304,
+        "p50_us": 788.5,
+        "p90_us": 2078.100000000001
+      },
+      "slo_attainment": 0.6837167070217918
+    },
+    {
+      "audit": {
+        "available": true,
+        "effective_key_count": 2,
+        "labeled_count": 3304,
+        "nae_p50": 0.0396,
+        "nae_p90": 0.15098,
+        "priority_nae_p50": 0.39,
+        "priority_nae_p90": 0.51,
+        "request_coverage": 1.0
+      },
+      "classes": {
+        "long": {
+          "count": 1654,
+          "latency": {
+            "count": 1654,
+            "p50_us": 51470.5,
+            "p90_us": 56448.4
+          },
+          "shared_queue": {
+            "count": 1654,
+            "p50_us": 974.0,
+            "p90_us": 2458.7
+          },
+          "slo_attainment": 0.3524788391777509
+        },
+        "short": {
+          "count": 1650,
+          "latency": {
+            "count": 1650,
+            "p50_us": 27228.0,
+            "p90_us": 29248.1
+          },
+          "shared_queue": {
+            "count": 1650,
+            "p50_us": 986.0,
+            "p90_us": 2425.5000000000005
+          },
+          "slo_attainment": 1.0
+        }
+      },
+      "experiment": "estimator_ordering_visible",
+      "goodput_rps": 148.4869360754763,
+      "iteration": 0,
+      "latency": {
+        "count": 3304,
+        "p50_us": 40509.0,
+        "p90_us": 54273.100000000006
+      },
+      "ordering": {
+        "cross_key_comparable_pairs": 0,
+        "cross_key_flip_fraction": null,
+        "learned_pair_count": 9778,
+        "learned_pair_tie_fraction": 1.0,
+        "learned_top_tie_fraction": 1.0,
+        "matched_deadline_groups": 413,
+        "pairwise_agreement_comparable_pairs": 0,
+        "pairwise_reference_order_agreement": null,
+        "realized_shared_finish_reference_agreement": 0.5022499488647986,
+        "realized_shared_start_reference_agreement": 0.5013295152382901,
+        "same_key_ambiguity": {
+          "gt_10pct_slo": 0.11571233810497614,
+          "gt_1pct_slo": 0.3486707566462168,
+          "gt_25pct_slo": 0.0,
+          "gt_5pct_slo": 0.288173142467621
+        },
+        "same_key_pairs": 5868,
+        "top_choice_reference_agreement": 0.1673728813559322
+      },
+      "policy": "eval_estimator_audit,est_rms",
+      "requests": 3304,
+      "rps": 220,
+      "shadow_feasibility": {
+        "learned": {
+          "count": 3304,
+          "false_positive_rate": 0.0,
+          "fn": 1071,
+          "fp": 0,
+          "precision": null,
+          "recall": 0.0,
+          "tn": 2233,
+          "tp": 0
+        },
+        "reference": {
+          "count": 3304,
+          "false_positive_rate": 0.0,
+          "fn": 570,
+          "fp": 0,
+          "precision": 1.0,
+          "recall": 0.4677871148459384,
+          "tn": 2233,
+          "tp": 501
+        }
+      },
+      "shared_queue": {
+        "count": 3304,
+        "p50_us": 977.5,
+        "p90_us": 2439.0
+      },
+      "slo_attainment": 0.6758474576271186
+    },
+    {
+      "audit": {
+        "available": false,
+        "effective_key_count": null,
+        "labeled_count": 0,
+        "nae_p50": null,
+        "nae_p90": null,
+        "priority_nae_p50": null,
+        "priority_nae_p90": null,
+        "request_coverage": 0.0
+      },
+      "classes": {
+        "long": {
+          "count": 1631,
+          "latency": {
+            "count": 1631,
+            "p50_us": 51321.0,
+            "p90_us": 56246.0
+          },
+          "shared_queue": {
+            "count": 1631,
+            "p50_us": 630.0,
+            "p90_us": 1704.0
+          },
+          "slo_attainment": 0.3666462293071735
+        },
+        "short": {
+          "count": 1673,
+          "latency": {
+            "count": 1673,
+            "p50_us": 27433.0,
+            "p90_us": 29384.0
+          },
+          "shared_queue": {
+            "count": 1673,
+            "p50_us": 1225.0,
+            "p90_us": 2717.0
+          },
+          "slo_attainment": 1.0
+        }
+      },
+      "experiment": "estimator_ordering_visible",
+      "goodput_rps": 151.00376611770713,
+      "iteration": 0,
+      "latency": {
+        "count": 3304,
+        "p50_us": 30621.0,
+        "p90_us": 54118.600000000006
+      },
+      "ordering": {
+        "cross_key_comparable_pairs": 0,
+        "cross_key_flip_fraction": null,
+        "learned_pair_count": 0,
+        "learned_pair_tie_fraction": null,
+        "learned_top_tie_fraction": null,
+        "matched_deadline_groups": 413,
+        "pairwise_agreement_comparable_pairs": 0,
+        "pairwise_reference_order_agreement": null,
+        "realized_shared_finish_reference_agreement": 0.5818647540983607,
+        "realized_shared_start_reference_agreement": 0.6367827868852459,
+        "same_key_ambiguity": {
+          "gt_10pct_slo": null,
+          "gt_1pct_slo": null,
+          "gt_25pct_slo": null,
+          "gt_5pct_slo": null
+        },
+        "same_key_pairs": 0,
+        "top_choice_reference_agreement": null
+      },
+      "policy": "eval_oracle_continuation",
+      "requests": 3304,
+      "rps": 220,
+      "shadow_feasibility": {
+        "learned": {
+          "count": 0,
+          "false_positive_rate": null,
+          "fn": 0,
+          "fp": 0,
+          "precision": null,
+          "recall": null,
+          "tn": 0,
+          "tp": 0
+        },
+        "reference": {
+          "count": 0,
+          "false_positive_rate": null,
+          "fn": 0,
+          "fp": 0,
+          "precision": null,
+          "recall": null,
+          "tn": 0,
+          "tp": 0
+        }
+      },
+      "shared_queue": {
+        "count": 3304,
+        "p50_us": 862.0,
+        "p90_us": 2358.7000000000003
+      },
+      "slo_attainment": 0.6873486682808717
+    },
+    {
+      "audit": {
+        "available": false,
+        "effective_key_count": null,
+        "labeled_count": 0,
+        "nae_p50": null,
+        "nae_p90": null,
+        "priority_nae_p50": null,
+        "priority_nae_p90": null,
+        "request_coverage": 0.0
+      },
+      "classes": {
+        "long": {
+          "count": 1639,
+          "latency": {
+            "count": 1639,
+            "p50_us": 51402.0,
+            "p90_us": 56448.0
+          },
+          "shared_queue": {
+            "count": 1639,
+            "p50_us": 525.0,
+            "p90_us": 1305.2
+          },
+          "slo_attainment": 0.3563148261134838
+        },
+        "short": {
+          "count": 1665,
+          "latency": {
+            "count": 1665,
+            "p50_us": 27352.0,
+            "p90_us": 29361.6
+          },
+          "shared_queue": {
+            "count": 1665,
+            "p50_us": 1133.0,
+            "p90_us": 2202.6000000000004
+          },
+          "slo_attainment": 1.0
+        }
+      },
+      "experiment": "estimator_ordering_visible",
+      "goodput_rps": 149.56627774557532,
+      "iteration": 0,
+      "latency": {
+        "count": 3304,
+        "p50_us": 30914.5,
+        "p90_us": 54111.600000000006
+      },
+      "ordering": {
+        "cross_key_comparable_pairs": 0,
+        "cross_key_flip_fraction": null,
+        "learned_pair_count": 0,
+        "learned_pair_tie_fraction": null,
+        "learned_top_tie_fraction": null,
+        "matched_deadline_groups": 413,
+        "pairwise_agreement_comparable_pairs": 0,
+        "pairwise_reference_order_agreement": null,
+        "realized_shared_finish_reference_agreement": 0.5609580592105263,
+        "realized_shared_start_reference_agreement": 0.6064967105263158,
+        "same_key_ambiguity": {
+          "gt_10pct_slo": null,
+          "gt_1pct_slo": null,
+          "gt_25pct_slo": null,
+          "gt_5pct_slo": null
+        },
+        "same_key_pairs": 0,
+        "top_choice_reference_agreement": null
+      },
+      "policy": "sched_pred,est_mean_var",
+      "requests": 3304,
+      "rps": 220,
+      "shadow_feasibility": {
+        "learned": {
+          "count": 0,
+          "false_positive_rate": null,
+          "fn": 0,
+          "fp": 0,
+          "precision": null,
+          "recall": null,
+          "tn": 0,
+          "tp": 0
+        },
+        "reference": {
+          "count": 0,
+          "false_positive_rate": null,
+          "fn": 0,
+          "fp": 0,
+          "precision": null,
+          "recall": null,
+          "tn": 0,
+          "tp": 0
+        }
+      },
+      "shared_queue": {
+        "count": 3304,
+        "p50_us": 756.0,
+        "p90_us": 1848.1000000000008
+      },
+      "slo_attainment": 0.6806900726392252
+    },
+    {
+      "audit": {
+        "available": false,
+        "effective_key_count": null,
+        "labeled_count": 0,
+        "nae_p50": null,
+        "nae_p90": null,
+        "priority_nae_p50": null,
+        "priority_nae_p90": null,
+        "request_coverage": 0.0
+      },
+      "classes": {
+        "long": {
+          "count": 1705,
+          "latency": {
+            "count": 1705,
+            "p50_us": 51299.0,
+            "p90_us": 56009.600000000006
+          },
+          "shared_queue": {
+            "count": 1705,
+            "p50_us": 896.0,
+            "p90_us": 2123.8
+          },
+          "slo_attainment": 0.3519061583577713
+        },
+        "short": {
+          "count": 1599,
+          "latency": {
+            "count": 1599,
+            "p50_us": 26888.0,
+            "p90_us": 28810.4
+          },
+          "shared_queue": {
+            "count": 1599,
+            "p50_us": 901.0,
+            "p90_us": 2106.6000000000004
+          },
+          "slo_attainment": 1.0
+        }
+      },
+      "experiment": "estimator_ordering_visible",
+      "goodput_rps": 146.26371047687158,
+      "iteration": 0,
+      "latency": {
+        "count": 3304,
+        "p50_us": 44066.5,
+        "p90_us": 54057.9
+      },
+      "ordering": {
+        "cross_key_comparable_pairs": 0,
+        "cross_key_flip_fraction": null,
+        "learned_pair_count": 0,
+        "learned_pair_tie_fraction": null,
+        "learned_top_tie_fraction": null,
+        "matched_deadline_groups": 413,
+        "pairwise_agreement_comparable_pairs": 0,
+        "pairwise_reference_order_agreement": null,
+        "realized_shared_finish_reference_agreement": 0.491875771287536,
+        "realized_shared_start_reference_agreement": 0.49362402303578773,
+        "same_key_ambiguity": {
+          "gt_10pct_slo": null,
+          "gt_1pct_slo": null,
+          "gt_25pct_slo": null,
+          "gt_5pct_slo": null
+        },
+        "same_key_pairs": 0,
+        "top_choice_reference_agreement": null
+      },
+      "policy": "sched_slo",
+      "requests": 3304,
+      "rps": 220,
+      "shadow_feasibility": {
+        "learned": {
+          "count": 0,
+          "false_positive_rate": null,
+          "fn": 0,
+          "fp": 0,
+          "precision": null,
+          "recall": null,
+          "tn": 0,
+          "tp": 0
+        },
+        "reference": {
+          "count": 0,
+          "false_positive_rate": null,
+          "fn": 0,
+          "fp": 0,
+          "precision": null,
+          "recall": null,
+          "tn": 0,
+          "tp": 0
+        }
+      },
+      "shared_queue": {
+        "count": 3304,
+        "p50_us": 897.5,
+        "p90_us": 2117.0
+      },
+      "slo_attainment": 0.6655569007263923
+    }
+  ],
+  "summary": [
+    {
+      "experiment": "estimator_ordering_corrupt_0",
+      "iterations": 1,
+      "metrics": {
+        "audit_coverage": {
+          "ci95": null,
+          "mean": 0.0,
+          "n": 1
+        },
+        "cross_key_flip_fraction": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "goodput_rps": {
+          "ci95": null,
+          "mean": 149.1396642755117,
+          "n": 1
+        },
+        "latency_p50_us": {
+          "ci95": null,
+          "mean": 43565.5,
+          "n": 1
+        },
+        "latency_p90_us": {
+          "ci95": null,
+          "mean": 54081.40000000001,
+          "n": 1
+        },
+        "learned_tie_fraction": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "long_slo_attainment": {
+          "ci95": null,
+          "mean": 0.3692033293697979,
+          "n": 1
+        },
+        "nae_p50": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "nae_p90": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "pairwise_agreement": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "priority_nae_p50": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "priority_nae_p90": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "realized_finish_agreement": {
+          "ci95": null,
+          "mean": 0.5839729812711084,
+          "n": 1
+        },
+        "realized_start_agreement": {
+          "ci95": null,
+          "mean": 0.6499846484494934,
+          "n": 1
+        },
+        "same_key_ambiguity_10pct": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "same_key_ambiguity_1pct": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "same_key_ambiguity_25pct": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "same_key_ambiguity_5pct": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shadow_learned_fpr": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shadow_learned_precision": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shadow_learned_recall": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shadow_reference_fpr": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shadow_reference_precision": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shadow_reference_recall": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shared_queue_p50_us": {
+          "ci95": null,
+          "mean": 888.5,
+          "n": 1
+        },
+        "shared_queue_p90_us": {
+          "ci95": null,
+          "mean": 2280.4000000000005,
+          "n": 1
+        },
+        "short_slo_attainment": {
+          "ci95": null,
+          "mean": 1.0,
+          "n": 1
+        },
+        "top_choice_agreement": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        }
+      },
+      "policy": "eval_oracle_continuation",
+      "rps": 220
+    },
+    {
+      "experiment": "estimator_ordering_corrupt_10",
+      "iterations": 1,
+      "metrics": {
+        "audit_coverage": {
+          "ci95": null,
+          "mean": 0.0,
+          "n": 1
+        },
+        "cross_key_flip_fraction": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "goodput_rps": {
+          "ci95": null,
+          "mean": 152.6261574898444,
+          "n": 1
+        },
+        "latency_p50_us": {
+          "ci95": null,
+          "mean": 41960.0,
+          "n": 1
+        },
+        "latency_p90_us": {
+          "ci95": null,
+          "mean": 53763.4,
+          "n": 1
+        },
+        "learned_tie_fraction": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "long_slo_attainment": {
+          "ci95": null,
+          "mean": 0.3910681955340978,
+          "n": 1
+        },
+        "nae_p50": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "nae_p90": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "pairwise_agreement": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "priority_nae_p50": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "priority_nae_p90": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "realized_finish_agreement": {
+          "ci95": null,
+          "mean": 0.5830685661576305,
+          "n": 1
+        },
+        "realized_start_agreement": {
+          "ci95": null,
+          "mean": 0.6307266577841549,
+          "n": 1
+        },
+        "same_key_ambiguity_10pct": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "same_key_ambiguity_1pct": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "same_key_ambiguity_25pct": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "same_key_ambiguity_5pct": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shadow_learned_fpr": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shadow_learned_precision": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shadow_learned_recall": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shadow_reference_fpr": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shadow_reference_precision": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shadow_reference_recall": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shared_queue_p50_us": {
+          "ci95": null,
+          "mean": 872.0,
+          "n": 1
+        },
+        "shared_queue_p90_us": {
+          "ci95": null,
+          "mean": 2180.7000000000003,
+          "n": 1
+        },
+        "short_slo_attainment": {
+          "ci95": null,
+          "mean": 1.0,
+          "n": 1
+        },
+        "top_choice_agreement": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        }
+      },
+      "policy": "eval_oracle_continuation",
+      "rps": 220
+    },
+    {
+      "experiment": "estimator_ordering_corrupt_25",
+      "iterations": 1,
+      "metrics": {
+        "audit_coverage": {
+          "ci95": null,
+          "mean": 0.0,
+          "n": 1
+        },
+        "cross_key_flip_fraction": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "goodput_rps": {
+          "ci95": null,
+          "mean": 151.5921196842068,
+          "n": 1
+        },
+        "latency_p50_us": {
+          "ci95": null,
+          "mean": 41069.0,
+          "n": 1
+        },
+        "latency_p90_us": {
+          "ci95": null,
+          "mean": 54270.600000000006,
+          "n": 1
+        },
+        "learned_tie_fraction": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "long_slo_attainment": {
+          "ci95": null,
+          "mean": 0.3825301204819277,
+          "n": 1
+        },
+        "nae_p50": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "nae_p90": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "pairwise_agreement": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "priority_nae_p50": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "priority_nae_p90": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "realized_finish_agreement": {
+          "ci95": null,
+          "mean": 0.5901990811638591,
+          "n": 1
+        },
+        "realized_start_agreement": {
+          "ci95": null,
+          "mean": 0.584073506891271,
+          "n": 1
+        },
+        "same_key_ambiguity_10pct": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "same_key_ambiguity_1pct": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "same_key_ambiguity_25pct": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "same_key_ambiguity_5pct": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shadow_learned_fpr": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shadow_learned_precision": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shadow_learned_recall": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shadow_reference_fpr": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shadow_reference_precision": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shadow_reference_recall": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shared_queue_p50_us": {
+          "ci95": null,
+          "mean": 833.0,
+          "n": 1
+        },
+        "shared_queue_p90_us": {
+          "ci95": null,
+          "mean": 2119.0,
+          "n": 1
+        },
+        "short_slo_attainment": {
+          "ci95": null,
+          "mean": 1.0,
+          "n": 1
+        },
+        "top_choice_agreement": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        }
+      },
+      "policy": "eval_oracle_continuation",
+      "rps": 220
+    },
+    {
+      "experiment": "estimator_ordering_corrupt_50",
+      "iterations": 1,
+      "metrics": {
+        "audit_coverage": {
+          "ci95": null,
+          "mean": 0.0,
+          "n": 1
+        },
+        "cross_key_flip_fraction": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "goodput_rps": {
+          "ci95": null,
+          "mean": 150.4625225926595,
+          "n": 1
+        },
+        "latency_p50_us": {
+          "ci95": null,
+          "mean": 43521.5,
+          "n": 1
+        },
+        "latency_p90_us": {
+          "ci95": null,
+          "mean": 53616.9,
+          "n": 1
+        },
+        "learned_tie_fraction": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "long_slo_attainment": {
+          "ci95": null,
+          "mean": 0.37902264600715135,
+          "n": 1
+        },
+        "nae_p50": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "nae_p90": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "pairwise_agreement": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "priority_nae_p50": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "priority_nae_p90": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "realized_finish_agreement": {
+          "ci95": null,
+          "mean": 0.581027264372511,
+          "n": 1
+        },
+        "realized_start_agreement": {
+          "ci95": null,
+          "mean": 0.5139385275196569,
+          "n": 1
+        },
+        "same_key_ambiguity_10pct": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "same_key_ambiguity_1pct": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "same_key_ambiguity_25pct": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "same_key_ambiguity_5pct": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shadow_learned_fpr": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shadow_learned_precision": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shadow_learned_recall": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shadow_reference_fpr": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shadow_reference_precision": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shadow_reference_recall": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shared_queue_p50_us": {
+          "ci95": null,
+          "mean": 834.5,
+          "n": 1
+        },
+        "shared_queue_p90_us": {
+          "ci95": null,
+          "mean": 1924.4000000000005,
+          "n": 1
+        },
+        "short_slo_attainment": {
+          "ci95": null,
+          "mean": 1.0,
+          "n": 1
+        },
+        "top_choice_agreement": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        }
+      },
+      "policy": "eval_oracle_continuation",
+      "rps": 220
+    },
+    {
+      "experiment": "estimator_ordering_hidden",
+      "iterations": 1,
+      "metrics": {
+        "audit_coverage": {
+          "ci95": null,
+          "mean": 1.0,
+          "n": 1
+        },
+        "cross_key_flip_fraction": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "goodput_rps": {
+          "ci95": null,
+          "mean": 151.4727667857326,
+          "n": 1
+        },
+        "latency_p50_us": {
+          "ci95": null,
+          "mean": 31026.0,
+          "n": 1
+        },
+        "latency_p90_us": {
+          "ci95": null,
+          "mean": 54118.70000000001,
+          "n": 1
+        },
+        "learned_tie_fraction": {
+          "ci95": null,
+          "mean": 1.0,
+          "n": 1
+        },
+        "long_slo_attainment": {
+          "ci95": null,
+          "mean": 0.3759124087591241,
+          "n": 1
+        },
+        "nae_p50": {
+          "ci95": null,
+          "mean": 0.1901,
+          "n": 1
+        },
+        "nae_p90": {
+          "ci95": null,
+          "mean": 0.41745600000000005,
+          "n": 1
+        },
+        "pairwise_agreement": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "priority_nae_p50": {
+          "ci95": null,
+          "mean": 0.1901,
+          "n": 1
+        },
+        "priority_nae_p90": {
+          "ci95": null,
+          "mean": 0.41745600000000005,
+          "n": 1
+        },
+        "realized_finish_agreement": {
+          "ci95": null,
+          "mean": 0.48812339331619536,
+          "n": 1
+        },
+        "realized_start_agreement": {
+          "ci95": null,
+          "mean": 0.4917223650385604,
+          "n": 1
+        },
+        "same_key_ambiguity_10pct": {
+          "ci95": null,
+          "mean": 0.5549982704946386,
+          "n": 1
+        },
+        "same_key_ambiguity_1pct": {
+          "ci95": null,
+          "mean": 0.6708751297129021,
+          "n": 1
+        },
+        "same_key_ambiguity_25pct": {
+          "ci95": null,
+          "mean": 0.4982704946385334,
+          "n": 1
+        },
+        "same_key_ambiguity_5pct": {
+          "ci95": null,
+          "mean": 0.6412141127637496,
+          "n": 1
+        },
+        "shadow_learned_fpr": {
+          "ci95": null,
+          "mean": 0.0,
+          "n": 1
+        },
+        "shadow_learned_precision": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shadow_learned_recall": {
+          "ci95": null,
+          "mean": 0.0,
+          "n": 1
+        },
+        "shadow_reference_fpr": {
+          "ci95": null,
+          "mean": 0.0,
+          "n": 1
+        },
+        "shadow_reference_precision": {
+          "ci95": null,
+          "mean": 1.0,
+          "n": 1
+        },
+        "shadow_reference_recall": {
+          "ci95": null,
+          "mean": 0.4727095516569201,
+          "n": 1
+        },
+        "shared_queue_p50_us": {
+          "ci95": null,
+          "mean": 700.5,
+          "n": 1
+        },
+        "shared_queue_p90_us": {
+          "ci95": null,
+          "mean": 1615.4000000000005,
+          "n": 1
+        },
+        "short_slo_attainment": {
+          "ci95": null,
+          "mean": 1.0,
+          "n": 1
+        },
+        "top_choice_agreement": {
+          "ci95": null,
+          "mean": 0.17433414043583534,
+          "n": 1
+        }
+      },
+      "policy": "eval_estimator_audit,est_mean_var",
+      "rps": 220
+    },
+    {
+      "experiment": "estimator_ordering_hidden",
+      "iterations": 1,
+      "metrics": {
+        "audit_coverage": {
+          "ci95": null,
+          "mean": 0.0,
+          "n": 1
+        },
+        "cross_key_flip_fraction": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "goodput_rps": {
+          "ci95": null,
+          "mean": 152.55911599241168,
+          "n": 1
+        },
+        "latency_p50_us": {
+          "ci95": null,
+          "mean": 41008.0,
+          "n": 1
+        },
+        "latency_p90_us": {
+          "ci95": null,
+          "mean": 53868.100000000006,
+          "n": 1
+        },
+        "learned_tie_fraction": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "long_slo_attainment": {
+          "ci95": null,
+          "mean": 0.39009661835748793,
+          "n": 1
+        },
+        "nae_p50": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "nae_p90": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "pairwise_agreement": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "priority_nae_p50": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "priority_nae_p90": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "realized_finish_agreement": {
+          "ci95": null,
+          "mean": 0.5732007381587041,
+          "n": 1
+        },
+        "realized_start_agreement": {
+          "ci95": null,
+          "mean": 0.6571662907525118,
+          "n": 1
+        },
+        "same_key_ambiguity_10pct": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "same_key_ambiguity_1pct": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "same_key_ambiguity_25pct": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "same_key_ambiguity_5pct": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shadow_learned_fpr": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shadow_learned_precision": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shadow_learned_recall": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shadow_reference_fpr": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shadow_reference_precision": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shadow_reference_recall": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shared_queue_p50_us": {
+          "ci95": null,
+          "mean": 854.5,
+          "n": 1
+        },
+        "shared_queue_p90_us": {
+          "ci95": null,
+          "mean": 2143.100000000001,
+          "n": 1
+        },
+        "short_slo_attainment": {
+          "ci95": null,
+          "mean": 1.0,
+          "n": 1
+        },
+        "top_choice_agreement": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        }
+      },
+      "policy": "eval_oracle_continuation",
+      "rps": 220
+    },
+    {
+      "experiment": "estimator_ordering_hidden",
+      "iterations": 1,
+      "metrics": {
+        "audit_coverage": {
+          "ci95": null,
+          "mean": 0.0,
+          "n": 1
+        },
+        "cross_key_flip_fraction": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "goodput_rps": {
+          "ci95": null,
+          "mean": 146.12724571748444,
+          "n": 1
+        },
+        "latency_p50_us": {
+          "ci95": null,
+          "mean": 44188.0,
+          "n": 1
+        },
+        "latency_p90_us": {
+          "ci95": null,
+          "mean": 53988.8,
+          "n": 1
+        },
+        "learned_tie_fraction": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "long_slo_attainment": {
+          "ci95": null,
+          "mean": 0.3497942386831276,
+          "n": 1
+        },
+        "nae_p50": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "nae_p90": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "pairwise_agreement": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "priority_nae_p50": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "priority_nae_p90": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "realized_finish_agreement": {
+          "ci95": null,
+          "mean": 0.49856144677353065,
+          "n": 1
+        },
+        "realized_start_agreement": {
+          "ci95": null,
+          "mean": 0.4913686806411837,
+          "n": 1
+        },
+        "same_key_ambiguity_10pct": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "same_key_ambiguity_1pct": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "same_key_ambiguity_25pct": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "same_key_ambiguity_5pct": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shadow_learned_fpr": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shadow_learned_precision": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shadow_learned_recall": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shadow_reference_fpr": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shadow_reference_precision": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shadow_reference_recall": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shared_queue_p50_us": {
+          "ci95": null,
+          "mean": 622.5,
+          "n": 1
+        },
+        "shared_queue_p90_us": {
+          "ci95": null,
+          "mean": 1578.0,
+          "n": 1
+        },
+        "short_slo_attainment": {
+          "ci95": null,
+          "mean": 1.0,
+          "n": 1
+        },
+        "top_choice_agreement": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        }
+      },
+      "policy": "sched_pred,est_mean_var",
+      "rps": 220
+    },
+    {
+      "experiment": "estimator_ordering_hidden",
+      "iterations": 1,
+      "metrics": {
+        "audit_coverage": {
+          "ci95": null,
+          "mean": 0.0,
+          "n": 1
+        },
+        "cross_key_flip_fraction": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "goodput_rps": {
+          "ci95": null,
+          "mean": 149.1684970233137,
+          "n": 1
+        },
+        "latency_p50_us": {
+          "ci95": null,
+          "mean": 30647.0,
+          "n": 1
+        },
+        "latency_p90_us": {
+          "ci95": null,
+          "mean": 54162.6,
+          "n": 1
+        },
+        "learned_tie_fraction": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "long_slo_attainment": {
+          "ci95": null,
+          "mean": 0.3510703363914373,
+          "n": 1
+        },
+        "nae_p50": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "nae_p90": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "pairwise_agreement": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "priority_nae_p50": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "priority_nae_p90": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "realized_finish_agreement": {
+          "ci95": null,
+          "mean": 0.5036960985626283,
+          "n": 1
+        },
+        "realized_start_agreement": {
+          "ci95": null,
+          "mean": 0.4984599589322382,
+          "n": 1
+        },
+        "same_key_ambiguity_10pct": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "same_key_ambiguity_1pct": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "same_key_ambiguity_25pct": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "same_key_ambiguity_5pct": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shadow_learned_fpr": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shadow_learned_precision": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shadow_learned_recall": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shadow_reference_fpr": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shadow_reference_precision": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shadow_reference_recall": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shared_queue_p50_us": {
+          "ci95": null,
+          "mean": 925.0,
+          "n": 1
+        },
+        "shared_queue_p90_us": {
+          "ci95": null,
+          "mean": 2093.4000000000005,
+          "n": 1
+        },
+        "short_slo_attainment": {
+          "ci95": null,
+          "mean": 1.0,
+          "n": 1
+        },
+        "top_choice_agreement": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        }
+      },
+      "policy": "sched_slo",
+      "rps": 220
+    },
+    {
+      "experiment": "estimator_ordering_partial",
+      "iterations": 1,
+      "metrics": {
+        "audit_coverage": {
+          "ci95": null,
+          "mean": 1.0,
+          "n": 1
+        },
+        "cross_key_flip_fraction": {
+          "ci95": null,
+          "mean": 0.13932934754354043,
+          "n": 1
+        },
+        "goodput_rps": {
+          "ci95": null,
+          "mean": 152.11367168016568,
+          "n": 1
+        },
+        "latency_p50_us": {
+          "ci95": null,
+          "mean": 30870.0,
+          "n": 1
+        },
+        "latency_p90_us": {
+          "ci95": null,
+          "mean": 54164.9,
+          "n": 1
+        },
+        "learned_tie_fraction": {
+          "ci95": null,
+          "mean": 0.6019658561821004,
+          "n": 1
+        },
+        "long_slo_attainment": {
+          "ci95": null,
+          "mean": 0.37683823529411764,
+          "n": 1
+        },
+        "nae_p50": {
+          "ci95": null,
+          "mean": 0.06855,
+          "n": 1
+        },
+        "nae_p90": {
+          "ci95": null,
+          "mean": 0.40675400000000006,
+          "n": 1
+        },
+        "pairwise_agreement": {
+          "ci95": null,
+          "mean": 0.8606706524564596,
+          "n": 1
+        },
+        "priority_nae_p50": {
+          "ci95": null,
+          "mean": 0.06855,
+          "n": 1
+        },
+        "priority_nae_p90": {
+          "ci95": null,
+          "mean": 0.40675400000000006,
+          "n": 1
+        },
+        "realized_finish_agreement": {
+          "ci95": null,
+          "mean": 0.5119503362648733,
+          "n": 1
+        },
+        "realized_start_agreement": {
+          "ci95": null,
+          "mean": 0.5291257113295396,
+          "n": 1
+        },
+        "same_key_ambiguity_10pct": {
+          "ci95": null,
+          "mean": 0.44964902807775375,
+          "n": 1
+        },
+        "same_key_ambiguity_1pct": {
+          "ci95": null,
+          "mean": 0.5530507559395248,
+          "n": 1
+        },
+        "same_key_ambiguity_25pct": {
+          "ci95": null,
+          "mean": 0.4033477321814255,
+          "n": 1
+        },
+        "same_key_ambiguity_5pct": {
+          "ci95": null,
+          "mean": 0.5174136069114471,
+          "n": 1
+        },
+        "shadow_learned_fpr": {
+          "ci95": null,
+          "mean": 0.0008745080891998251,
+          "n": 1
+        },
+        "shadow_learned_precision": {
+          "ci95": null,
+          "mean": 0.9130434782608695,
+          "n": 1
+        },
+        "shadow_learned_recall": {
+          "ci95": null,
+          "mean": 0.02064896755162242,
+          "n": 1
+        },
+        "shadow_reference_fpr": {
+          "ci95": null,
+          "mean": 0.0,
+          "n": 1
+        },
+        "shadow_reference_precision": {
+          "ci95": null,
+          "mean": 1.0,
+          "n": 1
+        },
+        "shadow_reference_recall": {
+          "ci95": null,
+          "mean": 0.44936086529006886,
+          "n": 1
+        },
+        "shared_queue_p50_us": {
+          "ci95": null,
+          "mean": 767.5,
+          "n": 1
+        },
+        "shared_queue_p90_us": {
+          "ci95": null,
+          "mean": 1702.0,
+          "n": 1
+        },
+        "short_slo_attainment": {
+          "ci95": null,
+          "mean": 1.0,
+          "n": 1
+        },
+        "top_choice_agreement": {
+          "ci95": null,
+          "mean": 0.3390234059725585,
+          "n": 1
+        }
+      },
+      "policy": "eval_estimator_audit,est_mean_var",
+      "rps": 220
+    },
+    {
+      "experiment": "estimator_ordering_partial",
+      "iterations": 1,
+      "metrics": {
+        "audit_coverage": {
+          "ci95": null,
+          "mean": 0.0,
+          "n": 1
+        },
+        "cross_key_flip_fraction": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "goodput_rps": {
+          "ci95": null,
+          "mean": 155.45684097868926,
+          "n": 1
+        },
+        "latency_p50_us": {
+          "ci95": null,
+          "mean": 30863.0,
+          "n": 1
+        },
+        "latency_p90_us": {
+          "ci95": null,
+          "mean": 53456.9,
+          "n": 1
+        },
+        "learned_tie_fraction": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "long_slo_attainment": {
+          "ci95": null,
+          "mean": 0.41383495145631066,
+          "n": 1
+        },
+        "nae_p50": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "nae_p90": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "pairwise_agreement": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "priority_nae_p50": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "priority_nae_p90": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "realized_finish_agreement": {
+          "ci95": null,
+          "mean": 0.5956468424279583,
+          "n": 1
+        },
+        "realized_start_agreement": {
+          "ci95": null,
+          "mean": 0.6515430206417331,
+          "n": 1
+        },
+        "same_key_ambiguity_10pct": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "same_key_ambiguity_1pct": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "same_key_ambiguity_25pct": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "same_key_ambiguity_5pct": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shadow_learned_fpr": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shadow_learned_precision": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shadow_learned_recall": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shadow_reference_fpr": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shadow_reference_precision": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shadow_reference_recall": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shared_queue_p50_us": {
+          "ci95": null,
+          "mean": 857.0,
+          "n": 1
+        },
+        "shared_queue_p90_us": {
+          "ci95": null,
+          "mean": 2287.5000000000014,
+          "n": 1
+        },
+        "short_slo_attainment": {
+          "ci95": null,
+          "mean": 1.0,
+          "n": 1
+        },
+        "top_choice_agreement": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        }
+      },
+      "policy": "eval_oracle_continuation",
+      "rps": 220
+    },
+    {
+      "experiment": "estimator_ordering_partial",
+      "iterations": 1,
+      "metrics": {
+        "audit_coverage": {
+          "ci95": null,
+          "mean": 0.0,
+          "n": 1
+        },
+        "cross_key_flip_fraction": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "goodput_rps": {
+          "ci95": null,
+          "mean": 150.27102309898345,
+          "n": 1
+        },
+        "latency_p50_us": {
+          "ci95": null,
+          "mean": 42875.0,
+          "n": 1
+        },
+        "latency_p90_us": {
+          "ci95": null,
+          "mean": 53834.3,
+          "n": 1
+        },
+        "learned_tie_fraction": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "long_slo_attainment": {
+          "ci95": null,
+          "mean": 0.3759713090257023,
+          "n": 1
+        },
+        "nae_p50": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "nae_p90": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "pairwise_agreement": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "priority_nae_p50": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "priority_nae_p90": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "realized_finish_agreement": {
+          "ci95": null,
+          "mean": 0.5137624172185431,
+          "n": 1
+        },
+        "realized_start_agreement": {
+          "ci95": null,
+          "mean": 0.5463576158940397,
+          "n": 1
+        },
+        "same_key_ambiguity_10pct": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "same_key_ambiguity_1pct": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "same_key_ambiguity_25pct": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "same_key_ambiguity_5pct": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shadow_learned_fpr": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shadow_learned_precision": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shadow_learned_recall": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shadow_reference_fpr": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shadow_reference_precision": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shadow_reference_recall": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shared_queue_p50_us": {
+          "ci95": null,
+          "mean": 708.0,
+          "n": 1
+        },
+        "shared_queue_p90_us": {
+          "ci95": null,
+          "mean": 1648.7000000000003,
+          "n": 1
+        },
+        "short_slo_attainment": {
+          "ci95": null,
+          "mean": 1.0,
+          "n": 1
+        },
+        "top_choice_agreement": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        }
+      },
+      "policy": "sched_pred,est_mean_var",
+      "rps": 220
+    },
+    {
+      "experiment": "estimator_ordering_partial",
+      "iterations": 1,
+      "metrics": {
+        "audit_coverage": {
+          "ci95": null,
+          "mean": 0.0,
+          "n": 1
+        },
+        "cross_key_flip_fraction": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "goodput_rps": {
+          "ci95": null,
+          "mean": 151.31457781935808,
+          "n": 1
+        },
+        "latency_p50_us": {
+          "ci95": null,
+          "mean": 42576.0,
+          "n": 1
+        },
+        "latency_p90_us": {
+          "ci95": null,
+          "mean": 53893.00000000001,
+          "n": 1
+        },
+        "learned_tie_fraction": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "long_slo_attainment": {
+          "ci95": null,
+          "mean": 0.38086642599277976,
+          "n": 1
+        },
+        "nae_p50": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "nae_p90": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "pairwise_agreement": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "priority_nae_p50": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "priority_nae_p90": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "realized_finish_agreement": {
+          "ci95": null,
+          "mean": 0.512438322368421,
+          "n": 1
+        },
+        "realized_start_agreement": {
+          "ci95": null,
+          "mean": 0.4953741776315789,
+          "n": 1
+        },
+        "same_key_ambiguity_10pct": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "same_key_ambiguity_1pct": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "same_key_ambiguity_25pct": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "same_key_ambiguity_5pct": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shadow_learned_fpr": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shadow_learned_precision": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shadow_learned_recall": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shadow_reference_fpr": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shadow_reference_precision": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shadow_reference_recall": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shared_queue_p50_us": {
+          "ci95": null,
+          "mean": 885.0,
+          "n": 1
+        },
+        "shared_queue_p90_us": {
+          "ci95": null,
+          "mean": 2135.7000000000003,
+          "n": 1
+        },
+        "short_slo_attainment": {
+          "ci95": null,
+          "mean": 1.0,
+          "n": 1
+        },
+        "top_choice_agreement": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        }
+      },
+      "policy": "sched_slo",
+      "rps": 220
+    },
+    {
+      "experiment": "estimator_ordering_scale_05",
+      "iterations": 1,
+      "metrics": {
+        "audit_coverage": {
+          "ci95": null,
+          "mean": 1.0,
+          "n": 1
+        },
+        "cross_key_flip_fraction": {
+          "ci95": null,
+          "mean": 0.0,
+          "n": 1
+        },
+        "goodput_rps": {
+          "ci95": null,
+          "mean": 148.9880579522991,
+          "n": 1
+        },
+        "latency_p50_us": {
+          "ci95": null,
+          "mean": 30325.0,
+          "n": 1
+        },
+        "latency_p90_us": {
+          "ci95": null,
+          "mean": 54462.8,
+          "n": 1
+        },
+        "learned_tie_fraction": {
+          "ci95": null,
+          "mean": 0.4039469626888683,
+          "n": 1
+        },
+        "long_slo_attainment": {
+          "ci95": null,
+          "mean": 0.3343769567939887,
+          "n": 1
+        },
+        "nae_p50": {
+          "ci95": null,
+          "mean": 0.02573,
+          "n": 1
+        },
+        "nae_p90": {
+          "ci95": null,
+          "mean": 0.10142200000000001,
+          "n": 1
+        },
+        "pairwise_agreement": {
+          "ci95": null,
+          "mean": 1.0,
+          "n": 1
+        },
+        "priority_nae_p50": {
+          "ci95": null,
+          "mean": 0.01968,
+          "n": 1
+        },
+        "priority_nae_p90": {
+          "ci95": null,
+          "mean": 0.31694600000000006,
+          "n": 1
+        },
+        "realized_finish_agreement": {
+          "ci95": null,
+          "mean": 0.5379792373316887,
+          "n": 1
+        },
+        "realized_start_agreement": {
+          "ci95": null,
+          "mean": 0.5669647445780656,
+          "n": 1
+        },
+        "same_key_ambiguity_10pct": {
+          "ci95": null,
+          "mean": 0.1054640069384215,
+          "n": 1
+        },
+        "same_key_ambiguity_1pct": {
+          "ci95": null,
+          "mean": 0.32714657415437987,
+          "n": 1
+        },
+        "same_key_ambiguity_25pct": {
+          "ci95": null,
+          "mean": 0.0,
+          "n": 1
+        },
+        "same_key_ambiguity_5pct": {
+          "ci95": null,
+          "mean": 0.27146574154379877,
+          "n": 1
+        },
+        "shadow_learned_fpr": {
+          "ci95": null,
+          "mean": 0.0035698348951361,
+          "n": 1
+        },
+        "shadow_learned_precision": {
+          "ci95": null,
+          "mean": 0.8367346938775511,
+          "n": 1
+        },
+        "shadow_learned_recall": {
+          "ci95": null,
+          "mean": 0.03857008466603951,
+          "n": 1
+        },
+        "shadow_reference_fpr": {
+          "ci95": null,
+          "mean": 0.0004462293618920125,
+          "n": 1
+        },
+        "shadow_reference_precision": {
+          "ci95": null,
+          "mean": 0.9979757085020243,
+          "n": 1
+        },
+        "shadow_reference_recall": {
+          "ci95": null,
+          "mean": 0.46378174976481656,
+          "n": 1
+        },
+        "shared_queue_p50_us": {
+          "ci95": null,
+          "mean": 1065.5,
+          "n": 1
+        },
+        "shared_queue_p90_us": {
+          "ci95": null,
+          "mean": 2341.0,
+          "n": 1
+        },
+        "short_slo_attainment": {
+          "ci95": null,
+          "mean": 1.0,
+          "n": 1
+        },
+        "top_choice_agreement": {
+          "ci95": null,
+          "mean": 0.3931742188400784,
+          "n": 1
+        }
+      },
+      "policy": "eval_estimator_audit,est_mean_var",
+      "rps": 220
+    },
+    {
+      "experiment": "estimator_ordering_scale_2",
+      "iterations": 1,
+      "metrics": {
+        "audit_coverage": {
+          "ci95": null,
+          "mean": 1.0,
+          "n": 1
+        },
+        "cross_key_flip_fraction": {
+          "ci95": null,
+          "mean": 0.0,
+          "n": 1
+        },
+        "goodput_rps": {
+          "ci95": null,
+          "mean": 148.99472791467446,
+          "n": 1
+        },
+        "latency_p50_us": {
+          "ci95": null,
+          "mean": 42005.5,
+          "n": 1
+        },
+        "latency_p90_us": {
+          "ci95": null,
+          "mean": 54254.8,
+          "n": 1
+        },
+        "learned_tie_fraction": {
+          "ci95": null,
+          "mean": 0.41191420148419233,
+          "n": 1
+        },
+        "long_slo_attainment": {
+          "ci95": null,
+          "mean": 0.36249251048532055,
+          "n": 1
+        },
+        "nae_p50": {
+          "ci95": null,
+          "mean": 0.02605,
+          "n": 1
+        },
+        "nae_p90": {
+          "ci95": null,
+          "mean": 0.10366800000000001,
+          "n": 1
+        },
+        "pairwise_agreement": {
+          "ci95": null,
+          "mean": 1.0,
+          "n": 1
+        },
+        "priority_nae_p50": {
+          "ci95": null,
+          "mean": 0.40032,
+          "n": 1
+        },
+        "priority_nae_p90": {
+          "ci95": null,
+          "mean": 0.61094,
+          "n": 1
+        },
+        "realized_finish_agreement": {
+          "ci95": null,
+          "mean": 0.5333943275388838,
+          "n": 1
+        },
+        "realized_start_agreement": {
+          "ci95": null,
+          "mean": 0.5683643387211548,
+          "n": 1
+        },
+        "same_key_ambiguity_10pct": {
+          "ci95": null,
+          "mean": 0.10728499740439522,
+          "n": 1
+        },
+        "same_key_ambiguity_1pct": {
+          "ci95": null,
+          "mean": 0.3606160235334833,
+          "n": 1
+        },
+        "same_key_ambiguity_25pct": {
+          "ci95": null,
+          "mean": 0.0,
+          "n": 1
+        },
+        "same_key_ambiguity_5pct": {
+          "ci95": null,
+          "mean": 0.29416854127011594,
+          "n": 1
+        },
+        "shadow_learned_fpr": {
+          "ci95": null,
+          "mean": 0.0035714285714285713,
+          "n": 1
+        },
+        "shadow_learned_precision": {
+          "ci95": null,
+          "mean": 0.8873239436619719,
+          "n": 1
+        },
+        "shadow_learned_recall": {
+          "ci95": null,
+          "mean": 0.05921052631578947,
+          "n": 1
+        },
+        "shadow_reference_fpr": {
+          "ci95": null,
+          "mean": 0.0,
+          "n": 1
+        },
+        "shadow_reference_precision": {
+          "ci95": null,
+          "mean": 1.0,
+          "n": 1
+        },
+        "shadow_reference_recall": {
+          "ci95": null,
+          "mean": 0.4398496240601504,
+          "n": 1
+        },
+        "shared_queue_p50_us": {
+          "ci95": null,
+          "mean": 786.0,
+          "n": 1
+        },
+        "shared_queue_p90_us": {
+          "ci95": null,
+          "mean": 1836.1000000000008,
+          "n": 1
+        },
+        "short_slo_attainment": {
+          "ci95": null,
+          "mean": 1.0,
+          "n": 1
+        },
+        "top_choice_agreement": {
+          "ci95": null,
+          "mean": 0.3822725700449672,
+          "n": 1
+        }
+      },
+      "policy": "eval_estimator_audit,est_mean_var",
+      "rps": 220
+    },
+    {
+      "experiment": "estimator_ordering_scale_4",
+      "iterations": 1,
+      "metrics": {
+        "audit_coverage": {
+          "ci95": null,
+          "mean": 1.0,
+          "n": 1
+        },
+        "cross_key_flip_fraction": {
+          "ci95": null,
+          "mean": 0.0,
+          "n": 1
+        },
+        "goodput_rps": {
+          "ci95": null,
+          "mean": 149.3548482339288,
+          "n": 1
+        },
+        "latency_p50_us": {
+          "ci95": null,
+          "mean": 30014.0,
+          "n": 1
+        },
+        "latency_p90_us": {
+          "ci95": null,
+          "mean": 54120.90000000001,
+          "n": 1
+        },
+        "learned_tie_fraction": {
+          "ci95": null,
+          "mean": 0.41514117282035373,
+          "n": 1
+        },
+        "long_slo_attainment": {
+          "ci95": null,
+          "mean": 0.3308032890575585,
+          "n": 1
+        },
+        "nae_p50": {
+          "ci95": null,
+          "mean": 0.026,
+          "n": 1
+        },
+        "nae_p90": {
+          "ci95": null,
+          "mean": 0.09021600000000002,
+          "n": 1
+        },
+        "pairwise_agreement": {
+          "ci95": null,
+          "mean": 0.9996463306808134,
+          "n": 1
+        },
+        "priority_nae_p50": {
+          "ci95": null,
+          "mean": 0.23464,
+          "n": 1
+        },
+        "priority_nae_p90": {
+          "ci95": null,
+          "mean": 1.679152,
+          "n": 1
+        },
+        "realized_finish_agreement": {
+          "ci95": null,
+          "mean": 0.5279760057917054,
+          "n": 1
+        },
+        "realized_start_agreement": {
+          "ci95": null,
+          "mean": 0.5530044472023994,
+          "n": 1
+        },
+        "same_key_ambiguity_10pct": {
+          "ci95": null,
+          "mean": 0.10116731517509728,
+          "n": 1
+        },
+        "same_key_ambiguity_1pct": {
+          "ci95": null,
+          "mean": 0.3226188462189139,
+          "n": 1
+        },
+        "same_key_ambiguity_25pct": {
+          "ci95": null,
+          "mean": 0.0,
+          "n": 1
+        },
+        "same_key_ambiguity_5pct": {
+          "ci95": null,
+          "mean": 0.25968533243106073,
+          "n": 1
+        },
+        "shadow_learned_fpr": {
+          "ci95": null,
+          "mean": 0.004007123775601068,
+          "n": 1
+        },
+        "shadow_learned_precision": {
+          "ci95": null,
+          "mean": 0.8571428571428571,
+          "n": 1
+        },
+        "shadow_learned_recall": {
+          "ci95": null,
+          "mean": 0.05103969754253308,
+          "n": 1
+        },
+        "shadow_reference_fpr": {
+          "ci95": null,
+          "mean": 0.0,
+          "n": 1
+        },
+        "shadow_reference_precision": {
+          "ci95": null,
+          "mean": 1.0,
+          "n": 1
+        },
+        "shadow_reference_recall": {
+          "ci95": null,
+          "mean": 0.43761814744801514,
+          "n": 1
+        },
+        "shared_queue_p50_us": {
+          "ci95": null,
+          "mean": 809.5,
+          "n": 1
+        },
+        "shared_queue_p90_us": {
+          "ci95": null,
+          "mean": 1757.4000000000005,
+          "n": 1
+        },
+        "short_slo_attainment": {
+          "ci95": null,
+          "mean": 1.0,
+          "n": 1
+        },
+        "top_choice_agreement": {
+          "ci95": null,
+          "mean": 0.4004237288135593,
+          "n": 1
+        }
+      },
+      "policy": "eval_estimator_audit,est_mean_var",
+      "rps": 220
+    },
+    {
+      "experiment": "estimator_ordering_shadow",
+      "iterations": 1,
+      "metrics": {
+        "audit_coverage": {
+          "ci95": null,
+          "mean": 1.0,
+          "n": 1
+        },
+        "cross_key_flip_fraction": {
+          "ci95": null,
+          "mean": 0.0,
+          "n": 1
+        },
+        "goodput_rps": {
+          "ci95": null,
+          "mean": 64.14371175481142,
+          "n": 1
+        },
+        "latency_p50_us": {
+          "ci95": null,
+          "mean": 44909.5,
+          "n": 1
+        },
+        "latency_p90_us": {
+          "ci95": null,
+          "mean": 55049.1,
+          "n": 1
+        },
+        "learned_tie_fraction": {
+          "ci95": null,
+          "mean": 0.40427426536064115,
+          "n": 1
+        },
+        "long_slo_attainment": {
+          "ci95": null,
+          "mean": 0.29922279792746115,
+          "n": 1
+        },
+        "nae_p50": {
+          "ci95": null,
+          "mean": 0.02805,
+          "n": 1
+        },
+        "nae_p90": {
+          "ci95": null,
+          "mean": 0.101674,
+          "n": 1
+        },
+        "pairwise_agreement": {
+          "ci95": null,
+          "mean": 1.0,
+          "n": 1
+        },
+        "priority_nae_p50": {
+          "ci95": null,
+          "mean": 0.02805,
+          "n": 1
+        },
+        "priority_nae_p90": {
+          "ci95": null,
+          "mean": 0.101674,
+          "n": 1
+        },
+        "realized_finish_agreement": {
+          "ci95": null,
+          "mean": 0.5418521816562778,
+          "n": 1
+        },
+        "realized_start_agreement": {
+          "ci95": null,
+          "mean": 0.554986642920748,
+          "n": 1
+        },
+        "same_key_ambiguity_10pct": {
+          "ci95": null,
+          "mean": 0.11553323029366307,
+          "n": 1
+        },
+        "same_key_ambiguity_1pct": {
+          "ci95": null,
+          "mean": 0.3516228748068006,
+          "n": 1
+        },
+        "same_key_ambiguity_25pct": {
+          "ci95": null,
+          "mean": 0.0,
+          "n": 1
+        },
+        "same_key_ambiguity_5pct": {
+          "ci95": null,
+          "mean": 0.2971406491499227,
+          "n": 1
+        },
+        "shadow_learned_fpr": {
+          "ci95": null,
+          "mean": 0.008307372793354102,
+          "n": 1
+        },
+        "shadow_learned_precision": {
+          "ci95": null,
+          "mean": 0.8888888888888888,
+          "n": 1
+        },
+        "shadow_learned_recall": {
+          "ci95": null,
+          "mean": 0.11829944547134935,
+          "n": 1
+        },
+        "shadow_reference_fpr": {
+          "ci95": null,
+          "mean": 0.0,
+          "n": 1
+        },
+        "shadow_reference_precision": {
+          "ci95": null,
+          "mean": 1.0,
+          "n": 1
+        },
+        "shadow_reference_recall": {
+          "ci95": null,
+          "mean": 0.5101663585951941,
+          "n": 1
+        },
+        "shared_queue_p50_us": {
+          "ci95": null,
+          "mean": 898.0,
+          "n": 1
+        },
+        "shared_queue_p90_us": {
+          "ci95": null,
+          "mean": 2251.2000000000003,
+          "n": 1
+        },
+        "short_slo_attainment": {
+          "ci95": null,
+          "mean": 1.0,
+          "n": 1
+        },
+        "top_choice_agreement": {
+          "ci95": null,
+          "mean": 0.3509878419452887,
+          "n": 1
+        }
+      },
+      "policy": "eval_estimator_audit,est_mean_var",
+      "rps": 100
+    },
+    {
+      "experiment": "estimator_ordering_shadow",
+      "iterations": 1,
+      "metrics": {
+        "audit_coverage": {
+          "ci95": null,
+          "mean": 1.0,
+          "n": 1
+        },
+        "cross_key_flip_fraction": {
+          "ci95": null,
+          "mean": 0.0,
+          "n": 1
+        },
+        "goodput_rps": {
+          "ci95": null,
+          "mean": 188.92302784446528,
+          "n": 1
+        },
+        "latency_p50_us": {
+          "ci95": null,
+          "mean": 43328.5,
+          "n": 1
+        },
+        "latency_p90_us": {
+          "ci95": null,
+          "mean": 54398.3,
+          "n": 1
+        },
+        "learned_tie_fraction": {
+          "ci95": null,
+          "mean": 0.3838681423680229,
+          "n": 1
+        },
+        "long_slo_attainment": {
+          "ci95": null,
+          "mean": 0.371889400921659,
+          "n": 1
+        },
+        "nae_p50": {
+          "ci95": null,
+          "mean": 0.02748,
+          "n": 1
+        },
+        "nae_p90": {
+          "ci95": null,
+          "mean": 0.10533800000000001,
+          "n": 1
+        },
+        "pairwise_agreement": {
+          "ci95": null,
+          "mean": 0.9758335487205997,
+          "n": 1
+        },
+        "priority_nae_p50": {
+          "ci95": null,
+          "mean": 0.02748,
+          "n": 1
+        },
+        "priority_nae_p90": {
+          "ci95": null,
+          "mean": 0.10533800000000001,
+          "n": 1
+        },
+        "realized_finish_agreement": {
+          "ci95": null,
+          "mean": 0.539692650688749,
+          "n": 1
+        },
+        "realized_start_agreement": {
+          "ci95": null,
+          "mean": 0.5666056214666773,
+          "n": 1
+        },
+        "same_key_ambiguity_10pct": {
+          "ci95": null,
+          "mean": 0.11480075901328274,
+          "n": 1
+        },
+        "same_key_ambiguity_1pct": {
+          "ci95": null,
+          "mean": 0.3575494714014638,
+          "n": 1
+        },
+        "same_key_ambiguity_25pct": {
+          "ci95": null,
+          "mean": 0.0,
+          "n": 1
+        },
+        "same_key_ambiguity_5pct": {
+          "ci95": null,
+          "mean": 0.29601518026565465,
+          "n": 1
+        },
+        "shadow_learned_fpr": {
+          "ci95": null,
+          "mean": 0.0017574692442882249,
+          "n": 1
+        },
+        "shadow_learned_precision": {
+          "ci95": null,
+          "mean": 0.9324324324324325,
+          "n": 1
+        },
+        "shadow_learned_recall": {
+          "ci95": null,
+          "mean": 0.05062362435803375,
+          "n": 1
+        },
+        "shadow_reference_fpr": {
+          "ci95": null,
+          "mean": 0.0,
+          "n": 1
+        },
+        "shadow_reference_precision": {
+          "ci95": null,
+          "mean": 1.0,
+          "n": 1
+        },
+        "shadow_reference_recall": {
+          "ci95": null,
+          "mean": 0.413059427732942,
+          "n": 1
+        },
+        "shared_queue_p50_us": {
+          "ci95": null,
+          "mean": 693.5,
+          "n": 1
+        },
+        "shared_queue_p90_us": {
+          "ci95": null,
+          "mean": 1847.9000000000005,
+          "n": 1
+        },
+        "short_slo_attainment": {
+          "ci95": null,
+          "mean": 1.0,
+          "n": 1
+        },
+        "top_choice_agreement": {
+          "ci95": null,
+          "mean": 0.37071790693463696,
+          "n": 1
+        }
+      },
+      "policy": "eval_estimator_audit,est_mean_var",
+      "rps": 280
+    },
+    {
+      "experiment": "estimator_ordering_visible",
+      "iterations": 1,
+      "metrics": {
+        "audit_coverage": {
+          "ci95": null,
+          "mean": 1.0,
+          "n": 1
+        },
+        "cross_key_flip_fraction": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "goodput_rps": {
+          "ci95": null,
+          "mean": 145.42240587573013,
+          "n": 1
+        },
+        "latency_p50_us": {
+          "ci95": null,
+          "mean": 42070.0,
+          "n": 1
+        },
+        "latency_p90_us": {
+          "ci95": null,
+          "mean": 54428.2,
+          "n": 1
+        },
+        "learned_tie_fraction": {
+          "ci95": null,
+          "mean": 1.0,
+          "n": 1
+        },
+        "long_slo_attainment": {
+          "ci95": null,
+          "mean": 0.3291291291291291,
+          "n": 1
+        },
+        "nae_p50": {
+          "ci95": null,
+          "mean": 0.03986,
+          "n": 1
+        },
+        "nae_p90": {
+          "ci95": null,
+          "mean": 0.07212,
+          "n": 1
+        },
+        "pairwise_agreement": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "priority_nae_p50": {
+          "ci95": null,
+          "mean": 0.39,
+          "n": 1
+        },
+        "priority_nae_p90": {
+          "ci95": null,
+          "mean": 0.59,
+          "n": 1
+        },
+        "realized_finish_agreement": {
+          "ci95": null,
+          "mean": 0.5007186858316222,
+          "n": 1
+        },
+        "realized_start_agreement": {
+          "ci95": null,
+          "mean": 0.4950718685831622,
+          "n": 1
+        },
+        "same_key_ambiguity_10pct": {
+          "ci95": null,
+          "mean": 0.11494252873563218,
+          "n": 1
+        },
+        "same_key_ambiguity_1pct": {
+          "ci95": null,
+          "mean": 0.331103105163836,
+          "n": 1
+        },
+        "same_key_ambiguity_25pct": {
+          "ci95": null,
+          "mean": 0.0,
+          "n": 1
+        },
+        "same_key_ambiguity_5pct": {
+          "ci95": null,
+          "mean": 0.27723451706982327,
+          "n": 1
+        },
+        "shadow_learned_fpr": {
+          "ci95": null,
+          "mean": 0.0,
+          "n": 1
+        },
+        "shadow_learned_precision": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shadow_learned_recall": {
+          "ci95": null,
+          "mean": 0.0,
+          "n": 1
+        },
+        "shadow_reference_fpr": {
+          "ci95": null,
+          "mean": 0.0,
+          "n": 1
+        },
+        "shadow_reference_precision": {
+          "ci95": null,
+          "mean": 1.0,
+          "n": 1
+        },
+        "shadow_reference_recall": {
+          "ci95": null,
+          "mean": 0.4709042076991943,
+          "n": 1
+        },
+        "shared_queue_p50_us": {
+          "ci95": null,
+          "mean": 1007.5,
+          "n": 1
+        },
+        "shared_queue_p90_us": {
+          "ci95": null,
+          "mean": 2480.7000000000003,
+          "n": 1
+        },
+        "short_slo_attainment": {
+          "ci95": null,
+          "mean": 1.0,
+          "n": 1
+        },
+        "top_choice_agreement": {
+          "ci95": null,
+          "mean": 0.174636803874092,
+          "n": 1
+        }
+      },
+      "policy": "eval_estimator_audit,est_hist",
+      "rps": 220
+    },
+    {
+      "experiment": "estimator_ordering_visible",
+      "iterations": 1,
+      "metrics": {
+        "audit_coverage": {
+          "ci95": null,
+          "mean": 1.0,
+          "n": 1
+        },
+        "cross_key_flip_fraction": {
+          "ci95": null,
+          "mean": 0.0,
+          "n": 1
+        },
+        "goodput_rps": {
+          "ci95": null,
+          "mean": 150.22229108611248,
+          "n": 1
+        },
+        "latency_p50_us": {
+          "ci95": null,
+          "mean": 31532.5,
+          "n": 1
+        },
+        "latency_p90_us": {
+          "ci95": null,
+          "mean": 54129.7,
+          "n": 1
+        },
+        "learned_tie_fraction": {
+          "ci95": null,
+          "mean": 0.4076270320008179,
+          "n": 1
+        },
+        "long_slo_attainment": {
+          "ci95": null,
+          "mean": 0.36512758201701095,
+          "n": 1
+        },
+        "nae_p50": {
+          "ci95": null,
+          "mean": 0.02652,
+          "n": 1
+        },
+        "nae_p90": {
+          "ci95": null,
+          "mean": 0.10088800000000012,
+          "n": 1
+        },
+        "pairwise_agreement": {
+          "ci95": null,
+          "mean": 1.0,
+          "n": 1
+        },
+        "priority_nae_p50": {
+          "ci95": null,
+          "mean": 0.02652,
+          "n": 1
+        },
+        "priority_nae_p90": {
+          "ci95": null,
+          "mean": 0.10088800000000012,
+          "n": 1
+        },
+        "realized_finish_agreement": {
+          "ci95": null,
+          "mean": 0.5460586852060116,
+          "n": 1
+        },
+        "realized_start_agreement": {
+          "ci95": null,
+          "mean": 0.5826602596871485,
+          "n": 1
+        },
+        "same_key_ambiguity_10pct": {
+          "ci95": null,
+          "mean": 0.10173310225303293,
+          "n": 1
+        },
+        "same_key_ambiguity_1pct": {
+          "ci95": null,
+          "mean": 0.3369150779896014,
+          "n": 1
+        },
+        "same_key_ambiguity_25pct": {
+          "ci95": null,
+          "mean": 0.0,
+          "n": 1
+        },
+        "same_key_ambiguity_5pct": {
+          "ci95": null,
+          "mean": 0.27642980935875217,
+          "n": 1
+        },
+        "shadow_learned_fpr": {
+          "ci95": null,
+          "mean": 0.0026560424966799467,
+          "n": 1
+        },
+        "shadow_learned_precision": {
+          "ci95": null,
+          "mean": 0.9230769230769231,
+          "n": 1
+        },
+        "shadow_learned_recall": {
+          "ci95": null,
+          "mean": 0.06889952153110047,
+          "n": 1
+        },
+        "shadow_reference_fpr": {
+          "ci95": null,
+          "mean": 0.0,
+          "n": 1
+        },
+        "shadow_reference_precision": {
+          "ci95": null,
+          "mean": 1.0,
+          "n": 1
+        },
+        "shadow_reference_recall": {
+          "ci95": null,
+          "mean": 0.4411483253588517,
+          "n": 1
+        },
+        "shared_queue_p50_us": {
+          "ci95": null,
+          "mean": 788.5,
+          "n": 1
+        },
+        "shared_queue_p90_us": {
+          "ci95": null,
+          "mean": 2078.100000000001,
+          "n": 1
+        },
+        "short_slo_attainment": {
+          "ci95": null,
+          "mean": 1.0,
+          "n": 1
+        },
+        "top_choice_agreement": {
+          "ci95": null,
+          "mean": 0.3841000807102502,
+          "n": 1
+        }
+      },
+      "policy": "eval_estimator_audit,est_mean_var",
+      "rps": 220
+    },
+    {
+      "experiment": "estimator_ordering_visible",
+      "iterations": 1,
+      "metrics": {
+        "audit_coverage": {
+          "ci95": null,
+          "mean": 1.0,
+          "n": 1
+        },
+        "cross_key_flip_fraction": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "goodput_rps": {
+          "ci95": null,
+          "mean": 148.4869360754763,
+          "n": 1
+        },
+        "latency_p50_us": {
+          "ci95": null,
+          "mean": 40509.0,
+          "n": 1
+        },
+        "latency_p90_us": {
+          "ci95": null,
+          "mean": 54273.100000000006,
+          "n": 1
+        },
+        "learned_tie_fraction": {
+          "ci95": null,
+          "mean": 1.0,
+          "n": 1
+        },
+        "long_slo_attainment": {
+          "ci95": null,
+          "mean": 0.3524788391777509,
+          "n": 1
+        },
+        "nae_p50": {
+          "ci95": null,
+          "mean": 0.0396,
+          "n": 1
+        },
+        "nae_p90": {
+          "ci95": null,
+          "mean": 0.15098,
+          "n": 1
+        },
+        "pairwise_agreement": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "priority_nae_p50": {
+          "ci95": null,
+          "mean": 0.39,
+          "n": 1
+        },
+        "priority_nae_p90": {
+          "ci95": null,
+          "mean": 0.51,
+          "n": 1
+        },
+        "realized_finish_agreement": {
+          "ci95": null,
+          "mean": 0.5022499488647986,
+          "n": 1
+        },
+        "realized_start_agreement": {
+          "ci95": null,
+          "mean": 0.5013295152382901,
+          "n": 1
+        },
+        "same_key_ambiguity_10pct": {
+          "ci95": null,
+          "mean": 0.11571233810497614,
+          "n": 1
+        },
+        "same_key_ambiguity_1pct": {
+          "ci95": null,
+          "mean": 0.3486707566462168,
+          "n": 1
+        },
+        "same_key_ambiguity_25pct": {
+          "ci95": null,
+          "mean": 0.0,
+          "n": 1
+        },
+        "same_key_ambiguity_5pct": {
+          "ci95": null,
+          "mean": 0.288173142467621,
+          "n": 1
+        },
+        "shadow_learned_fpr": {
+          "ci95": null,
+          "mean": 0.0,
+          "n": 1
+        },
+        "shadow_learned_precision": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shadow_learned_recall": {
+          "ci95": null,
+          "mean": 0.0,
+          "n": 1
+        },
+        "shadow_reference_fpr": {
+          "ci95": null,
+          "mean": 0.0,
+          "n": 1
+        },
+        "shadow_reference_precision": {
+          "ci95": null,
+          "mean": 1.0,
+          "n": 1
+        },
+        "shadow_reference_recall": {
+          "ci95": null,
+          "mean": 0.4677871148459384,
+          "n": 1
+        },
+        "shared_queue_p50_us": {
+          "ci95": null,
+          "mean": 977.5,
+          "n": 1
+        },
+        "shared_queue_p90_us": {
+          "ci95": null,
+          "mean": 2439.0,
+          "n": 1
+        },
+        "short_slo_attainment": {
+          "ci95": null,
+          "mean": 1.0,
+          "n": 1
+        },
+        "top_choice_agreement": {
+          "ci95": null,
+          "mean": 0.1673728813559322,
+          "n": 1
+        }
+      },
+      "policy": "eval_estimator_audit,est_rms",
+      "rps": 220
+    },
+    {
+      "experiment": "estimator_ordering_visible",
+      "iterations": 1,
+      "metrics": {
+        "audit_coverage": {
+          "ci95": null,
+          "mean": 0.0,
+          "n": 1
+        },
+        "cross_key_flip_fraction": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "goodput_rps": {
+          "ci95": null,
+          "mean": 151.00376611770713,
+          "n": 1
+        },
+        "latency_p50_us": {
+          "ci95": null,
+          "mean": 30621.0,
+          "n": 1
+        },
+        "latency_p90_us": {
+          "ci95": null,
+          "mean": 54118.600000000006,
+          "n": 1
+        },
+        "learned_tie_fraction": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "long_slo_attainment": {
+          "ci95": null,
+          "mean": 0.3666462293071735,
+          "n": 1
+        },
+        "nae_p50": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "nae_p90": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "pairwise_agreement": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "priority_nae_p50": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "priority_nae_p90": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "realized_finish_agreement": {
+          "ci95": null,
+          "mean": 0.5818647540983607,
+          "n": 1
+        },
+        "realized_start_agreement": {
+          "ci95": null,
+          "mean": 0.6367827868852459,
+          "n": 1
+        },
+        "same_key_ambiguity_10pct": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "same_key_ambiguity_1pct": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "same_key_ambiguity_25pct": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "same_key_ambiguity_5pct": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shadow_learned_fpr": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shadow_learned_precision": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shadow_learned_recall": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shadow_reference_fpr": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shadow_reference_precision": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shadow_reference_recall": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shared_queue_p50_us": {
+          "ci95": null,
+          "mean": 862.0,
+          "n": 1
+        },
+        "shared_queue_p90_us": {
+          "ci95": null,
+          "mean": 2358.7000000000003,
+          "n": 1
+        },
+        "short_slo_attainment": {
+          "ci95": null,
+          "mean": 1.0,
+          "n": 1
+        },
+        "top_choice_agreement": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        }
+      },
+      "policy": "eval_oracle_continuation",
+      "rps": 220
+    },
+    {
+      "experiment": "estimator_ordering_visible",
+      "iterations": 1,
+      "metrics": {
+        "audit_coverage": {
+          "ci95": null,
+          "mean": 0.0,
+          "n": 1
+        },
+        "cross_key_flip_fraction": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "goodput_rps": {
+          "ci95": null,
+          "mean": 149.56627774557532,
+          "n": 1
+        },
+        "latency_p50_us": {
+          "ci95": null,
+          "mean": 30914.5,
+          "n": 1
+        },
+        "latency_p90_us": {
+          "ci95": null,
+          "mean": 54111.600000000006,
+          "n": 1
+        },
+        "learned_tie_fraction": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "long_slo_attainment": {
+          "ci95": null,
+          "mean": 0.3563148261134838,
+          "n": 1
+        },
+        "nae_p50": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "nae_p90": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "pairwise_agreement": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "priority_nae_p50": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "priority_nae_p90": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "realized_finish_agreement": {
+          "ci95": null,
+          "mean": 0.5609580592105263,
+          "n": 1
+        },
+        "realized_start_agreement": {
+          "ci95": null,
+          "mean": 0.6064967105263158,
+          "n": 1
+        },
+        "same_key_ambiguity_10pct": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "same_key_ambiguity_1pct": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "same_key_ambiguity_25pct": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "same_key_ambiguity_5pct": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shadow_learned_fpr": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shadow_learned_precision": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shadow_learned_recall": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shadow_reference_fpr": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shadow_reference_precision": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shadow_reference_recall": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shared_queue_p50_us": {
+          "ci95": null,
+          "mean": 756.0,
+          "n": 1
+        },
+        "shared_queue_p90_us": {
+          "ci95": null,
+          "mean": 1848.1000000000008,
+          "n": 1
+        },
+        "short_slo_attainment": {
+          "ci95": null,
+          "mean": 1.0,
+          "n": 1
+        },
+        "top_choice_agreement": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        }
+      },
+      "policy": "sched_pred,est_mean_var",
+      "rps": 220
+    },
+    {
+      "experiment": "estimator_ordering_visible",
+      "iterations": 1,
+      "metrics": {
+        "audit_coverage": {
+          "ci95": null,
+          "mean": 0.0,
+          "n": 1
+        },
+        "cross_key_flip_fraction": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "goodput_rps": {
+          "ci95": null,
+          "mean": 146.26371047687158,
+          "n": 1
+        },
+        "latency_p50_us": {
+          "ci95": null,
+          "mean": 44066.5,
+          "n": 1
+        },
+        "latency_p90_us": {
+          "ci95": null,
+          "mean": 54057.9,
+          "n": 1
+        },
+        "learned_tie_fraction": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "long_slo_attainment": {
+          "ci95": null,
+          "mean": 0.3519061583577713,
+          "n": 1
+        },
+        "nae_p50": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "nae_p90": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "pairwise_agreement": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "priority_nae_p50": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "priority_nae_p90": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "realized_finish_agreement": {
+          "ci95": null,
+          "mean": 0.491875771287536,
+          "n": 1
+        },
+        "realized_start_agreement": {
+          "ci95": null,
+          "mean": 0.49362402303578773,
+          "n": 1
+        },
+        "same_key_ambiguity_10pct": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "same_key_ambiguity_1pct": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "same_key_ambiguity_25pct": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "same_key_ambiguity_5pct": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shadow_learned_fpr": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shadow_learned_precision": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shadow_learned_recall": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shadow_reference_fpr": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shadow_reference_precision": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shadow_reference_recall": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        },
+        "shared_queue_p50_us": {
+          "ci95": null,
+          "mean": 897.5,
+          "n": 1
+        },
+        "shared_queue_p90_us": {
+          "ci95": null,
+          "mean": 2117.0,
+          "n": 1
+        },
+        "short_slo_attainment": {
+          "ci95": null,
+          "mean": 1.0,
+          "n": 1
+        },
+        "top_choice_agreement": {
+          "ci95": null,
+          "mean": null,
+          "n": 0
+        }
+      },
+      "policy": "sched_slo",
+      "rps": 220
+    }
+  ]
+}

@@ -1,0 +1,70 @@
+{
+  "child_cpus_per_replica": 1.0,
+  "call_graph": {
+    "entry_points": {
+      "a": [
+        {"shared::run": 1.0},
+        {"short-tail::wait": 1.0},
+        {"long-extra::wait": 0.3333333333333333}
+      ],
+      "b": [
+        {"shared::run": 1.0},
+        {"short-tail::wait": 1.0},
+        {"long-extra::wait": 1.0}
+      ]
+    },
+    "services": [
+      {
+        "id": "shared",
+        "replicas": 1,
+        "methods": [
+          {
+            "name": "run",
+            "latency_distribution": {
+              "Discrete": {
+                "weights": [0.2, 0.6, 0.2],
+                "values": [2500, 3000, 3500]
+              }
+            },
+            "busy_spin_ratio": 1.0,
+            "call_sequence": []
+          }
+        ]
+      },
+      {
+        "id": "short-tail",
+        "replicas": 2,
+        "methods": [
+          {
+            "name": "wait",
+            "latency_distribution": {
+              "Discrete": {
+                "weights": [0.2, 0.6, 0.2],
+                "values": [1500, 2000, 2500]
+              }
+            },
+            "busy_spin_ratio": 0.0,
+            "call_sequence": []
+          }
+        ]
+      },
+      {
+        "id": "long-extra",
+        "replicas": 2,
+        "methods": [
+          {
+            "name": "wait",
+            "latency_distribution": {
+              "Discrete": {
+                "weights": [0.2, 0.6, 0.2],
+                "values": [18000, 23000, 28000]
+              }
+            },
+            "busy_spin_ratio": 0.0,
+            "call_sequence": []
+          }
+        ]
+      }
+    ]
+  }
+}

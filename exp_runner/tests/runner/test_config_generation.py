@@ -77,6 +77,19 @@ class TestSynthbenchConfigGeneration:
         assert services["local-a-service"]["scale"] == 2
         assert services["local-b-service"]["scale"] == 1
         assert services["local-a-service"]["image"] == "synthbench_child:test-tag"
+        expected_policy_mount = "${POLICY_PARAMS_PATH}:/usr/policy_params.json:ro"
+        assert (
+            expected_policy_mount in services["synthbench-frontend-service"]["volumes"]
+        )
+        assert expected_policy_mount in services["local-a-service"]["volumes"]
+        assert (
+            "MASA_POLICY_PARAMS_PATH=/usr/policy_params.json"
+            in services["synthbench-frontend-service"]["environment"]
+        )
+        assert (
+            "MASA_POLICY_PARAMS_PATH=/usr/policy_params.json"
+            in services["local-a-service"]["environment"]
+        )
 
     def test_generate_k8s_values(self):
         app = SynthbenchApp()

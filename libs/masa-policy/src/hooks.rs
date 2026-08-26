@@ -509,6 +509,11 @@ mod tests {
 
             let child_method = GrpcMethod::new("IntegrationService", "ChildMethod");
             let mut child_req = Request::new(());
+            #[cfg(any(feature = "eval_oracle_continuation", feature = "eval_estimator_audit"))]
+            child_req.metadata_mut().insert(
+                masa_core::ORACLE_REMAINING_AFTER_US_HEADER,
+                "0".parse().unwrap(),
+            );
             let mut child_ctx = ChildContext::new(child_method, &child_req);
 
             let _ = parent_ctx

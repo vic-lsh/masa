@@ -145,10 +145,14 @@ class SynthbenchApp(AppPlugin):
                 "BINARY_NAME=synthbench_frontend",
                 "LOG_LEVEL=${LOG_LEVEL:-info}",
                 "DOCKER_COMPOSE_PROJECT_NAME=${DOCKER_COMPOSE_PROJECT_NAME:-}",
+                "MASA_POLICY_PARAMS_PATH=/usr/policy_params.json",
                 "MASA_FANOUT_AWARE=${MASA_FANOUT_AWARE:-1}",
                 "SYNTHBENCH_DISABLE_CPU_YIELD=${SYNTHBENCH_DISABLE_CPU_YIELD:-0}",
             ],
-            "volumes": ["${APP_CONFIG_PATH}:/usr/config.json:ro"],
+            "volumes": [
+                "${APP_CONFIG_PATH}:/usr/config.json:ro",
+                "${POLICY_PARAMS_PATH}:/usr/policy_params.json:ro",
+            ],
             "deploy": {"resources": {"limits": {"cpus": "4"}}},
         }
 
@@ -168,10 +172,14 @@ class SynthbenchApp(AppPlugin):
                     "LOG_LEVEL=${LOG_LEVEL:-info}",
                     f"SERVICE_ID={service_id}",
                     "DOCKER_COMPOSE_PROJECT_NAME=${DOCKER_COMPOSE_PROJECT_NAME:-}",
+                    "MASA_POLICY_PARAMS_PATH=/usr/policy_params.json",
                     "MASA_FANOUT_AWARE=${MASA_FANOUT_AWARE:-1}",
                     "SYNTHBENCH_DISABLE_CPU_YIELD=${SYNTHBENCH_DISABLE_CPU_YIELD:-0}",
                 ],
-                "volumes": ["${APP_CONFIG_PATH}:/usr/config.json:ro"],
+                "volumes": [
+                    "${APP_CONFIG_PATH}:/usr/config.json:ro",
+                    "${POLICY_PARAMS_PATH}:/usr/policy_params.json:ro",
+                ],
                 "deploy": {"resources": {"limits": {"cpus": "${CPUS_PER_REPLICA}"}}},
             }
 

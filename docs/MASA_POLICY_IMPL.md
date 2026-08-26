@@ -17,6 +17,8 @@ Policy is configured along three composable dimensions:
 - `sched_tailclipper`: Priority by request arrival time (oldest first), implementing the TailClipper paper (implies tokio priority queue).
 - `sched_oracle`: Perfect-information child deadline/priority assignment for deterministic synthbench experiments (implies tokio priority queue).
 - `sched_pred`: Priority by per-RPC predicted deadline with deadline tightening and dynamic reprioritization (implies `sched_slo` and `estimator`).
+- `eval_oracle_continuation`: Evaluation-only synthbench feature that injects exact pre-sampled continuation demand into the ordinary `sched_pred` deadline-tightening and reprioritization path. This is an estimator intervention, not a production policy.
+- `eval_estimator_audit`: Evaluation-only synthbench feature that pre-samples the same continuation reference while retaining learned `sched_pred` decisions. It emits structured learned/reference telemetry and supports soft-priority-only magnitude scaling; it is not a production policy.
 
 **Admission control** (mutually exclusive — pick at most one):
 - `ac_pred`: Progressive cost-aware admission control using compute-time estimates and downstream utilization signals (requires `estimator`).

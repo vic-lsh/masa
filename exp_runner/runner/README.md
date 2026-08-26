@@ -101,12 +101,15 @@ Experiments are configured using files in `exp/<app>/data/in/<experiment_name>/`
      "WarmupSecs": 20,
      "DurationSecs": 40,
      "MaxInFlight": 0,
+     "MatchedDeadlineBurstSize": 1,
      "Addr": "http://[::1]:8659"
    }
    ```
    
    **Configuration Fields:**
    - `MaxInFlight`: Maximum number of concurrent in-flight requests (0 = unlimited, default: 0)
+   - `MatchedDeadlineBurstSize`: Requests emitted together with one gateway-entry
+     timestamp; the configured RPS remains the total request rate (default: 1).
    - `ApiWeights`: Optional relative request mix weights for `Apis`; omitted means uniform.
 
 2. **`policies`** - Whitespace-separated list of scheduling policies to test
