@@ -102,6 +102,8 @@ check_tests() {
     echo "Checking featured masa-policy tests"
     for flags in "${flag_combos[@]}"; do
         case "$flags" in
+            # Runtime-only flags (sched_mt*) live on tokio/masa, not masa-policy.
+            *sched_mt*) continue ;;
             *ac_pred* | *ac_rajomon* | *abort_slack* | *signal_slack*) ;;
             *) continue ;;
         esac
