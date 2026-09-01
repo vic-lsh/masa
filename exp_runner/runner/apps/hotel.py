@@ -896,7 +896,8 @@ class HotelApp(AppPlugin):
             command = [
                 "/bin/sh",
                 "-c",
-                "/usr/entrypoint.sh; echo HOTEL_LOADGEN_DONE; sleep infinity",
+                "/usr/entrypoint.sh || exit $?; "
+                "while true; do echo HOTEL_LOADGEN_DONE; sleep 10; done",
             ]
 
         return TaskSpec(

@@ -17,6 +17,7 @@ known = [
   "ac_pred",
   "ac_rajomon",
   "trace_queue_latency",
+  "deadline_equals_slack",
 ]
 
 [implies]
@@ -26,6 +27,7 @@ sched_mt_multiqueue = ["sched_mt"]
 abort_slack = ["estimator"]
 signal_slack = ["estimator", "ac_pred"]
 ac_pred = ["estimator"]
+deadline_equals_slack = ["sched_pred"]
 
 [mutually_exclusive]
 scheduling = ["sched_fifo", "sched_slo", "sched_tailclipper", "sched_oracle"]
@@ -48,6 +50,7 @@ check = [
   "sched_pred,abort_slo,ac_pred,est_mean_var",
   "sched_pred,abort_slack,est_mean_var",
   "sched_pred,signal_slack,ac_pred,est_mean_var",
+  "sched_pred,abort_slack,ac_pred,est_mean_var,deadline_equals_slack",
   "sched_mt",
   "sched_mt,abort_slo",
   "sched_mt,ac_rajomon",
@@ -87,6 +90,7 @@ est_rms = ["masa/est_rms"]
 est_hist = ["masa/est_hist"]
 est_mean_var = ["masa/est_mean_var"]
 trace_queue_latency = ["masa/trace_queue_latency"]
+deadline_equals_slack = ["masa/deadline_equals_slack"]
 
 [python_policy.prio]
 sched_fifo = "fifo"
@@ -107,7 +111,7 @@ prio_precedence = [
   "sched_slo",
   "sched_fifo",
 ]
-ignored = ["estimator", "trace_queue_latency"]
+ignored = ["estimator", "trace_queue_latency", "deadline_equals_slack"]
 
 [python_policy.est]
 est_mean_var = "mean_var"
@@ -140,6 +144,7 @@ features = [
   "ac_pred",
   "ac_rajomon",
   "trace_queue_latency",
+  "deadline_equals_slack",
 ]
 
 [cargo."libs/masa-core/Cargo.toml".deps]
@@ -165,6 +170,7 @@ features = [
   "est_rms",
   "est_hist",
   "est_mean_var",
+  "deadline_equals_slack",
 ]
 
 [cargo."libs/masa-policy/Cargo.toml".deps]
@@ -180,6 +186,7 @@ estimator = ["masa-core/estimator", "tokio"]
 sched_pred = ["estimator", "sched_slo", "masa-core/sched_pred"]
 ac_pred = ["estimator", "masa-core/ac_pred"]
 ac_rajomon = ["masa", "masa-core/ac_rajomon", "tokio"]
+deadline_equals_slack = ["sched_pred"]
 
 [cargo."libs/masa/Cargo.toml"]
 features = [
@@ -200,6 +207,7 @@ features = [
   "ac_pred",
   "ac_rajomon",
   "trace_queue_latency",
+  "deadline_equals_slack",
 ]
 
 [cargo."libs/masa/Cargo.toml".deps]
@@ -278,3 +286,4 @@ trace_queue_latency = [
   "tonic/masa",
   "masa-policy/trace_queue_latency",
 ]
+deadline_equals_slack = ["sched_pred", "masa-policy/deadline_equals_slack"]

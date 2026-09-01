@@ -60,7 +60,7 @@ _AC_MAP: dict[str, str] = {
 }
 
 # Flags that do not affect plotting/display metadata.
-_IGNORED_FLAGS = {"estimator", "trace_queue_latency"}
+_IGNORED_FLAGS = {"deadline_equals_slack", "estimator", "trace_queue_latency"}
 
 _PRIO_DISPLAY: dict[str, str] = {
     "fifo": "FIFO",
@@ -139,6 +139,7 @@ class Policy:
     est: str | None
     drop: str | None
     ac: str | None
+    deadline_equals_slack: bool
 
     # ── construction ───────────────────────────────────────────────────
 
@@ -181,9 +182,23 @@ class Policy:
 
         # If we didn't recognise any scheduling flag, return an unparsed Policy.
         if prio is None:
-            return Policy(raw=policy, prio=None, est=None, drop=None, ac=None)
+            return Policy(
+                raw=policy,
+                prio=None,
+                est=None,
+                drop=None,
+                ac=None,
+                deadline_equals_slack=False,
+            )
 
-        return Policy(raw=policy, prio=prio, est=est, drop=drop, ac=ac)
+        return Policy(
+            raw=policy,
+            prio=prio,
+            est=est,
+            drop=drop,
+            ac=ac,
+            deadline_equals_slack="deadline_equals_slack" in flags,
+        )
 
     # ── display ────────────────────────────────────────────────────────
 
@@ -211,6 +226,8 @@ class Policy:
                 deviations.append(_PRIO_DISPLAY[self.prio])
             if self.drop != "slack":
                 deviations.append(_DROP_DISPLAY[self.drop])
+            if self.deadline_equals_slack:
+                deviations.append("deadline = slack")
             return self._format_display_name("Masa", deviations)
 
         if self.ac == "rajomon":
@@ -324,6 +341,8 @@ class Policy:
         if self.drop == "e2e_slo":
             return "--"
         if self.drop == "slack":
+            if self.deadline_equals_slack:
+                return "--"
             return "-."
         if self.drop == "slack_signal":
             return ":"

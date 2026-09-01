@@ -251,6 +251,13 @@ def _effective_duration_sec(df: pd.DataFrame, duration_sec: float) -> float:
     return duration if duration > 0 else 1.0
 
 
+def _request_slo_ms(df: pd.DataFrame, fallback_slo_ms: float) -> pd.Series:
+    if "slo_us" in df.columns:
+        per_request = pd.to_numeric(df["slo_us"], errors="coerce") / 1_000.0
+        return per_request.fillna(fallback_slo_ms)
+    return pd.Series(fallback_slo_ms, index=df.index, dtype=float)
+
+
 def _compute_goodput(df: pd.DataFrame, slo_ms: float, duration_sec: float) -> float:
     if df.empty:
         return 0.0
@@ -272,7 +279,7 @@ def _compute_goodput(df: pd.DataFrame, slo_ms: float, duration_sec: float) -> fl
     if df.empty:
         return 0.0
 
-    meets_slo = df["e2e_latency_ms"] <= slo_ms
+    meets_slo = df["e2e_latency_ms"] <= _request_slo_ms(df, slo_ms)
     denom = _effective_duration_sec(df, duration_sec)
     return float(meets_slo.sum()) / denom
 
@@ -501,7 +508,7 @@ def _plot_goodput_timeline(
                 if "error" in df.columns
                 else pd.Series(False, index=df.index)
             )
-            good = (~is_er) & (~is_timeout) & (e2e_ms <= slo_ms)
+            good = (~is_er) & (~is_timeout) & (e2e_ms <= _request_slo_ms(df, slo_ms))
 
             # Sort by time for efficient windowing
             order = np.argsort(abs_sec.values)

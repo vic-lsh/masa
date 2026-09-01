@@ -84,7 +84,7 @@ Key policy flags:
 - `ac_pred`: Progressive cost-aware admission control — uses compute-time estimates and downstream utilization signals. Requires `estimator`.
 - `ac_rajomon`: Token-bucket rate limiting admission control.
 
-`scripts/check.sh` checks: default (no features), `sched_fifo`, `sched_fifo,abort_slo`, `sched_slo`, `sched_slo,abort_slo`, `sched_tailclipper,abort_slo`, `sched_slo,ac_rajomon`, `sched_slo,ac_pred,est_mean_var`, `sched_pred,abort_slo,ac_pred,est_mean_var`, `sched_pred,abort_slack,est_mean_var`, `sched_pred,signal_slack,ac_pred,est_mean_var`, `sched_mt`, `sched_mt,abort_slo`, `sched_mt,ac_rajomon`, `sched_mt_multiqueue`, `sched_mt_multiqueue,abort_slo`.
+`scripts/check.sh` checks: default (no features), `sched_fifo`, `sched_fifo,abort_slo`, `sched_slo`, `sched_slo,abort_slo`, `sched_tailclipper,abort_slo`, `sched_slo,ac_rajomon`, `sched_slo,ac_pred,est_mean_var`, `sched_pred,abort_slo,ac_pred,est_mean_var`, `sched_pred,abort_slack,est_mean_var`, `sched_pred,signal_slack,ac_pred,est_mean_var`, `sched_pred,abort_slack,ac_pred,est_mean_var,deadline_equals_slack`, `sched_mt`, `sched_mt,abort_slo`, `sched_mt,ac_rajomon`, `sched_mt_multiqueue`, `sched_mt_multiqueue,abort_slo`.
 
 ## Architecture
 

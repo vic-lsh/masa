@@ -876,7 +876,8 @@ class SocialnetApp(AppPlugin):
             command = [
                 "/bin/sh",
                 "-c",
-                "/usr/entrypoint.sh; echo SOCIALNET_LOADGEN_DONE; sleep infinity",
+                "/usr/entrypoint.sh || exit $?; "
+                "while true; do echo SOCIALNET_LOADGEN_DONE; sleep 10; done",
             ]
 
         return TaskSpec(

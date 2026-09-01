@@ -1,0 +1,58 @@
+{
+  "child_cpus_per_replica": 1.0,
+  "call_graph": {
+    "entry_points": {
+      "a": [{"gateway::a": 1.0}]
+    },
+    "services": [
+      {
+        "id": "gateway",
+        "replicas": 1,
+        "methods": [
+          {
+            "name": "a",
+            "latency_distribution": {"Normal": {"mean": 1000, "std": 100}},
+            "busy_spin_ratio": 0.1,
+            "call_sequence": [{"short-1::run": 1.0}]
+          }
+        ]
+      },
+      {
+        "id": "short-1",
+        "replicas": 1,
+        "methods": [
+          {
+            "name": "run",
+            "latency_distribution": {"Normal": {"mean": 1000, "std": 100}},
+            "busy_spin_ratio": 0.1,
+            "call_sequence": [{"short-2::run": 1.0}]
+          }
+        ]
+      },
+      {
+        "id": "short-2",
+        "replicas": 1,
+        "methods": [
+          {
+            "name": "run",
+            "latency_distribution": {"Normal": {"mean": 1000, "std": 100}},
+            "busy_spin_ratio": 0.1,
+            "call_sequence": [{"heavy-tail::run": 1.0}]
+          }
+        ]
+      },
+      {
+        "id": "heavy-tail",
+        "replicas": 1,
+        "methods": [
+          {
+            "name": "run",
+            "latency_distribution": {"LogNormal": {"p50": 10000, "p95": 60000}},
+            "busy_spin_ratio": 0.1,
+            "call_sequence": []
+          }
+        ]
+      }
+    ]
+  }
+}

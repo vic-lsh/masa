@@ -253,6 +253,41 @@ def cmd_queue_experiments(args: argparse.Namespace) -> None:
     logger.info("All queued experiments completed successfully!")
 
 
+def cmd_run_group(args: argparse.Namespace) -> None:
+    """Run every experiment configuration nested under a named group."""
+    repo_root = find_repo_root()
+    group_dir = repo_root / "exp" / args.app / "in" / args.group
+    if not group_dir.is_dir():
+        logger.error(f"Experiment group not found: {group_dir}")
+        sys.exit(1)
+
+    experiments = sorted(
+        path.parent.relative_to(group_dir.parent).as_posix()
+        for path in group_dir.rglob("gen_config.json")
+        if (path.parent / "policies").is_file()
+    )
+    if not experiments:
+        logger.error(f"No experiment configurations found under: {group_dir}")
+        sys.exit(1)
+
+    queue_args = argparse.Namespace(
+        app=args.app,
+        experiments=" ".join(experiments),
+        plot=args.plot,
+        no_cache=args.no_cache,
+        rm_data=args.rm_data,
+        dry_run=args.dry_run,
+        smoke_test=args.smoke_test,
+        k8s=args.k8s,
+        kind=args.kind,
+        only=getattr(args, "only", None),
+        skip=getattr(args, "skip", None),
+        summary_only=getattr(args, "summary_only", False),
+        no_plot_cache=getattr(args, "no_plot_cache", False),
+    )
+    cmd_queue_experiments(queue_args)
+
+
 def cmd_build(args: argparse.Namespace) -> None:
     """
     Build Docker images for an experiment without running it.
@@ -659,6 +694,34 @@ Examples:
         help="Run on Kind (implies --k8s) and auto-load images",
     )
     queue_parser.set_defaults(func=cmd_queue_experiments)
+
+    # run-group command
+    group_parser = subparsers.add_parser(
+        "run-group",
+        help="Run a nested group of experiment configurations sequentially",
+    )
+    group_parser.add_argument(
+        "app",
+        choices=["hotel", "tracebench", "socialnet", "synthbench"],
+        help="Application to run",
+    )
+    group_parser.add_argument(
+        "group",
+        help="Directory under exp/<app>/in containing experiment configurations",
+    )
+    group_parser.add_argument(
+        "--plot", action="store_true", help="Generate plots after each experiment"
+    )
+    _add_plot_selector_args(group_parser)
+    group_parser.add_argument(
+        "--no-cache", action="store_true", help="Disable Docker cache during builds"
+    )
+    group_parser.add_argument("--rm-data", action="store_true")
+    group_parser.add_argument("--dry-run", action="store_true")
+    group_parser.add_argument("--smoke-test", action="store_true")
+    group_parser.add_argument("--k8s", action="store_true")
+    group_parser.add_argument("--kind", action="store_true")
+    group_parser.set_defaults(func=cmd_run_group)
 
     # build command
     build_parser = subparsers.add_parser(
