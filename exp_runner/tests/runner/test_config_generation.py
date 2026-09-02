@@ -1,5 +1,6 @@
 import json
 from exp_runner.runner.apps.hotel import (
+    HotelApp,
     create_gen_config_dict as hotel_create_gen,
     create_hotel_config_dict,
 )
@@ -24,6 +25,7 @@ class TestHotelConfigGeneration:
 
     def test_create_hotel_config_dict(self):
         template = {
+            "cpus_per_replica": 2,
             "rate": {
                 "ip": "local-rate-service",
                 "mongodbAddr": "mongodb://rate-mongo:27017",
@@ -41,6 +43,16 @@ class TestHotelConfigGeneration:
         assert result["rate"]["mongodbAddr"] == "mongodb://test-proj-rate-mongo-1:27017"
         # Check frontend (unscaled)
         assert result["frontend"]["ip"] == "test-proj-hotel-frontend-service-1"
+        assert "cpus_per_replica" not in result
+
+    def test_cpu_budget_is_forwarded_to_compose_and_tokio(self, tmp_path):
+        app = HotelApp()
+        result = app.generate_env_vars(
+            gen_config={"Addr": "http://localhost:8660"},
+            app_config={"cpus_per_replica": 16},
+            app_dir=tmp_path,
+        )
+        assert result["CPUS_PER_REPLICA"] == "16"
 
 
 class TestSynthbenchConfigGeneration:
@@ -68,6 +80,11 @@ class TestSynthbenchConfigGeneration:
         image_tag = "test-tag"
 
         result = app.create_call_graph_compose_dict(app_config, image_tag)
+        frontend = result["services"]["synthbench-frontend-service"]
+        assert "CPUS_PER_REPLICA=${CPUS_PER_REPLICA}" in frontend["environment"]
+        assert (
+            frontend["deploy"]["resources"]["limits"]["cpus"] == "${CPUS_PER_REPLICA}"
+        )
 
         services = result["services"]
         assert "synthbench-frontend-service" in services
@@ -77,6 +94,18 @@ class TestSynthbenchConfigGeneration:
         assert services["local-a-service"]["scale"] == 2
         assert services["local-b-service"]["scale"] == 1
         assert services["local-a-service"]["image"] == "synthbench_child:test-tag"
+
+    def test_call_graph_cpu_budget_uses_top_level_config(self, tmp_path):
+        app = SynthbenchApp()
+        result = app.generate_env_vars(
+            gen_config={"Addr": "http://localhost:8000"},
+            app_config={
+                "child_cpus_per_replica": 16.0,
+                "call_graph": {"services": [{"id": "A", "replicas": 1}]},
+            },
+            app_dir=tmp_path,
+        )
+        assert result["CPUS_PER_REPLICA"] == "16.0"
 
     def test_generate_k8s_values(self):
         app = SynthbenchApp()

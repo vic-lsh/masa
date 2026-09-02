@@ -24,6 +24,11 @@ flag_combos=(
     "sched_pred,abort_slack,est_mean_var"
     "sched_pred,signal_slack,ac_pred,est_mean_var"
     "sched_pred,abort_slack,ac_pred,est_mean_var,deadline_equals_slack"
+    "sched_mt"
+    "sched_mt,abort_slo"
+    "sched_mt,ac_rajomon"
+    "sched_mt_multiqueue"
+    "sched_mt_multiqueue,abort_slo"
 )
 
 CONTINUE_ON_ERROR=false
@@ -98,6 +103,8 @@ check_tests() {
     echo "Checking featured masa-policy tests"
     for flags in "${flag_combos[@]}"; do
         case "$flags" in
+            # Runtime-only flags (sched_mt*) live on tokio/masa, not masa-policy.
+            *sched_mt*) continue ;;
             *ac_pred* | *ac_rajomon* | *abort_slack* | *signal_slack*) ;;
             *) continue ;;
         esac

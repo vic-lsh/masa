@@ -13,6 +13,8 @@ tonic = { path = "../tonic/tonic" }
 
 [features]
 sched_slo = ["hyper/masa", "tonic/masa", "masa-core/sched_slo", "tokio/sched_prio", "masa-policy/sched_slo"]
+sched_mt = ["sched_slo", "tokio/sched_mt"]
+sched_mt_multiqueue = ["sched_mt", "tokio/sched_mt_multiqueue"]
 sched_tailclipper = ["hyper/masa", "tonic/masa", "masa-core/sched_tailclipper", "tokio/sched_prio", "tokio/tailclipper", "masa-policy/sched_tailclipper"]
 sched_fifo  = ["hyper/masa", "tonic/masa", "masa-core/sched_fifo",  "tokio/sched_fifo", "masa-policy/sched_fifo"]
 sched_oracle = ["hyper/masa", "tonic/masa", "masa-core/sched_oracle", "tokio/sched_prio", "masa-policy/sched_oracle"]

@@ -111,10 +111,12 @@ impl<T> Local<T> {
     }
 
     /// How many tasks can be pushed into the queue
+    #[cfg_attr(feature = "sched_mt", allow(dead_code))]
     pub(crate) fn remaining_slots(&self) -> usize {
         self.inner.remaining_slots()
     }
 
+    #[cfg_attr(feature = "sched_mt", allow(dead_code))]
     pub(crate) fn max_capacity(&self) -> usize {
         LOCAL_QUEUE_CAPACITY
     }
@@ -123,6 +125,7 @@ impl<T> Local<T> {
     ///
     /// Separate to `is_stealable` so that refactors of `is_stealable` to "protect"
     /// some tasks from stealing won't affect this
+    #[cfg_attr(feature = "sched_mt", allow(dead_code))]
     pub(crate) fn has_tasks(&self) -> bool {
         !self.inner.is_empty()
     }
@@ -133,6 +136,7 @@ impl<T> Local<T> {
     /// # Panics
     ///
     /// The method panics if there is not enough capacity to fit in the queue.
+    #[cfg_attr(feature = "sched_mt", allow(dead_code))]
     pub(crate) fn push_back(&mut self, tasks: impl ExactSizeIterator<Item = task::Notified<T>>) {
         let len = tasks.len();
         assert!(len <= LOCAL_QUEUE_CAPACITY);
@@ -386,11 +390,13 @@ impl<T> Local<T> {
 }
 
 impl<T> Steal<T> {
+    #[cfg_attr(feature = "sched_mt", allow(dead_code))]
     pub(crate) fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
 
     /// Steals half the tasks from self and place them into `dst`.
+    #[cfg_attr(feature = "sched_mt", allow(dead_code))]
     pub(crate) fn steal_into(
         &self,
         dst: &mut Local<T>,
@@ -446,6 +452,7 @@ impl<T> Steal<T> {
 
     // Steal tasks from `self`, placing them into `dst`. Returns the number of
     // tasks that were stolen.
+    #[cfg_attr(feature = "sched_mt", allow(dead_code))]
     fn steal_into2(&self, dst: &mut Local<T>, dst_tail: UnsignedShort) -> UnsignedShort {
         let mut prev_packed = self.0.head.load(Acquire);
         let mut next_packed;
@@ -569,6 +576,7 @@ impl<T> Drop for Local<T> {
 }
 
 impl<T> Inner<T> {
+    #[cfg_attr(feature = "sched_mt", allow(dead_code))]
     fn remaining_slots(&self) -> usize {
         let (steal, _) = unpack(self.head.load(Acquire));
         let tail = self.tail.load(Acquire);
@@ -583,6 +591,7 @@ impl<T> Inner<T> {
         tail.wrapping_sub(head)
     }
 
+    #[cfg_attr(feature = "sched_mt", allow(dead_code))]
     fn is_empty(&self) -> bool {
         self.len() == 0
     }

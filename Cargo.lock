@@ -3256,6 +3256,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1d87ecb2933e8aeadb3e3a02b828fed80a7528047e68b4f424523a0981a3a084"
 
 [[package]]
+name = "multiqueue-prio-queue"
+version = "0.1.0"
+dependencies = [
+ "rand 0.8.5",
+]
+
+[[package]]
 name = "my_application"
 version = "0.1.0"
 dependencies = [
@@ -5568,6 +5575,7 @@ dependencies = [
  "mio",
  "mio-aio",
  "mockall",
+ "multiqueue-prio-queue",
  "nix",
  "num_cpus",
  "parking_lot",

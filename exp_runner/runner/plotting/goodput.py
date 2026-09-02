@@ -61,7 +61,15 @@ def sort_policies_by_type(policies):
 
     Within each group, policies without drop come before those with drop.
     """
-    _PRIO_ORDER = {"fifo": 0, "e2e_slo": 1, "slack": 2, "oldest": 3}
+    _PRIO_ORDER = {
+        "fifo": 0,
+        "e2e_slo": 1,
+        "e2e_slo_mt": 2,
+        "e2e_slo_mt_mq": 3,
+        "slack": 4,
+        "oldest": 5,
+        "oracle": 6,
+    }
 
     def _sort_key(raw: str):
         p = Policy.parse(raw)

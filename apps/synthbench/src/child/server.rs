@@ -1,8 +1,11 @@
 use std::collections::HashMap;
-use std::time::{Duration, Instant};
+#[cfg(not(feature = "sched_mt"))]
+use std::time::Duration;
+use std::time::Instant;
 
-use tokio;
+#[cfg(not(feature = "sched_mt"))]
 use tokio::runtime::current_thread_queue_len;
+#[cfg(not(feature = "sched_mt"))]
 use tokio::task::JoinHandle;
 use tonic::{Request, Response, Status};
 
@@ -23,13 +26,16 @@ pub struct ChildImpl {
     service_registry: ServiceRegistry,
     method_lookup: HashMap<(String, String), ServiceMethod>,
     _bootstrap_task: Option<ConnectionBootstrapTask>,
+    #[cfg(not(feature = "sched_mt"))]
     _queue_monitor_task: QueueMonitorTask,
 }
 
+#[cfg(not(feature = "sched_mt"))]
 struct QueueMonitorTask {
     handle: JoinHandle<()>,
 }
 
+#[cfg(not(feature = "sched_mt"))]
 impl QueueMonitorTask {
     fn spawn() -> Self {
         let handle = tokio::spawn(async {
@@ -50,6 +56,7 @@ impl QueueMonitorTask {
     }
 }
 
+#[cfg(not(feature = "sched_mt"))]
 impl Drop for QueueMonitorTask {
     fn drop(&mut self) {
         self.handle.abort();
@@ -58,6 +65,7 @@ impl Drop for QueueMonitorTask {
 
 impl ChildImpl {
     pub async fn new(config: SynthbenchConfig) -> Self {
+        #[cfg(not(feature = "sched_mt"))]
         let queue_monitor_task = QueueMonitorTask::spawn();
 
         // Handle call graph configuration
@@ -126,6 +134,7 @@ impl ChildImpl {
             service_registry: registry,
             method_lookup,
             _bootstrap_task: bootstrap_task,
+            #[cfg(not(feature = "sched_mt"))]
             _queue_monitor_task: queue_monitor_task,
         }
     }

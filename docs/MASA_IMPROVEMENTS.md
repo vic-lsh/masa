@@ -39,11 +39,15 @@ Requests that have already missed their deadline are still enqueued and processe
 
 **Possible improvement**: Drop obviously-expired requests at the hyper layer before spawning a task, reducing scheduler queue pressure.
 
-## 4. Silent Priority Degradation with Multi-Thread Runtime
+## 4. Silent Priority Degradation with an Unconfigured Multi-Thread Runtime
 
-If an application accidentally uses `#[tokio::main(flavor = "multi_thread")]`, all priorities are silently ignored — the multi-thread scheduler uses standard work-stealing queues with no priority awareness. There is no runtime warning or compile-time check.
+The `sched_mt` feature now provides a priority-aware multi-thread scheduler.
+However, an application that selects Tokio's standard multi-thread runtime
+without enabling `sched_mt` still uses FIFO work stealing and silently ignores
+Masa priorities.
 
-**Possible improvement**: Add a runtime assertion in `spawn_with_prio` that verifies the current runtime is single-threaded, or emit a `tracing::warn!` when a non-infra priority is used on a multi-thread runtime.
+**Possible improvement**: Emit a warning when a non-infrastructure priority is
+used on a standard multi-thread runtime.
 
 ## 5. No Logging for Missing Context
 

@@ -8,8 +8,18 @@ pub mod media {
     tonic::include_proto!("media");
 }
 
+#[cfg(feature = "sched_mt")]
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    app_utils::runtime::block_on(main_inner())
+}
+
+#[cfg(not(feature = "sched_mt"))]
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    main_inner().await
+}
+
+async fn main_inner() -> Result<(), Box<dyn std::error::Error>> {
     // let addr = "[::1]:50051".parse::<SocketAddr>().unwrap();
 
     // // Create the service

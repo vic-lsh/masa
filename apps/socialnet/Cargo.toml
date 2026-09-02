@@ -90,6 +90,8 @@ path = "src/client/client_bench.rs"
 
 [features]
 sched_slo = ["masa/sched_slo"]
+sched_mt = ["masa/sched_mt"]
+sched_mt_multiqueue = ["sched_mt", "masa/sched_mt_multiqueue"]
 sched_tailclipper = ["masa/sched_tailclipper"]
 sched_fifo = ["masa/sched_fifo"]
 sched_oracle = ["masa/sched_oracle"]

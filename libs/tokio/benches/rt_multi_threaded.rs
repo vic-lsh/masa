@@ -247,6 +247,84 @@ fn rt_multi_chained_spawn(c: &mut Criterion) {
     });
 }
 
+// `tokio::spawn` uses infrastructure priority, so it never hits the user-task
+// heap. This bench uses non-zero priorities to exercise SharedPrioQueue.
+fn rt_multi_spawn_many_prio(c: &mut Criterion) {
+    const WORKERS: usize = 16;
+    const TASKS: usize = 10_000;
+
+    let rt = runtime::Builder::new_multi_thread()
+        .worker_threads(WORKERS)
+        .enable_all()
+        .build()
+        .unwrap();
+    let (tx, rx) = mpsc::sync_channel(1000);
+    let rem = Arc::new(AtomicUsize::new(0));
+
+    c.bench_function("spawn_many_prio", |b| {
+        b.iter(|| {
+            rem.store(TASKS, Relaxed);
+
+            rt.block_on(async {
+                for i in 0..TASKS {
+                    let tx = tx.clone();
+                    let rem = rem.clone();
+                    let prio = tokio::task::TaskPriority::new((i as u64 % 1000) + 1);
+
+                    tokio::task::spawn_with_prio(
+                        async move {
+                            if 1 == rem.fetch_sub(1, Relaxed) {
+                                tx.send(()).unwrap();
+                            }
+                        },
+                        prio,
+                    );
+                }
+
+                rx.recv().unwrap();
+            });
+        })
+    });
+}
+
+fn rt_multi_yield_many_prio(c: &mut Criterion) {
+    const WORKERS: usize = 16;
+    const NUM_YIELD: usize = 200;
+    const TASKS: usize = 400;
+
+    c.bench_function("yield_many_prio", |b| {
+        let rt = runtime::Builder::new_multi_thread()
+            .worker_threads(WORKERS)
+            .enable_all()
+            .build()
+            .unwrap();
+        let (tx, rx) = mpsc::sync_channel(TASKS);
+
+        b.iter(|| {
+            rt.block_on(async {
+                for i in 0..TASKS {
+                    let tx = tx.clone();
+                    let prio = tokio::task::TaskPriority::new((i as u64 % 50) + 1);
+
+                    tokio::task::spawn_with_prio(
+                        async move {
+                            for _ in 0..NUM_YIELD {
+                                tokio::task::yield_now().await;
+                            }
+                            tx.send(()).unwrap();
+                        },
+                        prio,
+                    );
+                }
+
+                for _ in 0..TASKS {
+                    rx.recv().unwrap();
+                }
+            });
+        })
+    });
+}
+
 fn rt() -> Runtime {
     runtime::Builder::new_multi_thread()
         .worker_threads(NUM_WORKERS)
@@ -271,6 +349,8 @@ criterion_group!(
     rt_multi_ping_pong,
     rt_multi_yield_many,
     rt_multi_chained_spawn,
+    rt_multi_spawn_many_prio,
+    rt_multi_yield_many_prio,
 );
 
 criterion_main!(rt_multi_scheduler);

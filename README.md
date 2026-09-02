@@ -211,3 +211,9 @@ policy features.
 - `sched_tailclipper`: oldest request first, implementing the TailClipper paper's policy with round-robin fairness.
 - `sched_oracle`: synthbench-only perfect-information priority scheduling using configured remaining work headers.
 - `sched_pred`: requests are served based on their local deadline with deadline tightening using latency estimates.
+- `sched_mt`: uses Masa's multi-threaded priority scheduler with one strict
+  shared heap.
+- `sched_mt_multiqueue`: replaces the mutex heap with a relaxed MultiQueue made
+  of several sub-heaps; push picks a random heap and pop takes the
+  better of two sampled heaps. Implies `sched_mt`.
+

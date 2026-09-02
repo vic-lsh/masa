@@ -145,11 +145,12 @@ class SynthbenchApp(AppPlugin):
                 "BINARY_NAME=synthbench_frontend",
                 "LOG_LEVEL=${LOG_LEVEL:-info}",
                 "DOCKER_COMPOSE_PROJECT_NAME=${DOCKER_COMPOSE_PROJECT_NAME:-}",
+                "CPUS_PER_REPLICA=${CPUS_PER_REPLICA}",
                 "MASA_FANOUT_AWARE=${MASA_FANOUT_AWARE:-1}",
                 "SYNTHBENCH_DISABLE_CPU_YIELD=${SYNTHBENCH_DISABLE_CPU_YIELD:-0}",
             ],
             "volumes": ["${APP_CONFIG_PATH}:/usr/config.json:ro"],
-            "deploy": {"resources": {"limits": {"cpus": "4"}}},
+            "deploy": {"resources": {"limits": {"cpus": "${CPUS_PER_REPLICA}"}}},
         }
 
         # Add one service per call graph service
@@ -170,6 +171,7 @@ class SynthbenchApp(AppPlugin):
                     "DOCKER_COMPOSE_PROJECT_NAME=${DOCKER_COMPOSE_PROJECT_NAME:-}",
                     "MASA_FANOUT_AWARE=${MASA_FANOUT_AWARE:-1}",
                     "SYNTHBENCH_DISABLE_CPU_YIELD=${SYNTHBENCH_DISABLE_CPU_YIELD:-0}",
+                    "CPUS_PER_REPLICA=${CPUS_PER_REPLICA}",
                 ],
                 "volumes": ["${APP_CONFIG_PATH}:/usr/config.json:ro"],
                 "deploy": {"resources": {"limits": {"cpus": "${CPUS_PER_REPLICA}"}}},

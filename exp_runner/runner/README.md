@@ -350,22 +350,25 @@ To add support for a new application:
 ```python
 from .base import AppPlugin, DockerConfig
 
+
 class YourApp(AppPlugin):
     def get_app_name(self) -> str:
         return "your_app"
-    
+
     def load_app_config(self, config_path: Path) -> dict:
         # Load your app's config file
         pass
-    
-    def generate_env_vars(self, gen_config: dict, app_config: dict, app_dir: Path) -> dict:
+
+    def generate_env_vars(
+        self, gen_config: dict, app_config: dict, app_dir: Path
+    ) -> dict:
         # Generate environment variables for docker-compose
         pass
-    
+
     def get_docker_config(self) -> DockerConfig:
         # Return Docker configuration
         pass
-    
+
     def get_container_names(self, env_vars: dict) -> list[str]:
         # Return container names for log collection
         pass
@@ -375,6 +378,7 @@ class YourApp(AppPlugin):
 
 ```python
 from .your_app import YourApp
+
 
 def get_app_plugin(app_name: str) -> AppPlugin:
     apps = {
@@ -458,7 +462,8 @@ uv run -m exp_runner run synthbench quick_test --verbose
 Set logging levels programmatically or use `--verbose` flag:
 ```python
 import logging
-logging.getLogger('exp_runner.runner').setLevel(logging.DEBUG)
+
+logging.getLogger("exp_runner.runner").setLevel(logging.DEBUG)
 ```
 
 ## License

@@ -6,6 +6,7 @@ use std::env;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+#[cfg(not(feature = "sched_mt"))]
 use tokio::runtime::current_thread_queue_len;
 use tonic::{transport::Server, Request, Response, Status};
 use trace_config::deployment::Deployment;
@@ -152,7 +153,8 @@ fn init_tracing() {
         .init();
 }
 
-#[tokio::main(flavor = "current_thread")]
+#[cfg_attr(feature = "sched_mt", tokio::main)]
+#[cfg_attr(not(feature = "sched_mt"), tokio::main(flavor = "current_thread"))]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     init_tracing();
 
@@ -201,6 +203,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Spawn a task that prints the queue length every second
+    #[cfg(not(feature = "sched_mt"))]
     let queue_monitor_task = tokio::spawn(async {
         let mut interval = tokio::time::interval(Duration::from_secs(1));
         let start_time = Instant::now();
@@ -222,8 +225,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .add_service(ServiceServer::new(svc))
         .serve(addr)
         .await?;
-    queue_monitor_task.abort();
-    let _ = queue_monitor_task.await;
+    #[cfg(not(feature = "sched_mt"))]
+    {
+        queue_monitor_task.abort();
+        let _ = queue_monitor_task.await;
+    }
 
     Ok(())
 }

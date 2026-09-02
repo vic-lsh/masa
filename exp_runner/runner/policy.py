@@ -23,14 +23,18 @@ _PRIO_MAP: dict[str, str] = {
     "sched_tailclipper": "oldest",
     "sched_oracle": "oracle",
     "sched_pred": "slack",
+    "sched_mt": "e2e_slo_mt",
+    "sched_mt_multiqueue": "e2e_slo_mt_mq",
 }
 
-# sched_pred and sched_tailclipper imply sched_slo at the Cargo level.
+# sched_pred, sched_tailclipper, and sched_mt* imply sched_slo at the Cargo level.
 # When both are present, sched_slo is redundant.
 _PRIO_PRIORITY = [
     "sched_pred",
     "sched_tailclipper",
     "sched_oracle",
+    "sched_mt_multiqueue",
+    "sched_mt",
     "sched_slo",
     "sched_fifo",
 ]
@@ -61,6 +65,8 @@ _IGNORED_FLAGS = {"deadline_equals_slack", "estimator", "trace_queue_latency"}
 _PRIO_DISPLAY: dict[str, str] = {
     "fifo": "FIFO",
     "e2e_slo": "SLO priority",
+    "e2e_slo_mt": "SLO priority (MT mutex)",
+    "e2e_slo_mt_mq": "SLO priority (MT multiqueue)",
     "oldest": "TailClipper",
     "oracle": "Oracle priority",
     "slack": "Masa priority",
@@ -298,6 +304,12 @@ class Policy:
             ("slack", "e2e_slo"): "#E69F00",
             ("slack", "slack"): "#009E73",
             ("slack", "slack_signal"): "#117733",
+            ("e2e_slo_mt", None): "#E69F00",
+            ("e2e_slo_mt", "e2e_slo"): "#D55E00",
+            ("e2e_slo_mt", "slack"): "#009E73",
+            ("e2e_slo_mt_mq", None): "#56B4E9",
+            ("e2e_slo_mt_mq", "e2e_slo"): "#0072B2",
+            ("e2e_slo_mt_mq", "slack"): "#009E73",
         }
         color = _color_map.get((self.prio, self.drop))
         if color is not None:
@@ -343,6 +355,8 @@ class Policy:
             return ""
         if self.prio == "e2e_slo":
             return "//"
+        if self.prio in {"e2e_slo_mt", "e2e_slo_mt_mq"}:
+            return "\\\\"
         if self.prio == "oldest":
             return "xx"
         if self.prio == "oracle":

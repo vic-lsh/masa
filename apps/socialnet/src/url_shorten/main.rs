@@ -7,8 +7,18 @@ pub mod url_shorten {
     tonic::include_proto!("url_shorten");
 }
 
+#[cfg(feature = "sched_mt")]
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    app_utils::runtime::block_on(main_inner())
+}
+
+#[cfg(not(feature = "sched_mt"))]
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    main_inner().await
+}
+
+async fn main_inner() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
