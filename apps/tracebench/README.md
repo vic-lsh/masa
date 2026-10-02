@@ -20,7 +20,7 @@ The recommended way to run Tracebench experiments is using the experiment runner
 
 ### Quick Start
 
-1. Create an experiment directory under `exp/tracebench/data/in/<experiment_name>/` with the following files:
+1. Create an experiment directory under `exp/tracebench/in/<experiment_name>/` with the following files:
 
    **`gen_config.json`** - Load generator configuration:
    ```json
@@ -79,7 +79,7 @@ The runner will:
 - Build the load generator Docker image
 - Build generic service images for each unique policy
 - Run experiments for each combination of policy and RPS value
-- Save results to `exp/tracebench/data/out/<experiment_name>/<iteration>/<policy>/rps_<rps_value>/run_<run_id>/`
+- Save results to `exp/tracebench/out/<experiment_name>/<iteration>/<policy>/rps_<rps_value>/run_<run_id>/`
 
 ### Configuration Options
 
@@ -110,7 +110,7 @@ See `scripts/test_tracebench_experiment.sh` for a complete example of running an
 
 Results are organized as:
 ```
-exp/tracebench/data/out/<experiment_name>/
+exp/tracebench/out/<experiment_name>/
 ├── <iteration>/
 │   ├── <policy>/
 │   │   └── rps_<rps_value>/
@@ -126,7 +126,7 @@ exp/tracebench/data/out/<experiment_name>/
 
 Plots are generated in:
 ```
-exp/tracebench/data/plots/<experiment_name>/
+exp/tracebench/plots/<experiment_name>/
 ├── <iteration>/
 │   ├── goodput_absolute.png
 │   ├── goodput_fraction.png

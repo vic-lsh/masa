@@ -14,7 +14,7 @@ Masa is an RPC system optimizing "goodput" (requests meeting SLO) using dynamic 
 You must follow this exact sequence for your analysis. Do not skip steps.
 
 ## 1. Observation (High-Level Data)
-First, read the aggregated result CSVs (e.g., `goodput_ALL_aggregated.csv`, `latency_summary_ALL.csv`) and look at plots in `exp/<app>/data/plots/<experiment>/`.
+First, read the aggregated result CSVs (e.g., `goodput_ALL_aggregated.csv`, `latency_summary_ALL.csv`) and look at plots in `exp/<app>/plots/<experiment>/`.
 - **Identify the baseline:** How does FIFO perform?
 - **Identify the trend:** How do other policies compare? (Better, worse, same?)
 - **Key Metrics:** Look at max goodput, saturation point, p99 latency, and drop rates, and any other metric you deem important.
@@ -44,7 +44,7 @@ Synthesize your findings.
 # Output Requirement
 
 You **MUST** document these 5 steps in a markdown file located at:
-`exp/<app>/data/out/<experiment>/analysis_{timestamp}.md`
+`exp/<app>/out/<experiment>/analysis_{timestamp}.md`
 
 If you cannot determine the app or experiment name to resolve the path, output the markdown content directly in your response.
 

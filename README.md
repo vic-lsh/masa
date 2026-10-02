@@ -80,14 +80,14 @@ NOTE: This is currently only supported for `hotel` and `synthbench`.
 We have some basic scripts to automate running experiments on an application. Assuming you are in `exp/<app>`, an experiment takes the following files as input:
 
 ```
-./data/in/<experiment>
+./in/<experiment>
 ├── gen_config.json     # load gen config
 ├── policies            # list of policies to run the experiment with
 ├── config.docker.json  # optional: app config for non-hotel apps (falls back to ./scripts/local/config.docker.json)
 └── hotel.json          # required: hotel app config copied to apps/<app>/scripts/local/hotel.json during experiment setup
 ```
 
-See `./data/in/template` for an example experiment.
+See `./in/ci` for an example experiment.
 
 Execute the following command to run the experiment:
 
@@ -99,7 +99,7 @@ The load gen configuration allows you to specify the number of times that the ex
 For the `i`-th repetition of the experiment, the script generates a folder with the following structure for every policy
 
 ```
-./data/out/<experiment>/i/<policy>
+./out/<experiment>/i/<policy>
 ├── loadgen.log         # logs from load gen
 ├── r<rps1>_<api1>.csv         # trace for each RPS level provided in the load gen config
 ├── ...                        # traces for different APIs are stored in different files
@@ -132,7 +132,7 @@ uv run -m exp_runner plot tracebench e2e_test
 uv run -m exp_runner plot socialnet exp1
 ```
 
-The plots will be saved at `exp/<app>/data/plots/<experiment>`.
+The plots will be saved at `exp/<app>/plots/<experiment>`.
 
 You can also pass a `--plot` option when running experiments to automatically generate plots after completion:
 

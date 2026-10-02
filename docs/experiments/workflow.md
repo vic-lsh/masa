@@ -6,19 +6,19 @@ This document outlines the workflow for running performance experiments in the M
 
 All experiments follow this common pattern:
 
-1.  **Configure**: Create an experiment directory in `exp/<app>/data/in/<experiment_name>/` containing the required configuration files.
+1.  **Configure**: Create an experiment directory in `exp/<app>/in/<experiment_name>/` containing the required configuration files.
 2.  **Run**: Execute the experiment using the Python runner: `uv run -m exp_runner run <app> <experiment_name>`.
-3.  **Analyze**: Results are automatically saved to `exp/<app>/data/out/`, and plots can be generated with the `--plot` flag or a separate command.
+3.  **Analyze**: Results are automatically saved to `exp/<app>/out/`, and plots can be generated with the `--plot` flag or a separate command.
 
-### 1. Configuration (`exp/<app>/data/in/<experiment_name>/`)
+### 1. Configuration (`exp/<app>/in/<experiment_name>/`)
 
 Each application has a committed example configuration folder that you should copy and modify.
 
 **Example Config Locations:**
-*   **Hotel**: `exp/hotel/data/in/ci`
-*   **Tracebench**: `exp/tracebench/data/in/e2e_test`
-*   **Socialnet**: `exp/socialnet/data/in/ci`
-*   **Synthbench**: `exp/synthbench/data/in/ci`
+*   **Hotel**: `exp/hotel/in/ci`
+*   **Tracebench**: `exp/tracebench/in/e2e_test`
+*   **Socialnet**: `exp/socialnet/in/ci`
+*   **Synthbench**: `exp/synthbench/in/ci`
 
 Every experiment directory **must** contain these two files:
 
@@ -60,10 +60,10 @@ uv run -m exp_runner run-multiple <app> "<exp1> <exp2>" --plot
 
 ### 3. Viewing Results
 
-*   **Raw Data**: Saved in `exp/<app>/data/out/<experiment_name>/`.
+*   **Raw Data**: Saved in `exp/<app>/out/<experiment_name>/`.
     *   Organized by iteration (`0`, `1`, ...) and policy (`sched_fifo`, `sched_prio`, etc.).
     *   Contains logs (`*.log`) and trace CSVs.
-*   **Plots**: Saved in `exp/<app>/data/plots/<experiment_name>/`.
+*   **Plots**: Saved in `exp/<app>/plots/<experiment_name>/`.
     *   Includes goodput, latency CDFs, and CPU usage.
     *   To generate plots later: `uv run -m exp_runner plot <app> <experiment_name>`.
 
