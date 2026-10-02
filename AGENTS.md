@@ -185,7 +185,7 @@ See `docs/MASA_POLICY_IMPL.md` for detailed implementation walkthrough covering 
 
 ## Applications
 
-Experiment apps in `apps/` with experiment configs in `exp/<app>/data/in/<experiment>/`:
+Experiment apps in `apps/` with experiment configs in `exp/<app>/in/<experiment>/`:
 - `hotel`: Rust port of Deathstarbench Hotel application
 - `socialnet`: Social network microservice benchmark
 - `synthbench`: Configurable synthbench workload

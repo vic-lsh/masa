@@ -84,7 +84,7 @@ uv run -m exp_runner plot-replicas hotel
 
 ## Experiment Configuration
 
-Experiments are configured using files in `exp/<app>/data/in/<experiment_name>/`:
+Experiments are configured using files in `exp/<app>/in/<experiment_name>/`:
 
 ### Required Files
 
@@ -122,7 +122,7 @@ Experiments are configured using files in `exp/<app>/data/in/<experiment_name>/`
 
 ### Tracebench Configuration
 
-Tracebench experiments live under `exp/tracebench/data/in/<experiment_name>/` and require:
+Tracebench experiments live under `exp/tracebench/in/<experiment_name>/` and require:
 
 1. **`gen_config.json`** (Tracebench subset)
    ```json
@@ -168,7 +168,7 @@ Tracebench experiments live under `exp/tracebench/data/in/<experiment_name>/` an
 ### Example: Hotel Application
 
 ```bash
-exp/hotel/data/in/exp1/
+exp/hotel/in/exp1/
 ├── gen_config.json       # Load generator settings
 ├── hotel.json            # Hotel-specific configuration
 └── policies              # Scheduling policies to test
@@ -177,7 +177,7 @@ exp/hotel/data/in/exp1/
 ### Example: Socialnet Application
 
 ```bash
-exp/socialnet/data/in/exp1/
+exp/socialnet/in/exp1/
 ├── gen_config.json       # Load generator settings
 ├── socialnet.json        # Placeholder config (can be empty)
 └── policies              # Scheduling policies to test
@@ -186,7 +186,7 @@ exp/socialnet/data/in/exp1/
 ### Example: Synthbench Application
 
 ```bash
-exp/synthbench/data/in/quick_test/
+exp/synthbench/in/quick_test/
 ├── gen_config.json       # Load generator settings
 ├── config.docker.json    # Optional synthbench config
 └── policies              # Scheduling policies to test
@@ -194,10 +194,10 @@ exp/synthbench/data/in/quick_test/
 
 ## Output Structure
 
-Results are saved to `exp/<app>/data/out/<experiment_name>/`:
+Results are saved to `exp/<app>/out/<experiment_name>/`:
 
 ```
-exp/hotel/data/out/exp1/
+exp/hotel/out/exp1/
 ├── 0/                           # First iteration
 │   ├── sched_fifo/              # Results for sched_fifo policy
 │   │   ├── loadgen.log         # Load generator output
@@ -211,15 +211,15 @@ exp/hotel/data/out/exp1/
 └── done                        # Marker file when complete
 ```
 
-Plots are generated in `exp/<app>/data/plots/<experiment_name>/`.
-Replica plots are generated in `exp/hotel/data/plots/replicas/`.
+Plots are generated in `exp/<app>/plots/<experiment_name>/`.
+Replica plots are generated in `exp/hotel/plots/replicas/`.
 
 ### Tracebench Output Layout
 
 Tracebench uses the standard runner output root, with per-RPS subdirectories under each policy:
 
 ```
-exp/tracebench/data/out/e2e_test/
+exp/tracebench/out/e2e_test/
 ├── 0/
 │   ├── sched_fifo/
 │   │   └── rps_200/
@@ -246,7 +246,7 @@ uv run -m exp_runner run <app> <experiment> [options]
 
 **Arguments:**
 - `<app>`: Application name (`hotel`, `tracebench`, or `synthbench`)
-- `<experiment>`: Experiment name (must exist in `exp/<app>/data/in/`)
+- `<experiment>`: Experiment name (must exist in `exp/<app>/in/`)
 
 **Options:**
 - `--plot`: Generate plots after experiment completion
@@ -302,7 +302,7 @@ uv run -m exp_runner plot tracebench e2e_test
 
 ### plot-replicas
 
-Generate replica plots for hotel experiments by scanning `exp/hotel/data/in`.
+Generate replica plots for hotel experiments by scanning `exp/hotel/in`.
 
 ```bash
 uv run -m exp_runner plot-replicas hotel
@@ -312,7 +312,7 @@ uv run -m exp_runner plot-replicas hotel
 - `<app>`: Application name (`hotel` only)
 
 **Output:**
-- `exp/hotel/data/plots/replicas/`
+- `exp/hotel/plots/replicas/`
 
 ## Migration from Bash Scripts
 
@@ -433,7 +433,7 @@ Key improvements in Phase 3:
 Ensure you're running the command from within the MASA repository.
 
 ### "Experiment directory not found" error
-Check that the experiment exists: `ls exp/<app>/data/in/`
+Check that the experiment exists: `ls exp/<app>/in/`
 
 ### "Required app config not found" error
 For hotel experiments, ensure `hotel.json` exists in the experiment input directory.

@@ -611,7 +611,7 @@ Examples:
     )
     run_parser.add_argument(
         "experiment",
-        help="Name of the experiment (directory name in exp/<app>/data/in/)",
+        help="Name of the experiment (directory name in exp/<app>/in/)",
     )
     run_parser.add_argument(
         "--plot", action="store_true", help="Generate plots after experiment completion"
@@ -736,7 +736,7 @@ Examples:
     )
     build_parser.add_argument(
         "experiment",
-        help="Name of the experiment (directory name in exp/<app>/data/in/)",
+        help="Name of the experiment (directory name in exp/<app>/in/)",
     )
     build_parser.add_argument(
         "--policy",
@@ -760,7 +760,7 @@ Examples:
     )
     build_dryrun_parser.add_argument(
         "experiment",
-        help="Name of the experiment (directory name in exp/<app>/data/in/)",
+        help="Name of the experiment (directory name in exp/<app>/in/)",
     )
     build_dryrun_parser.add_argument(
         "--policy",
@@ -792,7 +792,7 @@ Examples:
     plot_replicas_parser = subparsers.add_parser(
         "plot-replicas",
         help="Generate replica plots from hotel experiment inputs",
-        description="Scan exp/<app>/data/in for <policy>_<rps> directories and plot replicas",
+        description="Scan exp/<app>/in for <policy>_<rps> directories and plot replicas",
     )
     plot_replicas_parser.add_argument(
         "app", choices=["hotel"], help="Application name (hotel only)"
