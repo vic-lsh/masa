@@ -86,6 +86,8 @@ check_tests() {
         "rpcstack"
         "rpcstack-tonic"
         "rajomon"
+        "tailclipper"
+        "paper-rpc"
         "masa"
         "masa-core"
         "masa-policy"
@@ -125,6 +127,9 @@ check_tests() {
         echo "Running: $featured_cmd"
         cargo check --tests --quiet -p masa-policy --features "$flags" || return $?
     done
+
+    echo "Checking standalone paper policy transport tests"
+    cargo check --quiet -p paper-rpc --all-targets --features orf || return $?
 
     # The benchmarks are never run here (too noisy and slow), only compiled so
     # they cannot rot. Queue features select Tokio's run queue, which the

@@ -17,3 +17,6 @@ pub use client::{ClientTokenBucket, CLIENT_TOKEN_BUCKET};
 pub use module::{RajomonModule, RajomonServer, RajomonWire};
 pub use params::{RajomonParams, LEGACY_PARAMS_PATH_ENV, PARAMS_PATH_ENV};
 pub use shared::{RajomonSharedState, RAJOMON_STATE};
+
+mod paper;
+pub use paper::{PaperRajomonModule, PaperRajomonServer};

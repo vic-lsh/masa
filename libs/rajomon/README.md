@@ -20,3 +20,30 @@ crate or hyper; `scripts/validate_rpcstack_boundary.py` checks this.
   works unchanged. Unset or unreadable means defaults.
 
 `tests/toy_stack.rs` runs the module in a stack of the framework alone.
+
+## Paper-oriented module
+
+`PaperRajomonModule` is an alternative implementation of NSDI '25 §3, suitable
+for a standalone framework stack. It uses the same `rajomon` wire section and
+`RajomonParams`, but separate server state per constructed service and separate
+queue observations/local prices per interface. `before_root_rpc` automatically
+spends from the existing Poisson-refilled client bucket; `after_root_rpc` learns
+prices even from error statuses. Explicit root wire tokens allow externally
+managed clients/replay without double spending.
+
+Unlike the historical `RajomonModule`, it forwards token holdings unchanged
+(§3.4/§3.5), does not consult an unrelated parent's child-price cache, resets the
+queue observation each update window, and does not introduce downstream price
+aging. Local price rises proportionally above the queue threshold, falls by one
+below half the threshold, and holds in between. Total price is local plus the
+maximum relevant downstream price. Responses advertise with probability
+`1/price_freq`; zero disables advertisements. Rejected requests also finalize.
+A missing token section is an invalid request rather than a default allowance.
+
+Compose one Rajomon module at a time: both claim the same wire section. The
+existing `ac_rajomon` feature keeps selecting the historical implementation, rather than silently replacing it. Client refill startup now retries after
+being invoked without a runtime or after runtime shutdown, and samples full
+exponential intervals instead of truncating them at 10 seconds.
+
+See [paper-rpc](../../apps/paper-rpc/) for automatic root-to-leaf integration and
+[the report](../../docs/PAPER_RPC_POLICIES.md) for scope and limitations.

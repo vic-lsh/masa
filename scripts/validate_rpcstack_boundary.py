@@ -31,13 +31,14 @@ RPCSTACK_CRATES = {"rpcstack", "rpcstack-wire", "rpcstack-tonic", "rpcstack-sche
 
 FORBIDDEN: dict[str, set[str]] = {
     "rpcstack-wire": MASA_CRATES
-    | {"rajomon"}
+    | {"rajomon", "tailclipper"}
     | RUNTIME_CRATES
     | (RPCSTACK_CRATES - {"rpcstack-wire"})
     | {"tonic", "http"},
-    "rpcstack": MASA_CRATES | RUNTIME_CRATES | {"rajomon"},
-    "rpcstack-tonic": MASA_CRATES | RUNTIME_CRATES | {"rajomon"},
+    "rpcstack": MASA_CRATES | RUNTIME_CRATES | {"rajomon", "tailclipper"},
+    "rpcstack-tonic": MASA_CRATES | RUNTIME_CRATES | {"rajomon", "tailclipper"},
     "rajomon": MASA_CRATES | (RUNTIME_CRATES - {"tokio"}),
+    "tailclipper": MASA_CRATES | (RUNTIME_CRATES - {"tokio"}),
 }
 
 
