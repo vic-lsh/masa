@@ -1,7 +1,7 @@
 // A stack without poll hooks skips them, and a module cannot declare that it
 // has none while overriding one.
 
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::cell::Cell;
 use std::sync::Arc;
 use std::task::Poll;
 
@@ -13,8 +13,12 @@ use tonic::{CowGrpcMethod, GrpcMethod, Response, Status};
 type Server<S> = <PolicyHooks<S> as Hooks>::ServerContext;
 type Parent<S> = <PolicyHooks<S> as Hooks>::ParentContext;
 
-static BEFORE: AtomicU32 = AtomicU32::new(0);
-static AFTER: AtomicU32 = AtomicU32::new(0);
+// These hooks are driven synchronously on each test's thread. The
+// should-panic test also runs Counts, so process-global counters race.
+thread_local! {
+    static BEFORE: Cell<u32> = const { Cell::new(0) };
+    static AFTER: Cell<u32> = const { Cell::new(0) };
+}
 
 macro_rules! module {
     ($ty:ident, $name:literal, $flag:expr) => {
@@ -51,7 +55,7 @@ impl Module for Counts {
     }
 
     fn before_poll<Ret>(&self, _: &mut Extensions) -> Result<(), Result<Response<Ret>, Status>> {
-        BEFORE.fetch_add(1, Ordering::Relaxed);
+        BEFORE.set(BEFORE.get() + 1);
         Ok(())
     }
 
@@ -60,7 +64,7 @@ impl Module for Counts {
         _: &Poll<Result<Response<Ret>, Status>>,
         _: &Extensions,
     ) -> Result<(), Result<Response<Ret>, Status>> {
-        AFTER.fetch_add(1, Ordering::Relaxed);
+        AFTER.set(AFTER.get() + 1);
         Ok(())
     }
 }
@@ -131,14 +135,11 @@ fn a_stack_declares_poll_hooks_when_any_module_has_them() {
 fn modules_with_poll_hooks_run_them_next_to_modules_without() {
     type S = policy_stack![Quiet, Counts, QuietToo];
     let parent = begin::<S>();
-    let (before, after) = (
-        BEFORE.load(Ordering::Relaxed),
-        AFTER.load(Ordering::Relaxed),
-    );
+    let (before, after) = (BEFORE.get(), AFTER.get());
     poll::<S>(&parent);
     poll::<S>(&parent);
-    assert_eq!(BEFORE.load(Ordering::Relaxed) - before, 2);
-    assert_eq!(AFTER.load(Ordering::Relaxed) - after, 2);
+    assert_eq!(BEFORE.get() - before, 2);
+    assert_eq!(AFTER.get() - after, 2);
 }
 
 #[test]
