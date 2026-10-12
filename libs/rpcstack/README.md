@@ -50,3 +50,12 @@ Public surface:
   rejects a child RPC; used by hook adapters such as `rpcstack-tonic`.
 
 `rpcstack-tonic` runs a stack as tonic's request hooks.
+
+Root clients use `Module::before_root_rpc` and `after_root_rpc` (static hooks;
+there is no server request instance). They run in stack/reverse-stack order,
+respectively, with per-call `ChildState`. Rejection short-circuits and unwinds
+only entered modules with `ChildOutcome::Rejected`. A sent call reports both
+successful and error response metadata. Shared client state belongs to the
+module. The tonic adapter invokes these automatically for unary calls without
+a parent; child RPCs continue to use the existing child hooks. Cancellation
+before a response still drops state without an after hook, as for child RPCs.

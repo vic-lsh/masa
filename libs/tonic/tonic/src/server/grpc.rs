@@ -313,7 +313,13 @@ where
                 crate::masa::server::set_parent_ctx::<M>(req_ctx.as_ref());
                 match req_ctx.before_poll() {
                     Ok(()) => None,
-                    Err(e) => Some(e),
+                    Err(e) => {
+                        // Abortable skips after_poll when before_poll rejects.
+                        // Do not expose this rejected request as the parent of
+                        // unrelated RPCs subsequently polled on this thread.
+                        crate::masa::server::reset_parent_ctx::<M>();
+                        Some(e)
+                    }
                 }
             })
             .after_poll(|poll| {

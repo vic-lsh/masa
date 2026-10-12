@@ -370,7 +370,7 @@ fn generate_unary<T: Service>(
 
            #before_child_rpc
 
-           child_ctx.before_send(&mut req);
+           child_ctx.try_before_send(&mut req)?;
            #[allow(unused_mut)]
            let mut resp = self.inner.unary(req, path, codec).await;
            child_ctx.after_recv(&mut resp);

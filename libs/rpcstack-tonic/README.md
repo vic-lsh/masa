@@ -21,3 +21,10 @@ Public surface:
 - `get_wire_from_metadata`, `set_wire_in_metadata`, and the
   `get_/set_*_name_override_*` helpers for metadata and HTTP headers. The
   overrides travel in `x-rpcstack-method-name` and `x-rpcstack-service-name`.
+
+Generated unary clients call `ClientHooks::try_before_send`, a fallible wrapper
+that defaults to the old `before_send` behavior. `ChildContext<S>` dispatches
+root module hooks when no parent ran `before_child_rpc`, installs their wire
+sections while preserving caller-provided sections, and reports response/status
+metadata through `after_root_rpc`. Root rejection returns before the unary
+transport is invoked. Regenerate tonic stubs to use the fallible hook.
