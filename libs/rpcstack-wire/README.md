@@ -35,3 +35,10 @@ Public surface:
 - `push_section(&mut header, name, payload)`.
 
 `rpcstack` builds the typed module API (`WireIn`, `WireOut`) on these.
+
+`SCHEDULING_HEADER` (`x-rpcstack-scheduling`) carries an optional decimal `u64`
+scheduling key. The Masa-enabled Hyper executor maps this opaque key to task
+metadata before the first task enqueue, without decoding a policy module's
+private schema. The run queue defines its meaning. Missing/invalid keys retain
+the existing Masa context fallback. Modules set the header on outbound requests;
+this mechanism does not select a queue or supply preemption.

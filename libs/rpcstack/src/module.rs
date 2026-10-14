@@ -381,6 +381,29 @@ pub trait Module: Send + Sync + std::fmt::Debug + 'static {
     /// the hook.
     const POLL_HOOKS: bool = true;
 
+    /// Admit and annotate an RPC originating outside a server request.
+    /// Runs head first. On rejection, entered modules receive `after_root_rpc`
+    /// in reverse order with `ChildOutcome::Rejected`; the RPC is never sent.
+    /// State is private to this call. Shared client state belongs to the module.
+    fn before_root_rpc<T>(
+        _method: &CowGrpcMethod,
+        _request: &mut tonic::Request<T>,
+        _wire: &mut WireOut,
+        _state: &mut ChildState,
+    ) -> Result<(), Status> {
+        Ok(())
+    }
+
+    /// Observe a root RPC response (including error metadata), or local rejection.
+    fn after_root_rpc<T>(
+        _method: &CowGrpcMethod,
+        _outcome: ChildOutcome<'_, T>,
+        _wire: &WireIn<'_>,
+        _state: &ChildState,
+    ) -> Result<(), Status> {
+        Ok(())
+    }
+
     /// Declare the modules that must appear earlier in the stack than this
     /// one, with [`Requires::module`]. A stack that omits one or puts it later
     /// fails when the server state is built, with an error naming both
@@ -625,6 +648,22 @@ pub trait ModuleStack: Send + Sync + std::fmt::Debug + 'static {
     const POLL_HOOKS: bool;
 
     #[doc(hidden)]
+    fn before_root_rpc<R>(
+        method: &CowGrpcMethod,
+        request: &mut tonic::Request<R>,
+        wire: &mut WireOut,
+        state: &mut ChildState,
+    ) -> Result<(), Rejection>;
+
+    #[doc(hidden)]
+    fn after_root_rpc<R>(
+        method: &CowGrpcMethod,
+        outcome: ChildOutcome<'_, R>,
+        wire: &WireIn<'_>,
+        state: &ChildState,
+    ) -> Result<(), Status>;
+
+    #[doc(hidden)]
     fn describe(modules: &mut Vec<ModuleDecl>);
 
     #[doc(hidden)]
@@ -700,6 +739,23 @@ pub trait ModuleStack: Send + Sync + std::fmt::Debug + 'static {
 impl ModuleStack for () {
     type Server = ();
     const POLL_HOOKS: bool = false;
+
+    fn before_root_rpc<R>(
+        _method: &CowGrpcMethod,
+        _request: &mut tonic::Request<R>,
+        _wire: &mut WireOut,
+        _state: &mut ChildState,
+    ) -> Result<(), Rejection> {
+        Ok(())
+    }
+    fn after_root_rpc<R>(
+        _method: &CowGrpcMethod,
+        _outcome: ChildOutcome<'_, R>,
+        _wire: &WireIn<'_>,
+        _state: &ChildState,
+    ) -> Result<(), Status> {
+        Ok(())
+    }
 
     fn describe(_modules: &mut Vec<ModuleDecl>) {}
 
@@ -790,6 +846,42 @@ pub struct Stack<H, T> {
 impl<H: Module, T: ModuleStack> ModuleStack for Stack<H, T> {
     type Server = (H::Server, T::Server);
     const POLL_HOOKS: bool = H::POLL_HOOKS || T::POLL_HOOKS;
+
+    fn before_root_rpc<R>(
+        method: &CowGrpcMethod,
+        request: &mut tonic::Request<R>,
+        wire: &mut WireOut,
+        state: &mut ChildState,
+    ) -> Result<(), Rejection> {
+        state.set_module(H::NAME);
+        let rejection = match H::before_root_rpc(method, request, wire, state) {
+            Err(status) => Rejection {
+                by: H::NAME,
+                status,
+            },
+            Ok(()) => match T::before_root_rpc(method, request, wire, state) {
+                Ok(()) => return Ok(()),
+                Err(rejection) => rejection,
+            },
+        };
+        let outcome: ChildOutcome<'_, ()> = ChildOutcome::Rejected {
+            by: rejection.by,
+            status: &rejection.status,
+        };
+        let _ = H::after_root_rpc(method, outcome, &WireIn::default(), state);
+        Err(rejection)
+    }
+
+    fn after_root_rpc<R>(
+        method: &CowGrpcMethod,
+        outcome: ChildOutcome<'_, R>,
+        wire: &WireIn<'_>,
+        state: &ChildState,
+    ) -> Result<(), Status> {
+        let tail = T::after_root_rpc(method, outcome, wire, state);
+        let head = H::after_root_rpc(method, outcome, wire, state);
+        tail.and(head)
+    }
 
     fn describe(modules: &mut Vec<ModuleDecl>) {
         modules.push(ModuleDecl::of::<H>());

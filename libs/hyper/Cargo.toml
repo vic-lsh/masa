@@ -36,6 +36,7 @@ tower-service = "0.3"
 tokio = { path = "../tokio/tokio", features = ["sync"] }
 want = "0.3"
 log = "0.4"
+rpcstack-wire = { path = "../rpcstack-wire", optional = true }
 masa-core = { path = "../masa-core", optional = true }
 
 # Optional
@@ -91,7 +92,7 @@ http2 = ["h2"]
 # Client/Server
 client = []
 server = []
-masa = ["dep:masa-core"]
+masa = ["dep:masa-core", "dep:rpcstack-wire"]
 
 # `impl Stream` for things
 stream = []

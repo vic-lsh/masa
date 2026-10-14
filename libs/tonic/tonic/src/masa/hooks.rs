@@ -47,6 +47,13 @@ pub trait ClientHooks {
     /// For example, it is called _after_ hooks like `ParentHooks::before_child_rpc`.
     fn before_send<T>(&mut self, request: &mut Request<T>) {}
 
+    /// Fallible send hook. A rejection prevents transport invocation.
+    /// Defaults to the legacy `before_send` hook for existing implementations.
+    fn try_before_send<T>(&mut self, request: &mut Request<T>) -> Result<(), Status> {
+        self.before_send(request);
+        Ok(())
+    }
+
     /// Lifecycle hook invoked right after a client stub received a response
     /// for this RPC.
     ///

@@ -25,6 +25,11 @@
 /// Name of the header that carries the sections.
 pub const HEADER_NAME: &str = "ctx";
 
+/// Optional opaque scheduling key for transports that enqueue before RPC hooks.
+/// Decimal u64; interpretation belongs to the selected run queue. This is
+/// independent of any module's private wire schema.
+pub const SCHEDULING_HEADER: &str = "x-rpcstack-scheduling";
+
 use std::fmt::Write as _;
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};

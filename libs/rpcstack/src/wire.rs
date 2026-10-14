@@ -223,7 +223,7 @@ impl WireOut {
     }
 
     /// Sections already present in `metadata`'s `ctx` header, kept verbatim.
-    fn from_metadata(metadata: &MetadataMap) -> Result<Self, WireError> {
+    pub fn from_metadata(metadata: &MetadataMap) -> Result<Self, WireError> {
         let input = WireIn::from_metadata(metadata)?;
         Ok(Self {
             header: SmallVec::from_slice(input.sections.as_bytes()),

@@ -2379,6 +2379,7 @@ dependencies = [
  "pin-project-lite",
  "pnet_datalink",
  "pretty_env_logger",
+ "rpcstack-wire",
  "serde",
  "serde_json",
  "socket2 0.5.10",

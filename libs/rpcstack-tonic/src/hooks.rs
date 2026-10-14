@@ -274,15 +274,59 @@ pub struct ChildContext<S: ModuleStack> {
     pub child_method_name: Option<CowGrpcMethod>,
     /// What the modules keep for this one child RPC.
     state: ChildState,
+    root_method: CowGrpcMethod,
+    root_sent: bool,
     stack: PhantomData<fn() -> S>,
 }
 
 impl<S: ModuleStack> ClientHooks for ChildContext<S> {
-    fn new<T>(_method: GrpcMethod, _request: &Request<T>) -> Self {
+    fn new<T>(method: GrpcMethod, request: &Request<T>) -> Self {
         Self {
             child_method_name: None,
             state: ChildState::new(),
+            root_method: resolve_method_name_from_request(method, request),
+            root_sent: false,
             stack: PhantomData,
+        }
+    }
+    fn try_before_send<T>(&mut self, request: &mut Request<T>) -> Result<(), Status> {
+        if self.child_method_name.is_some() {
+            return Ok(());
+        }
+        let mut wire = WireOut::from_metadata(request.metadata())
+            .map_err(|err| Status::invalid_argument(format!("invalid root metadata: {err}")))?;
+        S::before_root_rpc(&self.root_method, request, &mut wire, &mut self.state)
+            .map_err(|rejection| rejection.status)?;
+        // Empty root stacks preserve caller-supplied metadata for compatibility.
+        if !wire.header_value().is_empty() {
+            wire.install(request.metadata_mut());
+        }
+        self.root_sent = true;
+        Ok(())
+    }
+
+    fn after_recv<T>(&mut self, response: &mut Result<Response<T>, Status>) {
+        if !self.root_sent {
+            return;
+        }
+        self.root_sent = false;
+        let metadata = match &*response {
+            Ok(r) => r.metadata(),
+            Err(s) => s.metadata(),
+        };
+        let result = match WireIn::from_metadata(metadata) {
+            Ok(wire) => S::after_root_rpc(
+                &self.root_method,
+                ChildOutcome::Sent(response),
+                &wire,
+                &self.state,
+            ),
+            Err(err) => Err(Status::internal(format!(
+                "invalid root response metadata: {err}"
+            ))),
+        };
+        if let Err(status) = result {
+            *response = Err(status);
         }
     }
 }

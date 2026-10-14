@@ -96,9 +96,14 @@ where
 {
     fn h2_stream_priority(&self, headers: &HeaderMap) -> TaskPriority {
         match self {
-            Exec::Default => {
-                TaskPriority::new(masa_core::read_priority_from_headers(headers).value())
-            }
+            Exec::Default => headers
+                .get(rpcstack_wire::SCHEDULING_HEADER)
+                .and_then(|value| value.to_str().ok())
+                .and_then(|value| value.parse::<u64>().ok())
+                .map(TaskPriority::new)
+                .unwrap_or_else(|| {
+                    TaskPriority::new(masa_core::read_priority_from_headers(headers).value())
+                }),
             Exec::Executor(_) => meta_for_unannotated_spawn(None),
         }
     }
@@ -189,6 +194,14 @@ mod h2_priority_tests {
         );
 
         assert_eq!(default_priority(&headers), TaskPriority::new(42));
+    }
+
+    #[test]
+    #[cfg(feature = "masa")]
+    fn opaque_scheduling_key_needs_no_masa_context() {
+        let mut headers = HeaderMap::new();
+        headers.insert(rpcstack_wire::SCHEDULING_HEADER, "123".parse().unwrap());
+        assert_eq!(default_priority(&headers), TaskPriority::new(123));
     }
 
     #[test]
