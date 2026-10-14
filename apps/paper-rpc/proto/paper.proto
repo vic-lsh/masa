@@ -1,0 +1,5 @@
+syntax = "proto3";
+package paper;
+service Echo { rpc Call(Input) returns (Output); }
+message Input {}
+message Output { uint64 arrival_ns = 1; uint64 tokens = 2; uint32 hops = 3; }

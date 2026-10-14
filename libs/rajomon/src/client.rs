@@ -152,6 +152,15 @@ impl ClientTokenBucket {
     pub fn ensure_worker_started() {
         use std::sync::atomic::{AtomicBool, Ordering};
         static REPLENISH_WORKER_STARTED: AtomicBool = AtomicBool::new(false);
+        let Ok(handle) = tokio::runtime::Handle::try_current() else {
+            return;
+        };
+        struct ResetStarted;
+        impl Drop for ResetStarted {
+            fn drop(&mut self) {
+                REPLENISH_WORKER_STARTED.store(false, Ordering::Release);
+            }
+        }
         if !REPLENISH_WORKER_STARTED
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Relaxed)
             .is_ok()
@@ -159,16 +168,19 @@ impl ClientTokenBucket {
             return;
         }
 
-        if let Ok(handle) = tokio::runtime::Handle::try_current() {
-            handle.spawn(async {
+        {
+            let reset = ResetStarted;
+            handle.spawn(async move {
+                let _reset = reset;
                 use rand_distr::{Distribution, Exp};
-                let rate = 1.0 / RajomonParams::global().token_update_rate_ms as f64;
+                let rate = 1.0 / RajomonParams::global().token_update_rate_ms.max(1) as f64;
                 let dist = Exp::new(rate).expect("Exp::new failed");
                 let mut log_tick: u32 = 0;
                 loop {
                     let sleep_ms: f64 = dist.sample(&mut rand::thread_rng());
-                    let sleep_ms_clamped = sleep_ms.max(0.1).min(10_000.0);
-                    tokio::time::sleep(Duration::from_secs_f64(sleep_ms_clamped / 1000.0)).await;
+                    let delay =
+                        Duration::try_from_secs_f64(sleep_ms / 1000.0).unwrap_or(Duration::MAX);
+                    tokio::time::sleep(delay).await;
                     CLIENT_TOKEN_BUCKET.replenish();
                     log_tick += 1;
                     // At a 10ms mean tick, 500 ticks ≈ 5s — same cadence as

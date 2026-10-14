@@ -3588,6 +3588,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "paper-rpc"
+version = "0.1.0"
+dependencies = [
+ "prost",
+ "rajomon",
+ "rpcstack",
+ "rpcstack-tonic",
+ "tailclipper",
+ "tokio",
+ "tokio-stream",
+ "tonic",
+ "tonic-build",
+]
+
+[[package]]
 name = "parking"
 version = "2.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5455,6 +5470,19 @@ checksum = "a75fb188eb626b924683e3b95e3a48e63551fcfb51949de2f06a9d91dbee93c9"
 dependencies = [
  "core-foundation-sys",
  "libc",
+]
+
+[[package]]
+name = "tailclipper"
+version = "0.1.0"
+dependencies = [
+ "http",
+ "rpcstack",
+ "rpcstack-tonic",
+ "rpcstack-wire",
+ "serde",
+ "tokio",
+ "tonic",
 ]
 
 [[package]]

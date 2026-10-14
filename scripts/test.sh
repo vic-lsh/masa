@@ -203,6 +203,7 @@ packages=(
     "rpcstack"
     "rpcstack-tonic"
     "rajomon"
+    "tailclipper"
     "masa-core"
     "masa-integration-tests"
     "tonic"
@@ -245,6 +246,8 @@ if [ -z "$SEMANTICS_FEATURE" ] && { [ "$IS_MATRIX" = false ] || [ -z "$FEATURE_F
                 ;;
         esac
     done
+
+    execute_test "paper-rpc (ORF transport)" cargo test -p paper-rpc --features orf
 
     execute_test "tokio (masa priority suite)" cargo test -p tokio --features full --test masa_priority
     execute_test "tokio (masa priority suite, sched_custom)" cargo test -p tokio --features full,sched_custom --test masa_priority

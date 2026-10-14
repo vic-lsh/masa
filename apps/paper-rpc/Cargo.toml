@@ -1,0 +1,32 @@
+[package]
+name = "paper-rpc"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+rpcstack = { path = "../../libs/rpcstack" }
+rpcstack-tonic = { path = "../../libs/rpcstack-tonic" }
+tailclipper = { path = "../../libs/tailclipper" }
+rajomon = { path = "../../libs/rajomon" }
+tonic = { path = "../../libs/tonic/tonic", features = ["transport"] }
+prost = "0.12"
+tokio = { path = "../../libs/tokio/tokio", features = ["macros", "rt", "net", "time", "sync"] }
+tokio-stream = { version = "0.1", features = ["net"] }
+
+[build-dependencies]
+tonic-build = { path = "../../libs/tonic/tonic-build" }
+
+[features]
+default = []
+orf = ["tokio/tailclipper", "tonic/masa"]
+
+[[bin]]
+name = "paper-rpc"
+path = "src/main.rs"
+required-features = ["orf"]
+
+[[test]]
+name = "transport"
+path = "tests/transport.rs"
+required-features = ["orf"]

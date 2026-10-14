@@ -208,7 +208,7 @@ policy features.
 
 - `sched_fifo`: requests are served in first-in-first-out order.
 - `sched_slo`: requests are served based on their end-to-end SLO end time, which is their SLO added to the time at which they arrived at the frontend server.
-- `sched_tailclipper`: oldest request first, implementing the TailClipper paper's policy with round-robin fairness.
+- `sched_tailclipper`: cooperative oldest-request-first scheduling with limited round-robin sharing; see the [paper-policy report](docs/PAPER_RPC_POLICIES.md) for differences from TailClipper's preemptive scheduler.
 - `sched_oracle`: synthbench-only perfect-information priority scheduling using configured remaining work headers.
 - `sched_pred`: requests are served based on their local deadline with deadline tightening using latency estimates.
 - `sched_mt`: uses Masa's multi-threaded priority scheduler with one strict
@@ -217,3 +217,10 @@ policy features.
   of several sub-heaps; push picks a random heap and pop takes the
   better of two sampled heaps. Implies `sched_mt`.
 
+
+### Independent paper policies
+
+The [TailClipper and Rajomon expressiveness report](docs/PAPER_RPC_POLICIES.md)
+maps paper mechanisms to rpcstack hooks, records framework gaps and limitations,
+and describes a standalone [two-hop gRPC example](apps/paper-rpc/README.md).
+Run `./scripts/test_paper_rpc.sh` to validate the policies and run the demo.

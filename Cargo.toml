@@ -39,9 +39,11 @@ members = [
   "libs/rpcstack-tonic",
   "libs/rpcstack-wire",
   "libs/rajomon",
+  "libs/tailclipper",
   "libs/masa-bench",
 
   # evaluation applications
+  "apps/paper-rpc",
   "apps/hotel",
   "apps/socialnet",
   "apps/synthbench",
